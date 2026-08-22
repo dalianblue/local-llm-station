@@ -81,13 +81,25 @@
   #left { border-right: 1px solid var(--border); }
   #right { border-left: 1px solid var(--border); }
   .pane { display: flex; flex-direction: column; min-height: 0; }
-  #outlinepane { flex: 3; border-bottom: 1px solid var(--border); }
-  #respane { flex: 4; }
+  #outlinepane { flex: none; min-height: 100px; }
+  #respane { flex: 1; min-height: 100px; }
+  /* 左栏横向分隔条：拖拽调大纲/资源高度（与 vsplit 同款视觉） */
+  .hsplit { cursor: row-resize; position: relative; flex: none; height: 5px; }
+  .hsplit::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 2px; height: 1px;
+    background: var(--border); transition: background .15s;
+  }
+  .hsplit:hover::after, .hsplit.dragging::after { background: var(--accent); }
   .ptitle {
     padding: 10px 14px 6px; font-size: 12px; color: var(--dim); letter-spacing: 1px;
     display: flex; align-items: center;
   }
-  .ptitle .fold { margin-left: auto; background: none; border: none; color: var(--dim); cursor: pointer; font-size: 12px; padding: 0 4px; }
+  .ptitle .fold { margin-left: auto; background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--dim); cursor: pointer; font-size: 13px; font-weight: 700; padding: 1px 7px; line-height: 1.3; }
+  .ptitle .fold:hover { color: var(--text); border-color: var(--accent); }
+  #chathead .hbtn.foldbtn { border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
+    font-size: 13px; font-weight: 700; padding: 1px 7px; }
+  #chathead .hbtn.foldbtn:hover { color: var(--text); border-color: var(--accent); }
   .ptitle .fold:hover { color: var(--text); }
   #outline, #resources { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
   .oitem {
@@ -137,7 +149,8 @@
   .tab.active { background: var(--bg); color: var(--text); border-color: var(--accent); }
   .tab[draggable="true"] { cursor: grab; }
   .tab.over { border-color: var(--accent); box-shadow: -2px 0 0 var(--accent); }
-  .tab .x { color: var(--dim); font-size: 11px; padding: 0 2px; }
+  .tab .x { color: var(--dim); font-size: 11px; padding: 0 2px; opacity: 0; transition: opacity .12s; }
+  .tab:hover .x { opacity: 1; }
   .tab .x:hover { color: #f85149; }
   .tab .add { color: var(--dim); font-size: 14px; }
   /* markdown 格式工具栏：所有按钮只做"往 textarea 插语法符号" */
@@ -268,9 +281,16 @@
     flex: none; margin: 0 12px 12px; border: 1px solid var(--border); border-radius: 12px;
     background: var(--bg); padding: 8px 10px; transition: border-color .15s;
   }
+  /* 输入框顶边拖拽把手：上调增高输入框（高度存 editor_layout.inpH） */
+  #inpgrip { height: 6px; margin: -8px -10px 4px; cursor: row-resize; position: relative; }
+  #inpgrip::after {
+    content: ""; position: absolute; left: 30%; right: 30%; top: 3px; height: 1px;
+    background: var(--border); transition: background .15s, left .15s, right .15s;
+  }
+  #inpgrip:hover::after, #inpgrip.dragging::after { background: var(--accent); left: 20%; right: 20%; }
   #inputbox:focus-within { border-color: var(--accent); }
   #p { width: 100%; background: none; border: none; outline: none; color: var(--text);
-       font: inherit; resize: none; max-height: 160px; }
+       font: inherit; resize: none; }
   #bar { display: flex; align-items: center; gap: 8px; margin-top: 4; }
   #bar .hint { font-size: 11.5px; color: var(--dim); margin-right: auto; }
   #send, #stopbtn {
@@ -278,11 +298,12 @@
     padding: 5px 16px; font-size: 13px; cursor: pointer;
   }
   #stopbtn { background: #f85149; display: none; }
-  #attbtn, #draftbtn {
+  #attbtn, #draftbtn, #genbtn {
     background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
     font-size: 12px; padding: 3px 8px; cursor: pointer;
   }
   #attbtn.on, #draftbtn.on { color: var(--accent); border-color: var(--accent); }
+  #genbtn { color: var(--accent); }
   /* 选中文字浮动工具条：跟随选区（mouseup 定位，键盘选择按行估算） */
   #selbar {
     position: fixed; z-index: 70; display: flex; align-items: center; gap: 4px;
@@ -380,9 +401,10 @@
 <div id="app" hidden>
   <aside id="left">
     <div class="pane" id="outlinepane">
-      <div class="ptitle">大纲<button class="fold" id="foldleft" title="折叠左栏">⟨</button></div>
+      <div class="ptitle">大纲<button class="fold" id="foldleft" title="折叠左栏">«</button></div>
       <div id="outline"></div>
     </div>
+    <div class="hsplit" id="hs1" title="拖动调整大纲高度（双击复位）"></div>
     <div class="pane" id="respane">
       <div class="ptitle">项目资源</div>
       <div id="resources"></div>
@@ -391,8 +413,8 @@
   <div class="vsplit" id="vs1" title="拖动调整左栏宽度（双击复位）"></div>
 
   <main id="mid">
-    <button class="edge left" id="expandleft" title="展开大纲与资源">⟩</button>
-    <button class="edge right" id="expandright" title="展开写作助手">⟨</button>
+    <button class="edge left" id="expandleft" title="展开大纲与资源">»</button>
+    <button class="edge right" id="expandright" title="展开写作助手">«</button>
     <div id="tabs"></div>
     <div id="mdbar">
       <select id="t-head" title="标题">
@@ -443,13 +465,15 @@
         <option value="exact">🎯 精确</option>
         <option value="chat">💬 日常</option>
       </select>
-      <button class="hbtn" id="foldright" title="展开/折叠右栏">⟩</button>
+      <button class="hbtn foldbtn" id="foldright" title="展开/折叠右栏">»</button>
     </div>
     <div id="chatlog"><div class="wrap" id="msgs"></div></div>
     <div id="ctxbar"><span id="ctxtext">上下文：读取中…</span><div id="ctxtrack"><div id="ctxfill"></div></div></div>
     <div id="inputbox">
+      <div id="inpgrip" title="拖动调整输入框高度（双击复位）"></div>
       <textarea id="p" rows="1" placeholder="问当前章节的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
       <div id="bar">
+        <button id="genbtn" title="按本章节大纲生成初稿（依据：附文献/全文草稿/引文键清单）">✨ 初稿</button>
         <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 全文</button>
         <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 文献</button>
         <span class="hint">AI 回答可一键插入正文</span>
@@ -1502,6 +1526,30 @@ function toggleProjDoc(d, btn){
   updateAttBtn();
   toast(on ? `📎 已附《${d.title.slice(0, 20)}…》全文` : `已取消附《${d.title.slice(0, 20)}…》`);
 }
+// ---------- ✨ 初稿生成：按本章节小节大纲逐节撰写（写作规范吸收 ARIS paper-write）----------
+function buildDraftPrompt(){
+  const sec = ED.sections[ED.cur];
+  const heads = [...(sec.md || "").matchAll(/^(#{1,3}) (.+)$/gm)].map(m => m[1] + " " + m[2].trim());
+  const headPart = heads.length
+    ? "小节结构（保持标题与层级原样，逐节撰写）：\n" + heads.join("\n")
+    : `章节尚无小节结构：先给出适合《${sec.title}》定位的 3-5 个小节标题，再逐节撰写。`;
+  return (wc(sec.md) > 80
+      ? "当前章节已有内容：只补写缺失的小节并完善衔接，保持术语一致，不要重写已有段落。\n\n" : "")
+    + `请为当前章节《${sec.title}》撰写初稿，直接输出 Markdown 正文（不要引导语、不要解释）。
+写作规范：
+- 证据纪律：论断须有出处——引自所附文献的数据注明出自哪篇；无任何依据处写「（待补：需要什么证据/数据）」占位，禁止编造数据、样本量、p 值或文献
+- 引文：只使用引文键清单内的 [@键]，禁止提及清单之外的任何文献
+- 术语一致：分组名、变量名、缩写全文统一，不得换同义词表述
+- 篇幅：每小节 1-3 段，宁实勿虚；结论性小节不得照抄引言措辞
+
+${headPart}`;
+}
+$("#genbtn").onclick = () => {
+  if (!ED.sections.length) return;
+  if (!ED.attachDraft && ED.sections.every(s => !wc(s.md)))
+    toast("提示：其他章节均空——先写好其他章节或点「📄 全文」可获得更好的初稿连贯性");
+  send(buildDraftPrompt());
+};
 // 云端知情同意切换：本地离线时按钮才出现；点击后仍需确认"数据出本机"
 $("#cloudbtn").onclick = () => {
   if (!S.dskey){ $("#settings").classList.add("open"); toast("先在设置里填写 DeepSeek API Key"); return; }
@@ -1722,7 +1770,7 @@ async function send(text){
   const um = {role: "user", text, ts: Date.now()};
   ED.chat.push(um);
   appendMsg(um);
-  input.value = ""; input.style.height = "auto";
+  input.value = ""; fitInputH();
   scrollBottom(true);
   await generate();
 }
@@ -1912,7 +1960,7 @@ input.addEventListener("keydown", e => {
 });
 input.addEventListener("input", () => {
   input.style.height = "auto";
-  input.style.height = Math.min(input.scrollHeight, 160) + "px";
+  fitInputH();
 });
 const ta = $("#secmd");
 ta.addEventListener("input", () => {
@@ -1977,7 +2025,20 @@ document.addEventListener("click", e => {
   if (a){ e.preventDefault(); send(a.textContent.trim()); }
 });
 // 栏折叠与宽度（状态存 localStorage）
-const layout = Object.assign({left: true, right: true, leftW: 250, rightW: 400}, JSON.parse(localStorage.getItem("editor_layout") || "{}"));
+const layout = Object.assign({left: true, right: true, leftW: 250, rightW: 400, outlineH: 300, inpH: 160}, JSON.parse(localStorage.getItem("editor_layout") || "{}"));
+function setInputH(h){
+  layout.inpH = h;
+  input.style.maxHeight = "";
+  input.style.height = h + "px";   // 拖多高就多高，与内容多少无关
+}
+// 自适应：不低于用户设定的高度；内容超出则长大（上限右栏 70%），超限内部滚动
+function fitInputH(){
+  input.style.height = "auto";
+  input.style.height = Math.max(layout.inpH,
+    Math.min(input.scrollHeight, Math.round($("#right").clientHeight * 0.7))) + "px";
+}
+setInputH(layout.inpH);
+setInputH(layout.inpH);
 function applyLayout(persist = true){
   $("#left").classList.toggle("folded", !layout.left);
   $("#right").classList.toggle("folded", !layout.right);
@@ -2025,6 +2086,46 @@ function bindSplit(el, side){
 }
 bindSplit($("#vs1"), "left");
 bindSplit($("#vs2"), "right");
+// 左栏横向分隔条：上下拖调大纲高度，双击复位（持久化走 editor_layout 同一机制）
+function setOutlineH(h){ layout.outlineH = h; $("#outlinepane").style.height = h + "px"; }
+setOutlineH(layout.outlineH);
+$("#hs1").addEventListener("pointerdown", e => {
+  e.preventDefault();
+  $("#hs1").setPointerCapture(e.pointerId);
+  $("#hs1").classList.add("dragging");
+  const y0 = e.clientY, h0 = layout.outlineH, max = $("#left").clientHeight - 120;
+  const move = ev => setOutlineH(Math.min(max, Math.max(120, Math.round(h0 + (ev.clientY - y0)))));
+  const up = () => {
+    $("#hs1").classList.remove("dragging");
+    localStorage.setItem("editor_layout", JSON.stringify(layout));
+    $("#hs1").removeEventListener("pointermove", move);
+    $("#hs1").removeEventListener("pointerup", up);
+    $("#hs1").removeEventListener("pointercancel", up);
+  };
+  $("#hs1").addEventListener("pointermove", move);
+  $("#hs1").addEventListener("pointerup", up);
+  $("#hs1").addEventListener("pointercancel", up);
+});
+$("#hs1").addEventListener("dblclick", () => { setOutlineH(300); localStorage.setItem("editor_layout", JSON.stringify(layout)); });
+// 输入框顶边把手：上拖增高（自适应高度上限跟随），双击复位
+$("#inpgrip").addEventListener("pointerdown", e => {
+  e.preventDefault();
+  $("#inpgrip").setPointerCapture(e.pointerId);
+  $("#inpgrip").classList.add("dragging");
+  const y0 = e.clientY, h0 = layout.inpH, max = Math.round($("#right").clientHeight * 0.6);
+  const move = ev => setInputH(Math.min(max, Math.max(80, Math.round(h0 - (ev.clientY - y0)))));
+  const up = () => {
+    $("#inpgrip").classList.remove("dragging");
+    localStorage.setItem("editor_layout", JSON.stringify(layout));
+    $("#inpgrip").removeEventListener("pointermove", move);
+    $("#inpgrip").removeEventListener("pointerup", up);
+    $("#inpgrip").removeEventListener("pointercancel", up);
+  };
+  $("#inpgrip").addEventListener("pointermove", move);
+  $("#inpgrip").addEventListener("pointerup", up);
+  $("#inpgrip").addEventListener("pointercancel", up);
+});
+$("#inpgrip").addEventListener("dblclick", () => { setInputH(160); localStorage.setItem("editor_layout", JSON.stringify(layout)); });
 // 顶栏
 $("#homebtn").onclick = () => location.href = "dashboard.html";
 $("#chatbtn").onclick = () => location.href = "chat.html?conv=" + encodeURIComponent(ED.convId || "");
