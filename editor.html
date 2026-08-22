@@ -1,0 +1,2097 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>科研写作 · 本地工作台</title>
+<!-- KaTeX 本地公式渲染（~/Qwen38/katex/，离线零 CDN）；缺失时 md() 降级为原样文本 -->
+<link rel="stylesheet" href="katex/katex.min.css">
+<script src="katex/katex.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #2d333b;
+    --text: #e6edf3; --dim: #8b949e; --accent: #4f8cf7;
+    --user-bubble: #1c2a4a; --think: #6e7681;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ---------- 顶栏 ---------- */
+  header {
+    padding: 8px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; background: var(--panel);
+    flex: none; z-index: 30;
+  }
+  .hbtn { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 16px; padding: 2px 6px; }
+  .hbtn:hover { color: var(--text); }
+  #projname { font-weight: 600; font-size: 14.5px; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #projname.renamable { cursor: pointer; }
+  #projname.renamable:hover { color: var(--accent); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #f85149; flex: none; }
+  .dot.on { background: #3fb950; }
+  #statustext { font-size: 12.5px; color: var(--dim); }
+  /* 本地离线时的知情同意入口：点按钮+确认才切云端，不自动切换（数据出本机需明示） */
+  #cloudbtn {
+    display: none; background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--accent); font-size: 11.5px; padding: 2px 8px; cursor: pointer; flex: none;
+  }
+  #cloudbtn:hover { border-color: var(--accent); }
+  #toast {
+    position: fixed; top: 52px; right: 16px; z-index: 80; max-width: 320px;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
+    padding: 8px 14px; font-size: 13px; box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    display: none;
+  }
+
+  /* ---------- 项目选择页 ---------- */
+  #picker { flex: 1; overflow-y: auto; padding: 40px 20px; }
+  #picker .wrap { max-width: 860px; margin: 0 auto; }
+  #picker h1 { font-size: 22px; margin-bottom: 6px; }
+  #picker .sub { color: var(--dim); font-size: 13.5px; margin-bottom: 24px; }
+  .pcard {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 10px; cursor: pointer; display: flex; align-items: center; gap: 12px;
+  }
+  .pcard:hover { border-color: var(--accent); }
+  .pcard .t { flex: 1; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pcard .meta { color: var(--dim); font-size: 12px; display: flex; gap: 10px; flex: none; }
+
+  /* ---------- 三栏 ---------- */
+  #app { flex: 1; display: grid; grid-template-columns: 250px 5px minmax(0,1fr) 5px 400px; min-height: 0; }
+  /* 显式轨道：面板折叠(display:none)后不再是 grid item，
+     自动排列会把中栏塞进 0 宽的第一轨道导致整栏消失 */
+  #left { grid-column: 1; }
+  #vs1 { grid-column: 2; }
+  #mid { grid-column: 3; }
+  #vs2 { grid-column: 4; }
+  #right { grid-column: 5; }
+  /* 栏间拖拽分隔条：5px 命中区，中间 1px 视觉线 */
+  .vsplit { cursor: col-resize; position: relative; }
+  .vsplit::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 1px;
+    background: var(--border); transition: background .15s;
+  }
+  .vsplit:hover::after, .vsplit.dragging::after { background: var(--accent); }
+  aside { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  #left { border-right: 1px solid var(--border); }
+  #right { border-left: 1px solid var(--border); }
+  .pane { display: flex; flex-direction: column; min-height: 0; }
+  #outlinepane { flex: 3; border-bottom: 1px solid var(--border); }
+  #respane { flex: 4; }
+  .ptitle {
+    padding: 10px 14px 6px; font-size: 12px; color: var(--dim); letter-spacing: 1px;
+    display: flex; align-items: center;
+  }
+  .ptitle .fold { margin-left: auto; background: none; border: none; color: var(--dim); cursor: pointer; font-size: 12px; padding: 0 4px; }
+  .ptitle .fold:hover { color: var(--text); }
+  #outline, #resources { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
+  .oitem {
+    padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .oitem:hover { background: #1f2630; }
+  .oitem.sec { font-weight: 700; }
+  .oitem.h1 { padding-left: 22px; font-weight: 600; }
+  .oitem.h2 { padding-left: 34px; color: var(--dim); }
+  .oitem.cur { color: var(--accent); }
+  .rsec { margin-bottom: 14px; }
+  .rhead { font-size: 12.5px; color: var(--accent); padding: 0 6px 4px; }
+  .ritem {
+    display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 13px;
+    border-radius: 6px;
+  }
+  .ritem:hover { background: #1f2630; }
+  .ritem .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ritem small { color: var(--dim); font-size: 11.5px; flex: none; }
+  .ritem button {
+    background: none; border: 1px solid var(--border); border-radius: 5px; color: var(--dim);
+    font-size: 11px; padding: 1px 6px; cursor: pointer; flex: none;
+  }
+  .ritem button:hover { color: var(--text); border-color: var(--dim); }
+  .ritem button.att-on { color: var(--accent); border-color: var(--accent); }
+  #left.folded, #right.folded { display: none; }
+
+  /* ---------- 中栏：章节 tab + 编辑区 + 状态条 ---------- */
+  #mid { display: flex; flex-direction: column; min-height: 0; position: relative; }
+  /* 栏折叠后的展开把手（栏内按钮随栏一起消失，把手挂在中栏边缘常驻） */
+  .edge {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
+    background: var(--panel); border: 1px solid var(--border); color: var(--dim);
+    border-radius: 6px; padding: 12px 3px; cursor: pointer; font-size: 12px; display: none;
+  }
+  .edge.left { left: 0; border-left: none; }
+  .edge.right { right: 0; border-right: none; }
+  .edge:hover { color: var(--text); border-color: var(--accent); }
+  #tabs { display: flex; align-items: center; gap: 2px; padding: 8px 12px 0; flex-wrap: wrap; flex: none; }
+  .tab {
+    padding: 5px 12px; border: 1px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0;
+    background: var(--panel); color: var(--dim); font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; gap: 6px; max-width: 180px;
+  }
+  .tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab.active { background: var(--bg); color: var(--text); border-color: var(--accent); }
+  .tab[draggable="true"] { cursor: grab; }
+  .tab.over { border-color: var(--accent); box-shadow: -2px 0 0 var(--accent); }
+  .tab .x { color: var(--dim); font-size: 11px; padding: 0 2px; }
+  .tab .x:hover { color: #f85149; }
+  .tab .add { color: var(--dim); font-size: 14px; }
+  /* markdown 格式工具栏：所有按钮只做"往 textarea 插语法符号" */
+  #mdbar {
+    flex: none; display: flex; align-items: center; gap: 4px;
+    padding: 6px 14px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  #mdbar select {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 6px; font-size: 12.5px; cursor: pointer;
+  }
+  #mdbar button {
+    background: none; border: 1px solid transparent; border-radius: 6px; color: var(--dim);
+    font-size: 13px; padding: 3px 9px; cursor: pointer; min-width: 30px;
+  }
+  #mdbar button:hover { color: var(--text); border-color: var(--border); background: var(--bg); }
+  #mdbar .sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+  #editwrap { flex: 1; min-height: 0; display: flex; justify-content: center; padding: 20px 24px; }
+  #secmd {
+    width: 100%; max-width: 46em; height: 100%; background: none; border: none; outline: none;
+    color: var(--text); resize: none; font: 16px/1.9 Georgia, "Songti SC", "Noto Serif SC", serif;
+    caret-color: var(--accent);
+  }
+  #secpreview { width: 100%; max-width: 46em; height: 100%; overflow-y: auto; }
+  #statusbar {
+    flex: none; border-top: 1px solid var(--border); background: var(--panel);
+    padding: 5px 16px; display: flex; align-items: center; gap: 16px;
+    font-size: 12px; color: var(--dim); font-family: var(--mono);
+  }
+  #statusbar .spacer { flex: 1; }
+  #statusbar button {
+    background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
+    font-size: 12px; padding: 2px 10px; cursor: pointer;
+  }
+  #statusbar button:hover { color: var(--text); border-color: var(--dim); }
+  /* 导出菜单（statusbar 内，样式比照 dashboard 的 newmenu） */
+  #expmenu {
+    display: none; position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 50;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 6px; min-width: 220px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  #expmenu.open { display: block; }
+  #expmenu .nopt { padding: 9px 12px; border-radius: 8px; cursor: pointer; }
+  #expmenu .nopt:hover { background: var(--bg); }
+  #expmenu .nopt b { display: block; font-size: 13.5px; }
+  #expmenu .nopt small { color: var(--dim); font-size: 11.5px; }
+  #snapcount { cursor: pointer; }
+  #snapcount:hover { color: var(--accent); }
+
+  /* ---------- 右栏：AI 对话 ---------- */
+  #chathead {
+    flex: none; padding: 10px 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600;
+  }
+  #chathead select {
+    margin-left: auto; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 6px; font-size: 12px;
+  }
+  #chatlog { flex: 1; overflow-y: auto; padding: 16px 0; }
+  #chatlog .wrap { max-width: 100%; padding: 0 14px; }
+  .msg { margin-bottom: 20px; display: flex; gap: 10px; position: relative; animation: msgin .18s ease-out; }
+  @keyframes msgin { from { opacity: 0; transform: translateY(4px); } }
+  .msg .avatar {
+    width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+  }
+  .msg.user .avatar { background: var(--accent); color: #fff; }
+  .msg.bot  .avatar { background: linear-gradient(135deg,#6a5cff,#4f8cf7); color: #fff; }
+  .bubble { max-width: calc(100% - 38px); word-break: break-word; flex: 1; }
+  .msg.user .bubble .content { background: var(--user-bubble); padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; }
+  .think-block { margin-bottom: 8px; }
+  .think-block summary { color: var(--think); font-size: 12.5px; cursor: pointer; user-select: none; list-style: none; }
+  .think-block summary::before { content: "💭 "; }
+  .think-block .tcontent {
+    color: var(--think); font-size: 12.5px; border-left: 2px solid var(--border);
+    padding-left: 10px; margin-top: 6px; white-space: pre-wrap;
+  }
+  .content pre {
+    background: #0a0d12; border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; margin: 8px 0;
+  }
+  .content code { font-family: var(--mono); font-size: 13px; }
+  .content :not(pre) > code { background: #21262d; padding: 2px 6px; border-radius: 4px; }
+  .content p { margin: 6px 0; } .content ul, .content ol { margin: 6px 0 6px 22px; }
+  .content blockquote {
+    border-left: 3px solid var(--accent); padding: 4px 12px; margin: 8px 0;
+    color: var(--dim); background: rgba(255,255,255,.02); border-radius: 0 8px 8px 0;
+  }
+  .content a { color: var(--accent); }
+  .content del { color: var(--dim); }
+  .content input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
+  /* 引文上标与参考文献列表（[@key] 渲染产物） */
+  .cite { color: var(--accent); }
+  ol.refs { margin: 8px 0 4px 22px; font-size: 12.5px; color: var(--dim); line-height: 1.9; }
+  ol.refs a { color: var(--accent); }
+  .content table { border-collapse: collapse; margin: 8px 0; font-size: 13px; display: block; overflow-x: auto; }
+  .content th, .content td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
+  .content th { background: #21262d; }
+  .content .katex-display { overflow-x: auto; overflow-y: hidden; margin: 10px 0; }
+  .typing::after { content: "▍"; animation: blink 1s step-start infinite; color: var(--accent); }
+  @keyframes blink { 50% { opacity: 0; } }
+  .syscard {
+    border: 1px dashed var(--border); border-radius: 10px; padding: 8px 12px;
+    font-size: 13px; color: var(--dim); margin-bottom: 16px; background: rgba(255,255,255,.02);
+    white-space: pre-wrap;
+  }
+  .acts { display: flex; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity .12s; flex-wrap: wrap; }
+  .msg:hover .acts, .acts.actson { opacity: 1; }
+  .acts button {
+    background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
+    font-size: 12px; padding: 2px 8px; cursor: pointer;
+  }
+  .acts button:hover { color: var(--text); border-color: var(--dim); }
+  .acts button.ins { color: var(--accent); border-color: var(--accent); }
+  .codewrap { position: relative; }
+  .codewrap .ccopy {
+    position: absolute; right: 8px; top: 8px; z-index: 2; opacity: 0;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--dim); font-size: 11.5px; padding: 2px 8px; cursor: pointer;
+  }
+  .codewrap:hover .ccopy { opacity: 1; }
+  .askq { color: var(--accent); }
+  #ctxbar { flex: none; padding: 4px 14px; font-size: 11.5px; color: var(--dim); font-family: var(--mono); }
+  #ctxtrack { height: 3px; background: var(--border); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+  #ctxfill { height: 100%; width: 0; background: var(--accent); border-radius: 2px; }
+  #ctxfill.warn { background: #d29922; } #ctxfill.danger { background: #f85149; }
+  #inputbox {
+    flex: none; margin: 0 12px 12px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg); padding: 8px 10px; transition: border-color .15s;
+  }
+  #inputbox:focus-within { border-color: var(--accent); }
+  #p { width: 100%; background: none; border: none; outline: none; color: var(--text);
+       font: inherit; resize: none; max-height: 160px; }
+  #bar { display: flex; align-items: center; gap: 8px; margin-top: 4; }
+  #bar .hint { font-size: 11.5px; color: var(--dim); margin-right: auto; }
+  #send, #stopbtn {
+    background: var(--accent); color: #fff; border: none; border-radius: 7px;
+    padding: 5px 16px; font-size: 13px; cursor: pointer;
+  }
+  #stopbtn { background: #f85149; display: none; }
+  #attbtn, #draftbtn {
+    background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
+    font-size: 12px; padding: 3px 8px; cursor: pointer;
+  }
+  #attbtn.on, #draftbtn.on { color: var(--accent); border-color: var(--accent); }
+  /* 选中文字浮动工具条：跟随选区（mouseup 定位，键盘选择按行估算） */
+  #selbar {
+    position: fixed; z-index: 70; display: flex; align-items: center; gap: 4px;
+    padding: 4px 6px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.45);
+  }
+  #selbar[hidden] { display: none; }
+  #selbar span { font-size: 11px; color: var(--dim); margin-right: 2px; }
+  #selbar button {
+    background: none; border: 1px solid transparent; border-radius: 6px; color: var(--accent);
+    font-size: 12px; padding: 2px 8px; cursor: pointer;
+  }
+  #selbar button:hover { border-color: var(--accent); background: var(--bg); }
+  /* 文献选择弹层条目 */
+  .attrow { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .attrow:last-child { border-bottom: none; }
+  .attrow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attrow small { color: var(--dim); font-size: 11.5px; flex: none; }
+  .attrow input { accent-color: var(--accent); }
+  .attrow .c-cite {
+    background: none; border: 1px solid var(--border); border-radius: 5px; color: var(--dim);
+    font-size: 11px; padding: 1px 7px; cursor: pointer; flex: none;
+  }
+  .attrow .c-cite:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* ---------- 版本面板 / 设置 ---------- */
+  .modal {
+    position: fixed; inset: 0; z-index: 60; display: none;
+    align-items: center; justify-content: center; background: rgba(0,0,0,.5);
+  }
+  .modal.open { display: flex; }
+  .mbox {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    width: min(560px, 92vw); max-height: 80vh; display: flex; flex-direction: column;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6);
+  }
+  .mhead { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; font-weight: 600; }
+  .mhead .hbtn { margin-left: auto; }
+  #verlist { overflow-y: auto; padding: 8px 12px; }
+  #attlist { overflow-y: auto; padding: 8px 12px; min-height: 0; }
+  .vrow {
+    display: flex; align-items: center; gap: 8px; padding: 8px 8px;
+    border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .vrow:last-child { border-bottom: none; }
+  .vrow .t { flex: 1; min-width: 0; }
+  .vrow .lbl { color: var(--accent); }
+  .vrow .reason { color: var(--dim); font-size: 11.5px; }
+  .vrow .wc { color: var(--dim); font-size: 11.5px; font-family: var(--mono); }
+  .vrow button {
+    background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
+    font-size: 12px; padding: 2px 8px; cursor: pointer; flex: none;
+  }
+  .vrow button:hover { color: var(--text); }
+  #verfoot { padding: 10px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+  #verfoot button { background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--dim); font-size: 12px; padding: 3px 10px; cursor: pointer; }
+  #verfoot button:hover { color: #f85149; border-color: #f85149; }
+  #settings {
+    position: absolute; top: 44px; right: 10px; z-index: 50; width: 300px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; display: none; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  #settings.open { display: block; }
+  #settings label { display: block; font-size: 12.5px; color: var(--dim); margin: 10px 0 4px; }
+  #settings input, #settings select {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px;
+  }
+  #settings .row { display: flex; gap: 8px; margin-top: 14px; }
+  #settings .row button {
+    flex: 1; background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 7px; font-size: 13px; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<header>
+  <button class="hbtn" id="homebtn" title="项目总览" style="font-size:19px">🏠</button>
+  <button class="hbtn" id="chatbtn" title="打开本项目对话">💬</button>
+  <div id="projname">科研写作</div>
+  <span class="dot off" id="dot"></span><span id="statustext">连接中…</span>
+  <button id="cloudbtn" title="本地服务离线——切换到 DeepSeek 云端（数据将出本机，需确认）">☁️ 切到云端</button>
+  <span style="flex:1"></span>
+  <button class="hbtn" id="verbtn" title="版本管理（快照与恢复）">🕐 版本</button>
+  <button class="hbtn" id="setbtn" title="设置">⚙️</button>
+</header>
+
+<div id="picker"><div class="wrap">
+  <h1>✍️ 选择要写作的项目</h1>
+  <div class="sub">每个对话即一个项目——章节、版本与写作对话存放在该项目文件夹内（本地磁盘，不出本机）</div>
+  <div id="plist"></div>
+</div></div>
+
+<div id="app" hidden>
+  <aside id="left">
+    <div class="pane" id="outlinepane">
+      <div class="ptitle">大纲<button class="fold" id="foldleft" title="折叠左栏">⟨</button></div>
+      <div id="outline"></div>
+    </div>
+    <div class="pane" id="respane">
+      <div class="ptitle">项目资源</div>
+      <div id="resources"></div>
+    </div>
+  </aside>
+  <div class="vsplit" id="vs1" title="拖动调整左栏宽度（双击复位）"></div>
+
+  <main id="mid">
+    <button class="edge left" id="expandleft" title="展开大纲与资源">⟩</button>
+    <button class="edge right" id="expandright" title="展开写作助手">⟨</button>
+    <div id="tabs"></div>
+    <div id="mdbar">
+      <select id="t-head" title="标题">
+        <option value="" selected disabled>标题</option>
+        <option value="1">标题 1</option><option value="2">标题 2</option><option value="3">标题 3</option>
+      </select>
+      <select id="t-list" title="列表">
+        <option value="" selected disabled>列表</option>
+        <option value="ul">无序列表</option><option value="ol">有序列表</option><option value="task">任务清单</option>
+      </select>
+      <span class="sep"></span>
+      <button data-fmt="bold" title="粗体（⌘B）"><b>B</b></button>
+      <button data-fmt="italic" title="斜体（⌘I）"><i>I</i></button>
+      <button data-fmt="strike" title="删除线"><s>S</s></button>
+      <button data-fmt="quote" title="引用块">❝</button>
+      <button data-fmt="code" title="行内代码">&lt;&gt;</button>
+      <button data-fmt="link" title="链接">🔗</button>
+      <button data-fmt="cite" title="插入文献引文 [@键]（来自全局文献库）">[@]</button>
+      <button data-fmt="table" title="插入表格">▦</button>
+    </div>
+    <div id="editwrap">
+      <textarea id="secmd" spellcheck="false" placeholder="用 Markdown 写这一章节……（⌘S 保存并快照）"></textarea>
+      <div id="secpreview" class="content" hidden></div>
+    </div>
+    <div id="statusbar">
+      <span id="wordcount">0 字</span>
+      <span id="savestate"></span>
+      <span id="snapcount"></span>
+      <span class="spacer"></span>
+      <button id="previewbtn">👁 预览</button>
+      <div id="expwrap" style="position:relative">
+        <button id="expbtn">📤 导出</button>
+        <div id="expmenu">
+          <div class="nopt" id="exp-html"><b>📄 HTML</b><small>自包含单文件 · 可打印为 PDF</small></div>
+          <div class="nopt" id="exp-docx"><b>📝 Word (.docx)</b><small>宿主机 pandoc 转换 · 可直接编辑</small></div>
+        </div>
+      </div>
+      <button id="savebtn">💾 保存并快照</button>
+    </div>
+  </main>
+  <div class="vsplit" id="vs2" title="拖动调整右栏宽度（双击复位）"></div>
+
+  <aside id="right">
+    <div id="chathead">✍️ 写作助手
+      <select id="mode" title="智能：按内容自动选择；精确适合润色改写">
+        <option value="auto">⚡ 智能</option>
+        <option value="think">💭 深度推理</option>
+        <option value="exact">🎯 精确</option>
+        <option value="chat">💬 日常</option>
+      </select>
+      <button class="hbtn" id="foldright" title="展开/折叠右栏">⟩</button>
+    </div>
+    <div id="chatlog"><div class="wrap" id="msgs"></div></div>
+    <div id="ctxbar"><span id="ctxtext">上下文：读取中…</span><div id="ctxtrack"><div id="ctxfill"></div></div></div>
+    <div id="inputbox">
+      <textarea id="p" rows="1" placeholder="问当前章节的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+      <div id="bar">
+        <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 全文</button>
+        <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 文献</button>
+        <span class="hint">AI 回答可一键插入正文</span>
+        <button id="stopbtn">■ 停止</button>
+        <button id="send">发送</button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div id="selbar" hidden>
+  <span id="selinfo"></span>
+  <button data-op="润色">✨ 润色</button>
+  <button data-op="扩写">✍️ 扩写</button>
+  <button data-op="缩写">📋 缩写</button>
+</div>
+
+<div id="verpanel" class="modal"><div class="mbox">
+  <div class="mhead">🕐 版本快照<button class="hbtn" id="verclose">✕</button></div>
+  <div id="verlist"></div>
+  <div id="verfoot"><button id="verclean">清空未命名快照</button></div>
+</div></div>
+
+<div id="attpanel" class="modal"><div class="mbox">
+  <div class="mhead">📎 附文献全文（写作助手将看到所选文献）<button class="hbtn" id="attclose">✕</button></div>
+  <div id="attlist"></div>
+  <div id="attfoot" style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px">
+    <span id="attsum" style="font-size:12px;color:var(--dim);align-self:center"></span>
+    <button id="attok" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer">附所选文献</button>
+  </div>
+</div></div>
+
+<div id="citepanel" class="modal"><div class="mbox">
+  <div class="mhead">[@] 插入引文到光标处<button class="hbtn" id="citeclose">✕</button></div>
+  <div id="citelist" style="overflow-y:auto;padding:8px 12px"></div>
+</div></div>
+
+<div id="cslpanel" class="modal"><div class="mbox">
+  <div class="mhead">📝 选择引文样式（影响 Word 导出的引文与参考文献格式）<button class="hbtn" id="cslclose">✕</button></div>
+  <div id="csllist" style="overflow-y:auto;padding:8px 12px"></div>
+  <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px">
+    <span id="cslhint" style="font-size:12px;color:var(--dim);align-self:center"></span>
+    <button id="cslok" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer">导出 Word</button>
+  </div>
+</div></div>
+
+<div id="settings">
+  <label>推理服务</label>
+  <select id="set-provider"><option value="local">本地（Ollama / llama-server）</option><option value="deepseek">DeepSeek 云端</option></select>
+  <label>本地服务地址</label>
+  <input id="set-base" placeholder="http://127.0.0.1:11434">
+  <label>模型名（Ollama 必填）</label>
+  <input id="set-model" placeholder="qwen3.8:27b-mlx">
+  <label>DeepSeek API Key</label>
+  <input id="set-key" type="password" placeholder="sk-…">
+  <div class="row"><button id="setsave">保存（刷新生效）</button></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const ARCH = "http://127.0.0.1:8081";
+let archOK = false;
+
+// ---------- 推理请求入口（与 chat.html 共享设置；Ollama/llama-server/DeepSeek 三方言） ----------
+const DEEPSEEK_API = "https://api.deepseek.com/v1/chat/completions";
+const usingDeep = () => S.provider === "deepseek" && S.dskey;
+let isOllama = null;
+const ollamaBackend = () => isOllama !== null ? isOllama : /:11434\/?$/.test(BASE);
+function apiPost(body, signal){
+  if (usingDeep()){
+    body = {...body, model: body.chat_template_kwargs?.enable_thinking === false ? "deepseek-chat" : "deepseek-reasoner"};
+    delete body.chat_template_kwargs; delete body.reasoning_effort;
+    return fetch(DEEPSEEK_API, {method:"POST", signal,
+      headers:{"Content-Type":"application/json", Authorization:"Bearer " + S.dskey},
+      body: JSON.stringify(body)});
+  }
+  if (!ollamaBackend())
+    return fetch(API, {method:"POST", signal, headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  // Ollama：/v1 的 think 不可靠，叠加 reasoning_effort:"none"（官方文档指定做法）
+  const think = body.chat_template_kwargs?.enable_thinking;
+  delete body.chat_template_kwargs;
+  body = {...body, model: S.localmodel || "qwen3.8:27b-mlx"};
+  if (think !== undefined) body.think = think === true;
+  if (think === false) body.reasoning_effort = "none";
+  return fetch(API, {method:"POST", signal, headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+}
+const MODES = {
+  think: { thinking: true,  temp: null },
+  exact: { thinking: false, temp: 0.0 },
+  chat:  { thinking: false, temp: 0.7 },
+};
+const MODE_LABEL = { think:"💭 深度推理", exact:"🎯 精确", chat:"💬 日常" };
+const S = Object.assign(
+  { mode: "auto", effort: "xhigh", provider: "local", dskey: "", localbase: "", localmodel: "" },
+  JSON.parse(localStorage.getItem("qwen_settings") || "{}")
+);
+let BASE = (S.localbase || "http://127.0.0.1:11434").replace(/\/+$/, "");
+let API = BASE + "/v1/chat/completions";
+if (!MODES[S.mode] && S.mode !== "auto") S.mode = "auto";
+if (MODES[S.mode]) { S.thinking = MODES[S.mode].thinking; S.temp = MODES[S.mode].temp; }
+function saveSettings(){ localStorage.setItem("qwen_settings", JSON.stringify(S)); }
+function autoMode(t){
+  if (/```/.test(t) ||
+      /(csv|excel|表格|数据(集|文件|分析)|可视化|绘图|画图|图表|直方图|散点|折线|柱状|箱线)/i.test(t) ||
+      /(写|改|生成|重构|优化|检查|调试|实现|补全|解释).{0,12}(代码|脚本|函数|正则|SQL|接口|组件|报错)/.test(t) ||
+      /(翻译|translate|译[成入]|中译英|英译中|回译)/i.test(t) ||
+      /\b(python|javascript|typescript|java|c\+\+|go|rust|sql|regex|api|json|html|css|bash|shell|bug|debug)\b/i.test(t))
+    return "exact";
+  if (/(计算|求解|解方程|证明|推导|推演|推理|逻辑|智力题|谜题|概率|排列组合|数列|几何)/.test(t) ||
+      /\d+\s*[\+\-*×÷x\/]\s*\d+/.test(t))
+    return "think";
+  return "chat";
+}
+
+// ---------- 能力边界规范与长期记忆（与 chat.html 共享 qwen_memory） ----------
+const BOUNDARY_RULES = `[能力边界规范——基于本机 benchmark 实测，必须遵守]
+- 长尾事实（冷门人名、书目细节、历史日期等）：凡没有把握，必须明说"这点我可能记不准，请核实"，禁止自信编造
+- 训练截止后的时事、新知识（新指南/新版本/获奖者等）：直接回答不知道，禁止推测冒充
+- 医学：可以讲教科书概念与原理；涉及具体用药剂量、换药时机、临床决策时，只做方向性说明并明确提醒"以权威指南和主治医师为准"，不确定的细节要明说
+- 专业领域固定译名（法律/医学文献术语）：给出译法的同时提示用户核对标准译名
+- 代码/翻译等指令性任务：直接输出结果本身，不加多余解释
+- 数学/逻辑题：遇到矛盾或缺失条件时明确指出"无解/条件不足"，禁止强行作答`;
+
+const EDITOR_PERSONA = `你是本地写作台的科研写作助手，正在协助用户撰写论文/研究方案。
+原则：
+- 只建议、不擅自改动——你的输出由用户确认后才插入正文
+- 润色/扩写/缩写/改写类请求：直接输出可以整段插入正文的成段中文（Markdown），不要写「以下是修改后的段落」之类的引导语，不要重复原文未改动的部分
+- 讨论/问答/查证类请求：正常回答，结论先行
+- 用户引用的知识卡片内容可作为事实来源，但与当前章节冲突时要指出
+- 上下文中附有文献全文时，引用其中的具体数据要注明出自哪篇文献；文献与用户表述冲突时指出
+- 需要参考其他章节内容时，明确说「请切换到某章节再问」，不要凭空猜测其他章节内容
+- 写正文引用文献时用 [@引文键] 标注（如 [@r1abc]），不要手写编号——前端自动编号并列参考文献；引文键清单见上下文`;
+
+let memory = [];
+try { memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]"); } catch {}
+let memCtrl = null;
+function saveMemory(){
+  try { localStorage.setItem("qwen_memory", JSON.stringify(memory)); } catch {}
+  if (archOK)
+    fetch(ARCH + "/archive/memory.json", {
+      method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(memory)
+    }).catch(() => {});
+}
+
+// ---------- 通用 ----------
+function toast(text, ms){
+  const t = $("#toast");
+  t.textContent = text; t.style.display = "block";
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.style.display = "none", ms || 2600);
+}
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+async function copyText(t, btn){
+  try { await navigator.clipboard.writeText(t); }
+  catch {  // clipboard API 被拒时降级 execCommand
+    const ta = document.createElement("textarea");
+    ta.value = t; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+  }
+  if (btn){ const o = btn.textContent; btn.textContent = "已复制"; setTimeout(()=> btn.textContent = o, 1200); }
+}
+const wc = s => ((s||"").match(/[\u4e00-\u9fff]/g) || []).length + ((s||"").match(/[A-Za-z0-9]+/g) || []).length;
+const fmtTime = ts => new Date(ts).toLocaleString("zh-CN", {month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit"});
+
+// ---------- markdown 渲染（与 chat.html 同一套） ----------
+function mdTable(b){
+  const rows = b.trim().split("\n").filter(l => l.trim().startsWith("|"));
+  const cells = r => r.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c => c.trim());
+  let html = "<table><thead><tr>" + cells(rows[0]).map(h => "<th>"+h+"</th>").join("") + "</tr></thead><tbody>";
+  for (let i = 2; i < rows.length; i++)
+    html += "<tr>" + cells(rows[i]).map(c => "<td>"+c+"</td>").join("") + "</tr>";
+  return html + "</tbody></table>";
+}
+function texHtml(f, disp){
+  if (typeof katex === "undefined") return "<code>" + esc(f) + "</code>";
+  try { return katex.renderToString(f, {displayMode: disp, throwOnError: false}); }
+  catch { return "<code>" + esc(f) + "</code>"; }
+}
+function mdText(src){
+  const math = [];
+  src = src.replace(/\$\$([\s\S]+?)\$\$/g, (_, f) => "\u0000M" + (math.push({f, disp:true}) - 1) + "\u0000")
+           .replace(/\$([^$\n]+?)\$/g, (_, f) => "\u0000M" + (math.push({f, disp:false}) - 1) + "\u0000");
+  return src
+    .replace(/^### (.*)$/gm,"<h4>$1</h4>").replace(/^## (.*)$/gm,"<h3>$1</h3>").replace(/^# (.*)$/gm,"<h2>$1</h2>")
+    .replace(/~~(.+?)~~/g,"<del>$1</del>")
+    .replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")
+    .replace(/`([^`]+)`/g,"<code>$1</code>")
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) =>
+      /^(https?:|mailto:|#|\.\/)/i.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : esc(t))
+    .replace(/^\s*[-*+] \[( |x|X)\] (.*)$/gm, (_, c, t) => `<li><input type="checkbox" disabled${c.trim() ? " checked" : ""}> ${t}</li>`)
+    .replace(/^\s*[-*+] (.*)$/gm,"<li>$1</li>")
+    .replace(/^\s*\d+\. (.*)$/gm,"<lo>$1</lo>")   // 有序列表临时标记，块级再包 <ol>
+    .split(/\n{2,}/).map(b=>{
+      const lines = b.trim().split("\n");
+      if (lines.length >= 2 && lines.every(l => l.trim().startsWith("|")) &&
+          /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[1]) && lines[1].includes("-"))
+        return mdTable(b);
+      // 引用块：整块每行 > 开头
+      if (lines.length && lines.every(l => l.trim().startsWith(">")))
+        return "<blockquote>" + lines.map(l => l.trim().replace(/^>\s?/, "")).join("<br>") + "</blockquote>";
+      if(/^\s*<(h[2-5]|ul|ol|li|lo|blockquote)/.test(b))
+        return b.replace(/((?:<li>.*<\/li>\s*)+)/gs,"<ul>$1</ul>")
+                .replace(/((?:<lo>.*<\/lo>\s*)+)/gs,"<ol>$1</ol>")
+                .replace(/<\/?lo>/g, m => m === "<lo>" ? "<li>" : "</li>");
+      return b.trim() ? "<p>"+b.replace(/\n/g,"<br>")+"</p>" : "";
+    }).join("")
+    .replace(/\u0000M(\d+)\u0000/g, (_, i) => texHtml(math[+i].f, math[+i].disp));
+}
+function md(src){
+  const parts = src.split(/```([\w-]*)\n?/);
+  let out = mdText(parts[0] || "");
+  for (let i=1; i<parts.length; i+=2){
+    out += '<div class="codewrap"><button class="ccopy">复制</button><pre><code>' + esc(parts[i+1] || "") + "</code></pre></div>";
+    out += mdText(parts[i+2] || "");
+  }
+  return out;
+}
+// 引文渲染：[@key] → 上标编号 + 文末参考文献列表（Pandoc 兼容语法，库条目按首次出现排序）
+const fmtRef = it => it ? [it.authors, it.title + ".", it.journal && it.journal + ",", it.year]
+  .filter(Boolean).join(" ") : "（未知文献）";
+function mdCite(src){
+  if (!ED.lib.length) return md(src);
+  const order = [];
+  src = src.replace(/\[@([A-Za-z0-9_-]+)\]/g, (m, key) => {
+    if (!ED.lib.some(x => x.key === key)) return m;   // 库里没有：原样保留
+    let n = order.indexOf(key);
+    if (n === -1){ order.push(key); n = order.length - 1; }
+    return "\u0000C" + n + "\u0000";
+  });
+  let html = md(src);
+  html = html.replace(/\u0000C(\d+)\u0000/g, (_, n) => {
+    const it = ED.lib.find(x => x.key === order[+n]);
+    return `<span class="cite" title="${esc(fmtRef(it))}">[${+n + 1}]</span>`;
+  });
+  if (order.length)
+    html += `<h3>参考文献</h3><ol class="refs">` + order.map(k => {
+      const it = ED.lib.find(x => x.key === k);
+      return `<li>${esc(fmtRef(it))}${it?.doi ? ` <a href="https://doi.org/${esc(it.doi)}" target="_blank" rel="noopener">DOI</a>` : ""}</li>`;
+    }).join("") + "</ol>";
+  return html;
+}
+function mdChat(src){
+  const linkify = q => `<a href="#" class="askq">${q.replace(/^(?:\d+[.、]|[-*•])\s*/, "")}</a>`;
+  return mdCite(src).replace(/(<h[34]>建议追问<\/h[34]>)([\s\S]*?)(?=<h[34]|$)/,
+    (m, head, body) => head + body
+      .replace(/<li>([\s\S]*?)<\/li>/g, (_, q) => `<li>${linkify(q)}</li>`)
+      .replace(/<p>([^<>].*?)<\/p>/g, (_, q) => `<p>${linkify(q)}</p>`));
+}
+
+// ---------- 连接状态轮询 ----------
+let ctxTotal = null, ctxUsed = 0;
+async function pollStatus(){
+  if (usingDeep()){
+    $("#dot").className = "dot on";
+    $("#statustext").textContent = "DeepSeek API · 云端";
+    $("#ctxtext").textContent = "上下文：由 DeepSeek 管理";
+    $("#cloudbtn").style.display = "none";
+    return;
+  }
+  try {
+    try { await fetch(BASE + "/api/version", {signal: AbortSignal.timeout(3000)}); isOllama = true; }
+    catch { await fetch(BASE + "/health", {signal: AbortSignal.timeout(3000)}); isOllama = false; }
+    $("#dot").className = "dot on";
+    $("#statustext").textContent = "本地模型 · 在线";
+    $("#cloudbtn").style.display = "none";
+    if (!ctxTotal){
+      try {
+        if (ollamaBackend()){
+          const j = await (await fetch(BASE + "/api/ps")).json();
+          ctxTotal = j?.models?.[0]?.context_length ?? null;
+        } else {
+          const j = await (await fetch(BASE + "/props")).json();
+          ctxTotal = j?.default_generation_settings?.n_ctx ?? j?.n_ctx ?? null;
+        }
+        if (ctxTotal) updateCtxBar();
+      } catch {}
+    }
+  } catch {
+    $("#dot").className = "dot off";
+    let why = "（模型未启动或加载中）";
+    try {
+      await fetch(ARCH + "/health", {signal: AbortSignal.timeout(1500)});
+    } catch { why = "（LocalLLMServer.app 未运行）"; }
+    $("#statustext").textContent = "本地模型 · 离线" + why;
+    $("#cloudbtn").style.display = "inline-block";   // 离线才露出云端入口，点击+确认 = 知情同意
+  }
+  if (!archOK) await connectArch();
+  // 推理与存档是两个服务，存档挂掉单独提示
+  if (!archOK) $("#statustext").textContent += " · ⚠ 存档服务未连接（保存不落盘）";
+}
+pollStatus();
+setInterval(pollStatus, 5000);
+function updateCtxBar(){
+  if (usingDeep()){ $("#ctxtext").textContent = "上下文：由 DeepSeek 管理"; return; }
+  if (!ctxTotal){ $("#ctxtext").textContent = "上下文：未知"; return; }
+  const pct = Math.min(ctxUsed / ctxTotal * 100, 100);
+  $("#ctxtext").textContent = `上下文：已用 ${ctxUsed.toLocaleString()} / ${ctxTotal.toLocaleString()} tok`;
+  const f = $("#ctxfill");
+  f.style.width = pct + "%";
+  f.className = pct > 85 ? "danger" : pct > 60 ? "warn" : "";
+}
+async function connectArch(){
+  try {
+    await fetch(ARCH + "/health");
+    archOK = true;
+    return true;
+  } catch { archOK = false; return false; }
+}
+
+// ---------- 编辑器状态 ----------
+const ED = {
+  convId: null, convDir: null, projName: "",
+  sections: [],   // {id, title, file, archetype, md}
+  cur: 0,
+  cards: [], notes: "", projMeta: null,
+  attachDraft: false,
+  lib: [], attDocs: [],   // lib: 全局文献库条目；attDocs: 已选注入项
+  chat: [],
+};
+const pf = name => `${ARCH}/projfile/${encodeURIComponent(ED.convDir)}/${encodeURIComponent(name)}`;
+const secGen = () => "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const input = $("#p");
+
+// ---------- 项目选择页 ----------
+async function showPicker(){
+  const el = $("#plist");
+  el.innerHTML = "<div style='color:var(--dim)'>读取项目列表…</div>";
+  try {
+    const r = await fetch(ARCH + "/projects/list");
+    const {convs} = await r.json();
+    if (!convs?.length){ el.innerHTML = "<div style='color:var(--dim)'>暂无项目——先在 chat.html 里开始一段对话</div>"; return; }
+    el.innerHTML = "";
+    for (const c of convs){
+      const d = document.createElement("div");
+      d.className = "pcard";
+      d.innerHTML = `<div class="t">${esc(c.name)}</div><div class="meta">
+        <span>${fmtTime(c.ts)}</span>${c.docs ? `<span>📄 ${c.docs}</span>` : ""}${c.cards ? `<span>🃏 ${c.cards}</span>` : ""}${c.notes ? "<span>📝</span>" : ""}</div>`;
+      d.onclick = () => location.href = "editor.html?conv=" + encodeURIComponent(c.id);
+      el.appendChild(d);
+    }
+  } catch {
+    el.innerHTML = "<div style='color:#f85149'>无法连接存档服务 127.0.0.1:8081——请先启动 LocalLLMServer.app</div>";
+  }
+}
+
+// ---------- 项目加载 ----------
+async function loadProject(){
+  await connectArch();
+  if (!archOK){
+    $("#projname").textContent = "存档服务未连接";
+    toast("无法连接存档服务——请启动 LocalLLMServer.app 后刷新");
+    return;
+  }
+  let convs;
+  try { convs = (await (await fetch(ARCH + "/projects/list")).json()).convs; }
+  catch { toast("读取项目列表失败"); return; }
+  const c = convs.find(x => x.id === ED.convId);
+  if (!c){ toast("未找到该项目"); location.href = "editor.html"; return; }
+  ED.projMeta = c;
+  ED.convDir = c.file.replace(/\.json$/, "");
+  ED.projName = c.name;
+  $("#projname").textContent = /^✍️\s/.test(c.name) ? c.name : "✍️ " + c.name;   // 新写作项目标题自带前缀，防双显
+  document.title = c.name + " · 写作";
+  $("#projname").classList.add("renamable");
+  $("#projname").title = "点击改名";
+
+  // 章节清单（不存在则按四段模板初始化）
+  // 网络异常 ≠ 文件不存在：catch 里中止加载
+  let ej = null;
+  try { const r = await fetch(pf("editor.json")); if (r.ok) ej = await r.json(); }
+  catch { toast("存档服务不可达，未做任何更改——请确认 LocalLLMServer 在运行后刷新重试", 6000); return; }
+  if (ej?.sections?.length){
+    ED.sections = ej.sections.map(s => ({...s, md: ""}));
+    ED.chat = Array.isArray(ej.chat) ? ej.chat : [];
+  } else {
+    ED.sections = [["背景","background"],["方法","methods"],["结果","results"],["讨论","discussion"]]
+      .map(([t, a]) => ({id: secGen(), title: t, file: "", archetype: a, md: ""}));
+  }
+  // 章节文件名惰性生成（新建时才定名），已有清单按 file 字段
+  for (const s of ED.sections) if (!s.file) s.file = `sec-${s.id}.md`;
+  if (!ej) persistEditor();   // 首次初始化即落盘章节清单
+  await Promise.all(ED.sections.map(async s => {
+    // 加载失败（非 404）标记 bad：正文没读进来就 PUT 会用空串抹掉磁盘原文
+    try { const r = await fetch(pf(s.file)); if (r.ok) s.md = await r.text(); else if (r.status !== 404) s.bad = true; }
+    catch { s.bad = true; }
+  }));
+  journalRestore();   // 磁盘内容读入后：若有未落盘的崩溃草稿，询问恢复
+  // 左栏资源并行加载（含存档本体：本项目文献全文由此而来）
+  const [cards, notes, vlist, plist, arch] = await Promise.all([
+    fetch(ARCH + "/archive/" + encodeURIComponent(ED.convId + "-cards.json")).then(r => r.ok ? r.json() : []).catch(() => []),
+    fetch(ARCH + "/archive/" + encodeURIComponent(ED.convId + ".notes.md")).then(r => r.ok ? r.text() : "").catch(() => ""),
+    fetch(pf("versions.json")).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(ARCH + "/projlist/" + encodeURIComponent(ED.convDir)).then(r => r.ok ? r.json() : []).catch(() => []),
+    fetch(ARCH + "/archive/" + encodeURIComponent(ED.projMeta.file)).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]);
+  if (Array.isArray(cards)) ED.cards = cards;
+  ED.notes = notes || "";
+  if (vlist?.list) versions = vlist;
+  ED.dataFiles = Array.isArray(plist) ? plist.filter(f => /\.csv$/i.test(f)) : [];
+  // 本项目文献：从存档消息里取 docs（按文件名去重）——附给 AI 不依赖全局文献库扫描
+  ED.projDocs = [];
+  if (arch?.messages){
+    const seen = new Set();
+    for (const m of arch.messages) for (const d of (m.docs || [])){
+      if (!d?.name || seen.has(d.name)) continue;
+      seen.add(d.name);
+      ED.projDocs.push({key: "p" + seen.size, name: d.name, title: d.name.replace(/\.pdf$/i, ""), text: d.text || ""});
+    }
+  }
+  // 全局文献库（dashboard「建文献库」聚合；无库时开关提示先去建）
+  try {
+    const r = await fetch(`${ARCH}/projfile/library/library.json`);
+    if (r.ok){ const lib = await r.json(); if (Array.isArray(lib.items)) ED.lib = lib.items; }
+  } catch {}
+  // 附件勾选按项目持久化（刷新不丢）：存引文键，加载时映射回库条目或本项目文献
+  try {
+    const saved = JSON.parse(localStorage.getItem("editor_atts") || "{}")[ED.convId] || [];
+    ED.attDocs = [...ED.lib, ...ED.projDocs].filter(x => saved.includes(x.key));
+  } catch {}
+  updateAttBtn();
+  // 附全文开关按项目持久化（与附件勾选同一模式）
+  try { ED.attachDraft = !!JSON.parse(localStorage.getItem("editor_drafts") || "{}")[ED.convId]; } catch {}
+  updateDraftBtn();
+
+  $("#picker").style.display = "none";
+  $("#app").hidden = false;
+  renderTabs(); showSection(0); renderResources(); renderChat();
+  updateStatusBar();
+}
+
+// ---------- 章节模型 ----------
+function renderTabs(){
+  const el = $("#tabs"); el.innerHTML = "";
+  ED.sections.forEach((s, i) => {
+    const d = document.createElement("div");
+    d.className = "tab" + (i === ED.cur ? " active" : "");
+    d.draggable = true;
+    d.innerHTML = `<span>${esc(s.title)}</span><span class="x" title="删除章节">✕</span>`;
+    d.onclick = e => { if (e.target.classList.contains("x")) delSection(i); else switchSection(i); };
+    d.ondblclick = () => renameSection(i);
+    // 拖拽排序：拖到目标 tab 上松手即交换位置
+    d.addEventListener("dragstart", e => { dragIdx = i; e.dataTransfer.effectAllowed = "move"; });
+    d.addEventListener("dragend", () => { dragIdx = null; document.querySelectorAll(".tab.over").forEach(t => t.classList.remove("over")); });
+    d.addEventListener("dragover", e => { e.preventDefault(); d.classList.add("over"); });
+    d.addEventListener("dragleave", () => d.classList.remove("over"));
+    d.addEventListener("drop", e => { e.preventDefault(); d.classList.remove("over"); moveSection(dragIdx, i); });
+    el.appendChild(d);
+  });
+  const add = document.createElement("div");
+  add.className = "tab";
+  add.innerHTML = `<span class="add" title="新增章节">＋</span>`;
+  add.onclick = addSection;
+  el.appendChild(add);
+}
+function showSection(i){
+  ED.cur = i;
+  $("#secmd").value = ED.sections[i].md || "";
+  $("#selbar").hidden = true;   // 切章节后原选区失义，收起浮动工具条
+  if (previewOn) togglePreview(false);
+  renderTabs(); updateOutline(); updateStatusBar();
+  if (ED.sections[i].bad) toast("⚠ 该章节正文加载失败，编辑不会保存——请确认存档服务在运行后刷新", 6000);
+}
+function switchSection(i){
+  if (i === ED.cur) return;
+  flushSave();
+  showSection(i);
+}
+let dragIdx = null;
+// 拖拽重排：只动 editor.json 清单顺序，文件名不变
+function moveSection(from, to){
+  if (from == null || from === to) return;
+  flushSave();
+  // cur 跟随"重排前的当前章节"（textarea 持有的是它的内容）
+  const curSec = ED.sections[ED.cur];
+  const [sec] = ED.sections.splice(from, 1);
+  ED.sections.splice(to, 0, sec);
+  ED.cur = Math.max(0, ED.sections.indexOf(curSec));
+  persistEditor(); renderTabs(); updateOutline(); updateStatusBar();
+}
+function addSection(){
+  const t = prompt("新章节标题：");
+  if (!t?.trim()) return;
+  const s = {id: secGen(), title: t.trim(), file: "", archetype: null, md: ""};
+  s.file = `sec-${s.id}.md`;
+  ED.sections.push(s);
+  persistEditor();
+  switchSection(ED.sections.length - 1);
+  toast("已新增章节「" + s.title + "」");
+}
+function renameSection(i){
+  const t = prompt("章节标题：", ED.sections[i].title);
+  if (!t?.trim() || t.trim() === ED.sections[i].title) return;
+  ED.sections[i].title = t.trim();
+  persistEditor(); renderTabs(); renderResources();
+}
+async function delSection(i){
+  const s = ED.sections[i];
+  if (!confirm(`删除章节「${s.title}」？删除前自动快照，可从版本面板恢复。`)) return;
+  flushSave();
+  await snapshot("manual", "删除「" + s.title + "」前");
+  ED.sections.splice(i, 1);
+  if (!ED.sections.length){
+    const ns = {id: secGen(), title: "新章节", file: "", archetype: null, md: ""};
+    ns.file = `sec-${ns.id}.md`;
+    ED.sections.push(ns);
+  }
+  persistEditor();
+  showSection(Math.min(i, ED.sections.length - 1));
+}
+
+// 防抖保存：调度时快照目标与内容，防抖期间切章节不写错文件
+let saveTimer = null, saveReq = 0;
+function saveSection(now){
+  const sec = ED.sections[ED.cur]; if (!sec || sec.bad) return;   // bad：正文未成功加载，禁存防覆盖
+  sec.md = $("#secmd").value;
+  clearTimeout(saveTimer);
+  const req = ++saveReq, file = sec.file, mdv = sec.md;
+  const doSave = async () => {
+    try {
+      await fetch(pf(file), {method: "PUT", body: mdv});
+      if (req === saveReq){
+        $("#savestate").textContent = "已保存 " + new Date().toLocaleTimeString("zh-CN", {hour:"2-digit", minute:"2-digit"});
+        journalClear(file);   // 落盘成功才清崩溃草稿
+      }
+    } catch { if (req === saveReq) $("#savestate").textContent = "保存失败（存档服务未连接）"; }
+  };
+  if (now) doSave(); else saveTimer = setTimeout(doSave, 1000);
+}
+function flushSave(){
+  clearTimeout(saveTimer);
+  const sec = ED.sections[ED.cur]; if (!sec || sec.bad) return;
+  sec.md = $("#secmd").value;
+  fetch(pf(sec.file), {method: "PUT", body: sec.md}).catch(() => {});
+}
+
+// ---------- 崩溃草稿日志（Typora 式）：输入即镜像 localStorage，PUT 成功清除 ----------
+// 覆盖场景：存档服务挂掉/关标签页/断电——textarea 只在内存，journal 是第二落点
+const jKey = f => ED.convId + "/" + f;
+function journalWrite(){
+  const sec = ED.sections[ED.cur]; if (!sec || sec.bad) return;
+  try {
+    const all = JSON.parse(localStorage.getItem("editor_journal") || "{}");
+    all[jKey(sec.file)] = {ts: Date.now(), md: $("#secmd").value};
+    localStorage.setItem("editor_journal", JSON.stringify(all));
+  } catch {}
+}
+function journalClear(file){
+  try {
+    const all = JSON.parse(localStorage.getItem("editor_journal") || "{}");
+    delete all[jKey(file)];
+    localStorage.setItem("editor_journal", JSON.stringify(all));
+  } catch {}
+}
+let journalT = null;
+const journalSoon = () => { clearTimeout(journalT); journalT = setTimeout(journalWrite, 600); };
+// 启动恢复：journal 里残留 = 上次 PUT 没成功（成功即清除），按章节比对磁盘后询问
+function journalRestore(){
+  let all;
+  try { all = JSON.parse(localStorage.getItem("editor_journal") || "{}"); } catch { return; }
+  const mine = Object.entries(all).filter(([k]) => k.startsWith(ED.convId + "/"));
+  if (!mine.length) return;
+  const find = k => ED.sections.find(s => s.file === k.split("/").slice(1).join("/"));
+  const pending = mine.filter(([k, j]) => { const s = find(k); return s && !s.bad && s.md !== j.md; });
+  if (pending.length && confirm(
+    `检测到 ${pending.length} 个章节有未落盘的编辑（${fmtTime(pending[0][1].ts)}，上次保存可能失败）。\n` +
+    `确定 = 恢复并立即落盘；取消 = 以磁盘内容为准（未落盘的修改丢弃）`)){
+    for (const [k, j] of pending){
+      const s = find(k);
+      s.md = j.md;
+      fetch(pf(s.file), {method: "PUT", body: s.md}).catch(() => {});
+    }
+  }
+  for (const [k] of mine) delete all[k];
+  try { localStorage.setItem("editor_journal", JSON.stringify(all)); } catch {}
+}
+async function persistEditor(){
+  if (!ED.convDir) return;
+  try {
+    await fetch(pf("editor.json"), {
+      method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        schema: 1, updated: Date.now(),
+        sections: ED.sections.map(s => ({id: s.id, title: s.title, file: s.file, archetype: s.archetype})),
+        chat: ED.chat.slice(-200),
+      })
+    });
+  } catch {}
+}
+
+// ---------- 大纲 / 状态条 ----------
+// 全文档大纲：所有章节 + 当前章节的小节标题；点跨章节小节先切换再定位
+function updateOutline(){
+  const el = $("#outline"); el.innerHTML = "";
+  ED.sections.forEach((s, i) => {
+    const d = document.createElement("div");
+    d.className = "oitem sec" + (i === ED.cur ? " cur" : "");
+    d.textContent = s.title;
+    d.title = "切换到「" + s.title + "」";
+    d.onclick = () => { if (i !== ED.cur) switchSection(i); };
+    el.appendChild(d);
+    if (i !== ED.cur) return;
+    [...s.md.matchAll(/^(#{1,3}) (.+)$/gm)].forEach(m => {
+      const h = document.createElement("div");
+      h.className = "oitem " + (m[1].length === 1 ? "h1" : "h2");
+      h.textContent = m[2].trim();
+      h.onclick = () => gotoHeading(m.index);
+      el.appendChild(h);
+    });
+  });
+  if (!ED.sections.some(s => s.md.trim()))
+    el.insertAdjacentHTML("beforeend", "<div style='color:var(--dim);font-size:12px;padding:6px 10px'>章节内用 # / ## 标题，会出现在这里</div>");
+}
+function gotoHeading(charIdx){
+  const ta = $("#secmd");
+  if (previewOn) togglePreview(false);
+  ta.focus();
+  ta.setSelectionRange(charIdx, charIdx);
+  const before = ta.value.slice(0, charIdx);
+  const lines = before.split("\n").length, total = ta.value.split("\n").length || 1;
+  ta.scrollTop = Math.max(0, (lines / total) * ta.scrollHeight - ta.clientHeight / 2);
+}
+function updateStatusBar(){
+  const sec = ED.sections[ED.cur];
+  $("#wordcount").textContent = (sec ? wc(sec.md) : 0).toLocaleString() + " 字";
+  const n = versions?.list?.length || 0;
+  $("#snapcount").textContent = n ? `🕐 ${n} 个快照` : "";
+}
+
+// ---------- 左栏资源 ----------
+function renderResources(){
+  const el = $("#resources"); el.innerHTML = "";
+  // 知识卡片
+  const csec = document.createElement("div");
+  csec.className = "rsec";
+  csec.innerHTML = `<div class="rhead">知识卡片（${ED.cards.length}）</div>`;
+  if (!ED.cards.length) csec.insertAdjacentHTML("beforeend", "<div style='color:var(--dim);font-size:12px;padding:2px 6px'>在 chat.html 对话里生成</div>");
+  ED.cards.forEach(c => {
+    const d = document.createElement("div");
+    d.className = "ritem";
+    d.innerHTML = `<span class="t" title="${esc(c.definition || "")}">${esc(c.concept)}</span>
+      <button class="c-ins" title="插入到光标处">⤵</button><button class="c-ask" title="引用卡片向 AI 提问">💬</button>`;
+    d.querySelector(".c-ins").onclick = () => insertText(
+      `【${c.concept}】${c.definition || ""}${c.example ? "\n例：" + c.example : ""}`);
+    d.querySelector(".c-ask").onclick = () => {
+      input.value = `【引用卡片《${c.concept}》】${c.definition || ""}${c.example ? "\n例：" + c.example : ""}\n\n我的问题：`;
+      input.focus();
+    };
+    csec.appendChild(d);
+  });
+  el.appendChild(csec);
+  // 文献（本项目读过的 PDF，来自存档消息；点标题去对话看解读，📎 直附 AI 不经文献库）
+  const dsec = document.createElement("div");
+  dsec.className = "rsec";
+  dsec.innerHTML = `<div class="rhead">文献（${ED.projDocs.length}）</div>`;
+  if (!ED.projDocs.length)
+    dsec.insertAdjacentHTML("beforeend", "<div style='color:var(--dim);font-size:12px;padding:2px 6px'>在对话里上传 PDF 后出现</div>");
+  ED.projDocs.forEach(d => {
+    const row = document.createElement("div");
+    row.className = "ritem";
+    row.innerHTML = `<span class="t" style="cursor:pointer" title="打开对话中的全文解读">📄 ${esc(d.title)}</span>
+      <button class="d-att" title="附全文给写作助手（不经文献库）">📎</button>`;
+    row.querySelector(".t").onclick = () => location.href = "chat.html?conv=" + encodeURIComponent(ED.convId);
+    const btn = row.querySelector(".d-att");
+    btn.classList.toggle("att-on", ED.attDocs.includes(d));
+    btn.onclick = () => toggleProjDoc(d, btn);
+    dsec.appendChild(row);
+  });
+  el.appendChild(dsec);
+  // 笔记：点预览跳对话编辑，⤵ 全文插入光标处
+  const nsec = document.createElement("div");
+  nsec.className = "rsec";
+  nsec.innerHTML = `<div class="rhead">项目笔记</div>`;
+  if (ED.notes){
+    const nrow = document.createElement("div");
+    nrow.className = "ritem";
+    nrow.innerHTML = `<span class="t" style="cursor:pointer;white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden" title="打开对话中的笔记">${esc(ED.notes.slice(0, 200))}…</span>
+      <button class="n-ins" title="笔记全文插入到光标处">⤵</button>`;
+    nrow.querySelector(".t").onclick = () => location.href = "chat.html?conv=" + encodeURIComponent(ED.convId);
+    nrow.querySelector(".n-ins").onclick = () => insertText(ED.notes);
+    nsec.appendChild(nrow);
+  } else nsec.insertAdjacentHTML("beforeend", "<div style='color:var(--dim);font-size:12px;padding:2px 6px'>暂无</div>");
+  el.appendChild(nsec);
+  // 数据文件：⤵ 取 CSV 转 Markdown 表格插入（超 30 行截断，防大数据集灌爆章节）
+  if (ED.dataFiles?.length){
+    const fsec = document.createElement("div");
+    fsec.className = "rsec";
+    fsec.innerHTML = `<div class="rhead">数据文件</div>`;
+    ED.dataFiles.forEach(f => {
+      const row = document.createElement("div");
+      row.className = "ritem";
+      row.innerHTML = `<span class="t">📊 ${esc(f)}</span>
+        <button class="f-ins" title="转 Markdown 表格插入到光标处">⤵</button>`;
+      row.querySelector(".f-ins").onclick = async () => {
+        try {
+          const r = await fetch(pf(f));
+          if (!r.ok) throw 0;
+          insertText(csvToMd(await r.text(), f));
+        } catch { toast("读取数据文件失败（存档服务未连接？）"); }
+      };
+      fsec.appendChild(row);
+    });
+    el.appendChild(fsec);
+  }
+}
+// CSV → Markdown 表格：引号内逗号不切分，单元格竖线转义
+function csvToMd(text, name){
+  const rows = text.trim().split(/\r?\n/).filter(Boolean);
+  const cells = l => l.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, "").replace(/\|/g, "\\|"));
+  const head = cells(rows[0]);
+  let md = `| ${head.join(" | ")} |\n| ${head.map(() => "---").join(" | ")} |`;
+  for (const r of rows.slice(1, 31)) md += `\n| ${cells(r).join(" | ")} |`;
+  if (rows.length > 31) md += `\n\n（仅前 30 行，共 ${rows.length} 行；完整数据：📊 ${name}）`;
+  return md;
+}
+
+// ---------- 版本管理 ----------
+let versions = {schema: 1, list: []};
+const hashMd = () => {
+  const s = ED.sections.map(x => x.md || "").join("\u0001");
+  let h = 5381;
+  for (let i = 0; i < s.length; i = i + Math.max(1, (s.length / 999) | 0)) h = (h * 33 ^ s.charCodeAt(i)) >>> 0;
+  return s.length + ":" + h;   // 采样哈希：只用于快照去重，不做校验
+};
+async function snapshot(reason, label){
+  flushSave();
+  const h = hashMd();
+  const last = versions.list[0];
+  // 内容无变化不新建快照（含手动：连点保存不产生重复项）
+  if (last && last.h === h) return false;
+  versions.list.unshift({
+    id: "v" + Date.now().toString(36), ts: Date.now(),
+    label: label || "", reason, h,
+    secs: ED.sections.map(s => ({file: s.file, title: s.title, md: s.md || ""})),
+  });
+  pruneVersions();
+  try {
+    await fetch(pf("versions.json"), {
+      method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(versions),
+    });
+  } catch { toast("快照保存失败（存档服务未连接）"); }
+  updateStatusBar();
+  return true;
+}
+function pruneVersions(){
+  const labeled = versions.list.filter(v => v.label);
+  const unlabeled = versions.list.filter(v => !v.label).slice(0, 30);
+  versions.list = [...unlabeled, ...labeled].sort((a, b) => b.ts - a.ts);
+}
+async function restoreVersion(v){
+  flushSave();
+  await snapshot("pre-restore");
+  for (const sv of v.secs){
+    const sec = ED.sections.find(s => s.file === sv.file);
+    // 恢复是整文档回滚，每个被恢复的章节都要落盘
+    if (sec && !sec.bad){ sec.md = sv.md; fetch(pf(sec.file), {method: "PUT", body: sec.md}).catch(() => {}); }
+  }
+  showSection(ED.cur);
+  saveSection(true);
+  renderVersionPanel();
+  toast("已恢复到 " + fmtTime(v.ts) + (v.label ? "「" + v.label + "」" : "") + "（恢复前已自动快照）");
+}
+async function labelVersion(v){
+  const t = prompt("给这个版本命名：", v.label || "");
+  if (t === null) return;
+  v.label = t.trim();
+  try { await fetch(pf("versions.json"), {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(versions)}); } catch {}
+  renderVersionPanel();
+}
+function renderVersionPanel(){
+  const el = $("#verlist"); el.innerHTML = "";
+  if (!versions.list.length){
+    el.innerHTML = "<div style='color:var(--dim);font-size:13px;padding:16px;text-align:center'>暂无快照——⌘S 或「保存并快照」创建第一个</div>";
+    return;
+  }
+  versions.list.forEach(v => {
+    const d = document.createElement("div");
+    d.className = "vrow";
+    const totalWc = v.secs.reduce((a, s) => a + wc(s.md), 0);
+    const reasonTxt = {manual: "手动", "pre-insert": "AI 插入前", "pre-restore": "恢复前"}[v.reason] || v.reason;
+    d.innerHTML = `<div class="t">${v.label ? `<span class="lbl">${esc(v.label)}</span> ` : ""}${fmtTime(v.ts)}
+      <span class="reason">· ${reasonTxt}</span> <span class="wc">· ${totalWc.toLocaleString()} 字 · ${v.secs.length} 章节</span></div>
+      <button class="v-label">${v.label ? "改名" : "命名"}</button><button class="v-restore">恢复</button>`;
+    d.querySelector(".v-restore").onclick = () => restoreVersion(v);
+    d.querySelector(".v-label").onclick = () => labelVersion(v);
+    el.appendChild(d);
+  });
+}
+$("#verbtn").onclick = () => { renderVersionPanel(); $("#verpanel").classList.add("open"); };
+$("#snapcount").onclick = () => { renderVersionPanel(); $("#verpanel").classList.add("open"); };
+$("#verclose").onclick = () => $("#verpanel").classList.remove("open");
+$("#verpanel").onclick = e => { if (e.target === $("#verpanel")) $("#verpanel").classList.remove("open"); };
+$("#verclean").onclick = async () => {
+  const n = versions.list.filter(v => !v.label).length;
+  if (!n || !confirm(`删除 ${n} 个未命名快照？（命名过的保留）`)) return;
+  versions.list = versions.list.filter(v => v.label);
+  try { await fetch(pf("versions.json"), {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(versions)}); } catch {}
+  renderVersionPanel(); updateStatusBar();
+};
+// ---------- 导出（全文档合并 + 跨章节统一引文编号） ----------
+function exportMd(){
+  flushSave();
+  const parts = [];
+  for (const s of ED.sections){
+    const body = (s.md || "").trim();
+    parts.push(/^#\s/m.test(body) ? body : `# ${s.title}\n\n${body}`);
+  }
+  return {title: ED.projName.replace(/^✍️ /, ""), md: parts.join("\n\n")};
+}
+// 全文档引文编号（复用 mdCite 的键解析，跨章节连续）
+async function exportHtml(){
+  const {title, md: doc} = exportMd();
+  const order = [];
+  const src = doc.replace(/\[@([A-Za-z0-9_-]+)\]/g, (m, key) => {
+    if (!ED.lib.some(x => x.key === key)) return m;
+    let n = order.indexOf(key);
+    if (n === -1){ order.push(key); n = order.length - 1; }
+    return "\u0000C" + n + "\u0000";
+  });
+  let html = md(src).replace(/\u0000C(\d+)\u0000/g, (_, n) =>
+    `<span class="cite">[${+n + 1}]</span>`);
+  // 参考文献标题随正文语言（与服务端 docx 导出同一判定：中文字符占比 >10%）
+  const zh = ((doc.match(/[\u4e00-\u9fff]/g) || []).length * 10 > doc.length);
+  const refs = order.length ? `<h2>${zh ? "参考文献" : "References"}</h2><ol class="refs">` + order.map(k => {
+    const it = ED.lib.find(x => x.key === k);
+    return `<li>${esc(fmtRef(it))}${it?.doi ? ` <a href="https://doi.org/${esc(it.doi)}">DOI</a>` : ""}</li>`;
+  }).join("") + "</ol>" : "";
+  downloadBlob(await buildExportHtml(title, html + refs),
+    title.replace(/[\\/:*?"<>|]/g, "_") + ".html", "text/html");
+  toast("📄 已导出 HTML（自包含，可打印为 PDF）");
+}
+// KaTeX CSS + woff2 字体内联为 data URI——导出文件离开本目录也能正确显示公式
+let katexCssP = null;
+function inlineKatexCss(){
+  katexCssP ??= (async () => {
+    try {
+      let css = await (await fetch(ARCH + "/static/katex/katex.min.css")).text();
+      const fonts = [...new Set([...css.matchAll(/url\(fonts\/([^)]+?\.woff2)\)/g)].map(m => m[1]))];
+      for (const f of fonts){
+        const buf = await (await fetch(ARCH + "/static/katex/fonts/" + f)).arrayBuffer();
+        let bin = ""; new Uint8Array(buf).forEach(b => bin += String.fromCharCode(b));
+        css = css.replaceAll("fonts/" + f, "data:font/woff2;base64," + btoa(bin));
+      }
+      return css.replaceAll(/url\(fonts\/[^)]+?\.(woff|ttf)\)/g, "");   // woff/ttf 兜底引用移除
+    } catch { return ""; }
+  })();
+  return katexCssP;
+}
+async function buildExportHtml(title, bodyHtml){
+  const katex = await inlineKatexCss();
+  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<title>${esc(title)}</title>
+<style>
+${katex}
+body { max-width: 46em; margin: 0 auto; padding: 48px 24px 96px;
+  font: 16px/1.9 Georgia, "Songti SC", "Noto Serif SC", serif; color: #1f2328; }
+h1, h2, h3, h4 { font-family: -apple-system, "PingFang SC", sans-serif; line-height: 1.4; }
+h1 { font-size: 24px; } h2 { font-size: 19px; margin-top: 1.8em; }
+table { border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+th, td { border: 1px solid #d0d7de; padding: 6px 12px; text-align: left; }
+th { background: #f6f8fa; }
+blockquote { border-left: 3px solid #0969da; margin: 12px 0; padding: 4px 16px; color: #57606a; background: #f6f8fa; }
+pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 13.5px; }
+code { font-family: ui-monospace, Menlo, monospace; }
+.cite { color: #0969da; }
+ol.refs { font-size: 13px; color: #57606a; }
+a { color: #0969da; }
+del { color: #8b949e; }
+@media print { body { padding: 0; } }
+</style></head><body>${bodyHtml}</body></html>`;
+}
+// 导出 Word：样式 >1 个时先弹选择（记住上次），否则直接导
+const CSL_LABEL = {
+  "american-medical-association-brackets": "AMA 11th（[1] 方括号）",
+  "elsevier-vancouver": "Vancouver（NLM 编号制）",
+  "apa": "APA 7th（作者-年份）",
+  "china-national-standard-gb-t-7714-2015-numeric": "GB/T 7714-2015（中文国标 · 编号制）",
+};
+async function exportDocx(){
+  let styles = [];
+  try { styles = await (await fetch(ARCH + "/csllist")).json(); } catch {}
+  if (!Array.isArray(styles) || styles.length < 2) return doExportDocx();   // 单样式或旧版服务：不加一次点击
+  const last = localStorage.getItem("qwen_csl") || "";
+  const def = styles.includes(last) ? last
+    : styles.includes("american-medical-association-brackets") ? "american-medical-association-brackets" : styles[0];
+  const el = $("#csllist"); el.innerHTML = "";
+  for (const s of styles)
+    el.insertAdjacentHTML("beforeend", `<label class="attrow" style="cursor:pointer">
+      <input type="radio" name="csl" value="${esc(s)}" ${s === def ? "checked" : ""}>
+      <span class="t">${esc(CSL_LABEL[s] || s)}</span><small>${esc(s)}</small></label>`);
+  $("#cslhint").textContent = "更多样式：往 ~/Qwen38/csl/ 放 .csl 文件（citation-style-language/styles 仓库）";
+  $("#cslpanel").classList.add("open");
+}
+$("#cslclose").onclick = () => $("#cslpanel").classList.remove("open");
+$("#cslpanel").onclick = e => { if (e.target === $("#cslpanel")) $("#cslpanel").classList.remove("open"); };
+$("#cslok").onclick = () => {
+  const v = $("#csllist").querySelector("input:checked")?.value;
+  if (!v) return toast("先选一个引文样式");
+  $("#cslpanel").classList.remove("open");
+  localStorage.setItem("qwen_csl", v);
+  doExportDocx(v);
+};
+async function doExportDocx(csl){
+  const {title, md: doc} = exportMd();
+  // [@key] 原样保留 + 附 CSL-JSON 引文库 → pandoc citeproc 按 AMA 样式渲染编号引文与参考文献
+  const keys = [...new Set([...doc.matchAll(/\[@([A-Za-z0-9_-]+)\]/g)].map(m => m[1]))]
+    .filter(k => ED.lib.some(x => x.key === k));
+  const refs = keys.map(k => {
+    const it = ED.lib.find(x => x.key === k);
+    const author = (it.authors || "").split(" and ").filter(Boolean).map(n => {
+      const i = n.indexOf(", ");
+      return i > 0 ? {family: n.slice(0, i), given: n.slice(i + 2)} : {family: n, given: ""};
+    });
+    const item = {id: k, type: "article-journal", title: it.title};
+    if (author.length) item.author = author;
+    if (it.journal) item["container-title"] = it.journal;
+    if (it.year) item.issued = {"date-parts": [[+it.year || it.year]]};
+    if (it.doi) item.DOI = it.doi;
+    return item;
+  });
+  toast("📝 pandoc 转换中…");
+  try {
+    const r = await fetch(ARCH + "/export-docx", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({md: doc, refs, csl}),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const buf = await r.arrayBuffer();
+    downloadBlob(buf, title.replace(/[\\/:*?"<>|]/g, "_") + ".docx",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    toast("📝 已导出 Word 文档");
+  } catch { toast("导出失败：需 LocalLLMServer 新版且宿主机装有 pandoc"); }
+}
+function downloadBlob(data, name, type){
+  const blob = data instanceof Blob ? data : new Blob([data], {type});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+$("#expbtn").onclick = e => { e.stopPropagation(); $("#expmenu").classList.toggle("open"); };
+document.addEventListener("click", e => { if (!$("#expwrap").contains(e.target)) $("#expmenu").classList.remove("open"); });
+$("#exp-html").onclick = () => { $("#expmenu").classList.remove("open"); exportHtml(); };
+$("#exp-docx").onclick = () => { $("#expmenu").classList.remove("open"); exportDocx(); };
+
+// ---------- 附文献全文（全局文献库驱动） ----------
+function updateAttBtn(){
+  const b = $("#attbtn");
+  b.textContent = ED.attDocs.length ? `📎 已附 ${ED.attDocs.length} 篇` : `📎 文献${ED.lib.length ? ` (${ED.lib.length})` : ""}`;
+  b.classList.toggle("on", ED.attDocs.length > 0);
+  b.style.display = "";
+}
+// 附全文草稿开关：注入所有章节全文，解锁跨章节提问（复用附文献模式持久化）
+function updateDraftBtn(){
+  const b = $("#draftbtn");
+  b.textContent = ED.attachDraft ? "📄 全文已附" : "📄 全文";
+  b.classList.toggle("on", ED.attachDraft);
+}
+$("#draftbtn").onclick = () => {
+  ED.attachDraft = !ED.attachDraft;
+  try {
+    const all = JSON.parse(localStorage.getItem("editor_drafts") || "{}");
+    all[ED.convId] = ED.attachDraft;
+    localStorage.setItem("editor_drafts", JSON.stringify(all));
+  } catch {}
+  updateDraftBtn();
+  toast(ED.attachDraft
+    ? "📄 已附全文草稿——可问「讨论是否回应了结果的所有发现」等跨章节问题"
+    : "已取消附全文（AI 只看当前章节）");
+};
+function renderAttPanel(){
+  const el = $("#attlist"); el.innerHTML = "";
+  if (!ED.lib.length && !ED.projDocs.length){
+    el.innerHTML = "<div style='color:var(--dim);font-size:13px;padding:16px;text-align:center'>文献库为空——先在 dashboard 点「📚 建文献库」，或在对话里上传 PDF</div>";
+    $("#attsum").textContent = "";
+    return;
+  }
+  const picked = new Set(ED.attDocs);
+  const addRow = (it, fromProj) => {
+    const d = document.createElement("div");
+    d.className = "attrow";
+    d.innerHTML = `<input type="checkbox" ${picked.has(it) ? "checked" : ""}>
+      <span class="t" title="${esc(it.title)}" data-key="${esc(it.key)}">${fromProj ? "📄 " : it.source === ED.convId ? "★ " : ""}${esc(it.title)}</span>
+      <small>${(it.text || "").length >= 25000 ? "25K" : ((it.text || "").length / 1000).toFixed(0) + "K"}字${fromProj ? " · 本项目" : ""}</small>
+      ${fromProj ? "" : `<button class="c-cite" title="在光标处插入 [@${it.key}] 引文">引用</button>`}`;
+    if (!fromProj)
+      d.querySelector(".c-cite").onclick = e => {
+        e.stopPropagation();
+        $("#attpanel").classList.remove("open");
+        insertInline(`[@${it.key}]`);
+      };
+    d.querySelector("input").onchange = e => {
+      if (e.target.checked) picked.add(it); else picked.delete(it);
+      syncAttSum(picked);
+    };
+    el.appendChild(d);
+  };
+  if (ED.projDocs.length){
+    el.insertAdjacentHTML("beforeend", `<div class="rhead" style="padding:6px 8px 2px">本项目文献</div>`);
+    ED.projDocs.forEach(it => addRow(it, true));
+  }
+  if (ED.lib.length){
+    el.insertAdjacentHTML("beforeend", `<div class="rhead" style="padding:6px 8px 2px">全局文献库</div>`);
+    ED.lib.forEach(it => addRow(it, false));
+  }
+  syncAttSum(picked);
+}
+function syncAttSum(picked){
+  $("#attsum").textContent = picked.size
+    ? `已选 ${picked.size} 篇 ≈ ${[...picked].reduce((a, x) => a + Math.min((x.text || "").length, 25000), 0).toLocaleString()} 字` : "";
+}
+$("#attbtn").onclick = () => { renderAttPanel(); $("#attpanel").classList.add("open"); };
+$("#attclose").onclick = () => $("#attpanel").classList.remove("open");
+$("#attpanel").onclick = e => { if (e.target === $("#attpanel")) $("#attpanel").classList.remove("open"); };
+$("#citeclose").onclick = () => $("#citepanel").classList.remove("open");
+$("#citepanel").onclick = e => { if (e.target === $("#citepanel")) $("#citepanel").classList.remove("open"); };
+$("#attok").onclick = () => {
+  // 按引文键反查（库键 rxxx / 项目文献键 pN，两个池子里 key 唯一且稳定）
+  const pool = [...ED.lib, ...ED.projDocs];
+  const checked = [...$("#attlist").querySelectorAll(".attrow")].filter(r => r.querySelector("input").checked)
+    .map(r => pool.find(x => x.key === r.querySelector(".t").dataset.key));
+  ED.attDocs = checked;
+  // 持久化勾选（按项目存引文键，键跨扫描稳定）
+  try {
+    const all = JSON.parse(localStorage.getItem("editor_atts") || "{}");
+    all[ED.convId] = checked.map(x => x.key);
+    localStorage.setItem("editor_atts", JSON.stringify(all));
+  } catch {}
+  updateAttBtn();
+  renderResources();
+  $("#attpanel").classList.remove("open");
+  if (checked.length){
+    const chars = checked.reduce((a, x) => a + Math.min((x.text || "").length, 25000), 0);
+    toast(`📎 已附 ${checked.length} 篇（≈${chars.toLocaleString()} 字）。本地首次提问需预填充约 ${Math.ceil(chars / 3000)} 分钟，之后追问走缓存秒回`);
+  }
+};
+// 左栏文献行 📎 直附/取消（与弹层同一持久化，双向状态同步）
+function toggleProjDoc(d, btn){
+  if (!d.text && !ED.attDocs.includes(d)) return toast("⚠ 该文献无全文（上传时提取失败或被降级剥离）");
+  const on = !ED.attDocs.includes(d);
+  ED.attDocs = on ? [...ED.attDocs, d] : ED.attDocs.filter(x => x !== d);
+  try {
+    const all = JSON.parse(localStorage.getItem("editor_atts") || "{}");
+    all[ED.convId] = ED.attDocs.map(x => x.key);
+    localStorage.setItem("editor_atts", JSON.stringify(all));
+  } catch {}
+  btn.classList.toggle("att-on", on);
+  updateAttBtn();
+  toast(on ? `📎 已附《${d.title.slice(0, 20)}…》全文` : `已取消附《${d.title.slice(0, 20)}…》`);
+}
+// 云端知情同意切换：本地离线时按钮才出现；点击后仍需确认"数据出本机"
+$("#cloudbtn").onclick = () => {
+  if (!S.dskey){ $("#settings").classList.add("open"); toast("先在设置里填写 DeepSeek API Key"); return; }
+  if (confirm("本地服务离线。切换到 DeepSeek 云端后，当前章节全文与对话内容将发送到 DeepSeek 服务器（数据出本机）。继续？")){
+    S.provider = "deepseek"; saveSettings(); location.reload();
+  }
+};
+
+// ---------- 预览切换 ----------
+let previewOn = false;
+function togglePreview(on){
+  previewOn = on ?? !previewOn;
+  $("#secmd").hidden = previewOn;
+  $("#secpreview").hidden = !previewOn;
+  if (previewOn) $("#secpreview").innerHTML = mdCite($("#secmd").value) || "<p style='color:var(--dim)'>（空章节）</p>";
+  $("#previewbtn").textContent = previewOn ? "✏️ 编辑" : "👁 预览";
+}
+$("#previewbtn").onclick = () => togglePreview();
+$("#savebtn").onclick = async () => {
+  flushSave();
+  toast(await snapshot("manual") ? "已保存并快照" : "内容无变化，未新建快照");
+};
+
+// ---------- 格式工具栏 ----------
+function afterEdit(){
+  saveSection(); updateOutline(); updateStatusBar();
+  if (previewOn) $("#secpreview").innerHTML = mdCite($("#secmd").value);
+}
+// 选区两侧包裹语法（无选区时插占位文字并选中，方便直接打字替换）
+function surround(before, after, ph){
+  const ta = $("#secmd"); ta.focus();
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  const sel = ta.value.slice(s, e) || ph;
+  const ins = before + sel + after;
+  if (!(document.execCommand && document.execCommand("insertText", false, ins)))
+    ta.setRangeText(ins, s, e, "end");
+  ta.setSelectionRange(s + before.length, s + before.length + sel.length);
+  afterEdit();
+}
+// 选区涉及的所有行做前缀变换（再点一次同格式 = 取消）
+function prefixLines(make){
+  const ta = $("#secmd"); ta.focus();
+  const v = ta.value;
+  const ls = v.lastIndexOf("\n", ta.selectionStart - 1) + 1;
+  let le = v.indexOf("\n", ta.selectionEnd); if (le === -1) le = v.length;
+  const nb = v.slice(ls, le).split("\n").map(make).join("\n");
+  // execCommand 替换的是当前选区：先把选区设到目标行块，再插入才能整体替换
+  ta.setSelectionRange(ls, le);
+  if (!(document.execCommand && document.execCommand("insertText", false, nb)))
+    ta.setRangeText(nb, ls, le, "end");
+  ta.setSelectionRange(ls, ls + nb.length);
+  afterEdit();
+}
+const stripHead = l => l.replace(/^#{1,6} /, "");
+const FMT = {
+  bold:   () => surround("**", "**", "加粗文字"),
+  italic: () => surround("*", "*", "斜体文字"),
+  strike: () => surround("~~", "~~", "删除文字"),
+  code:   () => surround("`", "`", "代码"),
+  link:   () => surround("[", "](https://)", "链接文字"),
+  cite:   () => {
+    if (!ED.lib.length){ toast("文献库为空——先在 dashboard 点「📚 建文献库」"); return; }
+    const el = $("#citelist"); el.innerHTML = "";
+    for (const it of ED.lib){
+      const d = document.createElement("div");
+      d.className = "attrow"; d.style.cursor = "pointer";
+      d.innerHTML = `<span class="t" title="${esc(it.title)}">${esc(it.title)}</span>
+        <small>${it.year ? esc(it.year) + " · " : ""}[@${esc(it.key)}]</small>`;
+      d.onclick = () => { $("#citepanel").classList.remove("open"); insertInline(`[@${it.key}]`); };
+      el.appendChild(d);
+    }
+    $("#citepanel").classList.add("open");
+  },
+  quote:  () => prefixLines(l => l.startsWith("> ") ? l.slice(2) : "> " + stripHead(l)),
+  table:  () => {
+    const ta = $("#secmd"); ta.focus();
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const ins = "\n| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n|  |  |  |\n";
+    ta.setSelectionRange(s, e);
+    if (!(document.execCommand && document.execCommand("insertText", false, ins)))
+      ta.setRangeText(ins, s, e, "end");
+    afterEdit();
+  },
+};
+document.querySelectorAll("#mdbar [data-fmt]").forEach(btn => btn.onclick = () => FMT[btn.dataset.fmt]());
+$("#t-head").onchange = e => {
+  const n = +e.target.value; e.target.selectedIndex = 0;
+  prefixLines(l => {
+    const bare = stripHead(l);
+    return l.startsWith("#".repeat(n) + " ") && !l.startsWith("#".repeat(n + 1) + " ") ? bare : "#".repeat(n) + " " + bare;
+  });
+};
+$("#t-list").onchange = e => {
+  const kind = e.target.value; e.target.selectedIndex = 0;
+  const marker = { ul: "- ", ol: "1. ", task: "- [ ] " }[kind];
+  prefixLines(l => {
+    const bare = l.replace(/^(?:[-*+] \[[ xX]\]|[-*+]|\d+\.) /, "");
+    const same = kind === "task" ? /^[-*+] \[[ xX]\] /.test(l) : l.startsWith(marker);
+    return same ? bare : marker + bare;   // 已是同款列表则取消
+  });
+};
+
+// ---------- AI 对话 ----------
+let busy = false, ctrl = null;
+function scrollBottom(force){
+  const log = $("#chatlog");
+  if (force || log.scrollHeight - log.scrollTop - log.clientHeight < 120)
+    log.scrollTop = log.scrollHeight;
+}
+function sysCard(text){
+  $("#msgs").insertAdjacentHTML("beforeend", `<div class="syscard">${esc(text)}</div>`);
+  scrollBottom(true);
+}
+function appendMsg(m, idx){
+  const el = document.createElement("div");
+  el.className = "msg " + (m.role === "user" ? "user" : "bot");
+  el.innerHTML = `<div class="avatar">${m.role === "user" ? "我" : "AI"}</div>
+    <div class="bubble">
+      ${m.think ? `<details class="think-block"><summary>思考过程</summary><div class="tcontent">${esc(m.think)}</div></details>` : ""}
+      <div class="content">${m.role === "user" ? esc(m.text) : mdChat(m.text || "")}</div>
+      ${m.role === "assistant" ? `<div class="acts"></div>` : ""}
+    </div>`;
+  if (m.role === "assistant"){
+    const acts = el.querySelector(".acts");
+    acts.classList.add("actson");
+    const ins = document.createElement("button");
+    ins.className = "ins";
+    ins.textContent = m.inserted ? "✓ 已插入" : "⤵ 插入到光标处";
+    if (!m.inserted) ins.onclick = () => insertAnswer(m, ins);
+    acts.appendChild(ins);
+    const cp = document.createElement("button");
+    cp.textContent = "复制";
+    cp.onclick = () => copyText(m.text, cp);
+    acts.appendChild(cp);
+  }
+  $("#msgs").appendChild(el);
+  return el;
+}
+function renderChat(){
+  $("#msgs").innerHTML = "";
+  for (const m of ED.chat) appendMsg(m);
+  if (!ED.chat.length)
+    $("#msgs").innerHTML = `<div class="syscard">问当前章节的问题——润色、扩写、查证、找文献支撑……
+      AI 的回答可以一键插入正文（插入前自动快照，⌘Z 可撤销）。</div>`;
+  scrollBottom(true);
+}
+function insertAnswer(m, btn){
+  const text = m.text?.trim();
+  if (!text) return toast("这条回复没有可插入的正文");
+  insertText(text).then(() => {
+    m.inserted = true;
+    btn.textContent = "✓ 已插入";
+    btn.onclick = null;
+    persistEditor();
+  });
+}
+async function insertText(text){
+  if (previewOn) togglePreview(false);
+  await snapshot("pre-insert");
+  const ta = $("#secmd");
+  const st = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? st;
+  ta.focus();
+  ta.setSelectionRange(st, en);
+  // execCommand 才能进原生撤销栈（⌘Z 一步撤销整段插入）
+  if (!(document.execCommand && document.execCommand("insertText", false, "\n" + text + "\n")))
+    ta.setRangeText("\n" + text + "\n", st, en, "end");
+  saveSection(); updateOutline(); updateStatusBar();
+  toast(`已插入「${ED.sections[ED.cur]?.title || ""}」光标处（⌘Z 可撤销）`);
+}
+// 内联插入（引文键等短标记）：不包换行、不快照——execCommand 进原生撤销栈，⌘Z 可回退
+function insertInline(text){
+  if (previewOn) togglePreview(false);
+  const t = $("#secmd");
+  t.focus();
+  const s = t.selectionStart, e = t.selectionEnd;
+  if (!(document.execCommand && document.execCommand("insertText", false, text)))
+    t.setRangeText(text, s, e, "end");
+  saveSection(); updateOutline(); updateStatusBar();
+}
+function buildEditorHistory(){
+  const sys = [BOUNDARY_RULES];
+  if (memory.length)
+    sys.push("[用户长期记忆——跨对话记住的用户信息，自然使用即可，不必逐条复述]\n"
+      + memory.map(m => "- " + m.text).join("\n"));
+  sys.push(EDITOR_PERSONA);
+  sys.push("[当前文档大纲]\n" + ED.sections.map((s, i) =>
+    `${i + 1}. ${s.title}（${wc(s.md).toLocaleString()} 字）${i === ED.cur ? " ← 当前章节" : ""}`).join("\n"));
+  // 引文键清单：AI 写正文时用 [@key] 标注引用，前端渲染为编号引文
+  if (ED.lib.length)
+    sys.push("[可用引文键——在正文引用处写 [@键]（如 [@r1abc])，渲染时自动编号并列参考文献]\n"
+      + ED.lib.map(x => `- ${x.key}: ${x.title}${x.year ? " (" + x.year + ")" : ""}`).join("\n"));
+  // 指代消歧：附文献后"这篇文章"默认指文献而非草稿
+  if (ED.attDocs.length)
+    sys.push(`[指代消歧] 当前附有 ${ED.attDocs.length} 篇文献全文：用户说「这篇文章/该文献/论文」默认指所附文献；`
+      + `说「我的文章/草稿/本章节」才指正在写作的章节。两处都有可能且拿不准时，先说明你理解的是哪一个。`);
+  if (ED.attachDraft)
+    sys.push("[全文模式] 已附全文草稿，可直接回答跨章节问题（逻辑一致性、章节呼应等），不要再让用户切换章节。");
+  const h = [{role: "system", content: sys.join("\n\n")}];
+  // 附文献全文：每篇截 25K 字符（方法与结果靠前，尾部参考价值最低）
+  for (const d of ED.attDocs)
+    h.push({role: "user", content: `[文献《${d.title}》全文开始]\n${(d.text || "").slice(0, 25000)}\n[全文结束]`});
+  const cur = ED.sections[ED.cur];
+  if (ED.attachDraft){
+    const doc = ED.sections.map(s => `# ${s.title}${s === cur ? "（← 当前章节）" : ""}\n\n${s.md || "（空章节）"}`).join("\n\n");
+    h.push({role: "user", content: `[全文草稿开始（按章节排列）]\n${doc}\n[草稿结束]\n\n以上是我正在写的文档全文，当前正在编辑《${cur.title}》章节，后续讨论围绕它展开。`});
+    h.push({role: "assistant", content: "好的，我已了解全文草稿与当前章节，请告诉我需要什么帮助。"});
+  } else {
+    h.push({role: "user", content: `[当前章节《${cur.title}》全文开始]\n${cur.md || "（空章节）"}\n[全文结束]\n\n以上是我正在写作的章节，后续讨论围绕它展开。`});
+    h.push({role: "assistant", content: "好的，我已了解当前章节全文，请告诉我需要什么帮助。"});
+  }
+  for (const m of ED.chat.slice(-20)) h.push({role: m.role, content: m.text});
+  return h;
+}
+async function send(text){
+  text = (text ?? input.value).trim();
+  if (!text || busy || !ED.sections.length) return;
+  flushSave();
+  const um = {role: "user", text, ts: Date.now()};
+  ED.chat.push(um);
+  appendMsg(um);
+  input.value = ""; input.style.height = "auto";
+  scrollBottom(true);
+  await generate();
+}
+async function generate(noThink, noRetry, forceThink){
+  busy = true;
+  $("#send").style.display = "none"; $("#stopbtn").style.display = "inline-block";
+  const lastUser = [...ED.chat].reverse().find(m => m.role === "user");
+  const curMode = S.mode === "auto" ? autoMode(lastUser?.text || "") : S.mode;
+  const cfg = MODES[curMode];
+  const useThink = !noThink && (forceThink || cfg.thinking);
+  if (S.mode === "auto") toast("⚡ 已自动选择：" + MODE_LABEL[curMode]);
+
+  const bb = document.createElement("div");
+  bb.className = "msg bot";
+  bb.innerHTML = `<div class="avatar">AI</div><div class="bubble">
+    <details class="think-block" hidden><summary>思考过程</summary><div class="tcontent"></div></details>
+    <div class="content typing"></div></div>`;
+  $("#msgs").appendChild(bb);
+  const contentEl = bb.querySelector(".content"), thinkEl = bb.querySelector(".tcontent"),
+        thinkBox = bb.querySelector(".think-block");
+  const am = {role: "assistant", text: "", ts: Date.now()};
+  let lastPaint = 0, answer = "", thinking = "", inThink = false, usage = null;
+  const t0 = performance.now();
+  let ttft = null, genTokens = 0;
+  ctrl = new AbortController();
+
+  const body = {
+    messages: buildEditorHistory(),
+    stream: true,
+    stream_options: {include_usage: true},
+    chat_template_kwargs: {enable_thinking: useThink},
+  };
+  if (useThink) body.reasoning_effort = S.effort;
+  if (cfg.temp !== null) body.temperature = cfg.temp;
+
+  try {
+    const res = await apiPost(body, ctrl.signal);
+    if (!res.ok){
+      const t = await res.text().catch(() => "");
+      let detail = "";
+      try { const j = JSON.parse(t); detail = j.error?.message || (typeof j.error === "string" ? j.error : ""); } catch {}
+      const map = {
+        401: "API Key 无效或未填（⚙️ 设置里检查）",
+        402: "账户余额不足，请到 API 平台充值",
+        403: "Key 无权限或已被禁用",
+        404: "接口不存在——本地服务可能未完全启动，等状态点变绿再试",
+        429: "请求过于频繁被限流，稍等再试",
+        500: "后端内部错误（模型加载失败或内存不足？看 LocalLLMServer 日志）",
+        503: "服务正在加载或过载，稍候再试",
+      };
+      throw new Error((map[res.status] || "HTTP " + res.status) + (detail ? "：" + detail : ""));
+    }
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    while (true){
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream:true});
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const line of lines){
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6);
+        if (data === "[DONE]") continue;
+        let j; try { j = JSON.parse(data); } catch { continue; }
+        if (j.error) throw new Error(typeof j.error === "string" ? j.error : (j.error.message || JSON.stringify(j.error)));
+        if (j.usage) usage = j.usage;
+        const delta = j.choices?.[0]?.delta; if (!delta) continue;
+        // 思考通道双字段：llama.cpp 是 reasoning_content，Ollama 流式是 reasoning
+        const rtok = delta.reasoning_content ?? delta.reasoning;
+        if (rtok){
+          if (ttft === null) ttft = (performance.now()-t0)/1000;
+          genTokens++;
+          thinking += rtok;
+          thinkBox.hidden = false; thinkBox.open = true;
+          if (!useThink) thinkBox.querySelector("summary").textContent = "思考过程（模型自发开启）";
+          thinkEl.textContent = thinking;
+          scrollBottom();
+        }
+        let tok = delta.content;
+        if (!tok) continue;
+        if (ttft === null) ttft = (performance.now()-t0)/1000;
+        genTokens++;
+        // <think> 标签与正文可能同 delta 到达：先 split 再逐段分发
+        for (const s of tok.split(/(<\/?think>)/i)){
+          if (/^<think>$/i.test(s)){ inThink = true; thinkBox.hidden = false; thinkBox.open = true;
+            if (!useThink) thinkBox.querySelector("summary").textContent = "思考过程（模型自发开启）";
+            continue; }
+          if (/^<\/think>$/i.test(s)){ inThink = false; continue; }
+          if (inThink){ thinking += s; thinkEl.textContent = thinking; }
+          else if (s){ answer += s;
+            if (performance.now() - lastPaint > 150){ lastPaint = performance.now(); contentEl.innerHTML = mdChat(answer); } }
+        }
+        scrollBottom();
+      }
+    }
+    am.text = answer || thinking || "（空响应）";
+    // 答案困在思考通道时思考已充当正文，不入 think 字段（防重渲双显）
+    am.think = answer ? (thinking || undefined) : undefined;
+    if (!answer && !thinking && !noRetry){
+      // am 尚未 push 进 ED.chat，无需（也不能）pop（pop 掉的是 user 消息）
+      bb.remove();
+      sysCard(useThink ? "⚠ 模型未返回内容，已关闭思考重试…" : "⚠ 模型未返回内容，已开启思考重试（较慢，请耐心）…");
+      return generate(useThink, true, !useThink);
+    }
+    contentEl.innerHTML = mdChat(answer || thinking) ||
+      `<p style="color:#d29922">⚠ 模型未返回内容，可重试</p>`;
+    thinkBox.open = false;
+    contentEl.classList.remove("typing");
+    scrollBottom(true);
+    if (usage){ ctxUsed = (usage.prompt_tokens||0) + (usage.completion_tokens||0); updateCtxBar(); }
+    ED.chat.push(am);
+    const acts = document.createElement("div");
+    acts.className = "acts actson";
+    const ins = document.createElement("button");
+    ins.className = "ins"; ins.textContent = "⤵ 插入到光标处";
+    ins.onclick = () => insertAnswer(am, ins);
+    const cp = document.createElement("button");
+    cp.textContent = "复制";
+    cp.onclick = () => copyText(am.text, cp);
+    acts.append(ins, cp);
+    bb.querySelector(".bubble").appendChild(acts);
+  } catch (e) {
+    contentEl.classList.remove("typing");
+    if (e.name === "AbortError"){
+      am.text = answer || thinking || "（已中断）";
+      am.think = thinking || undefined;
+      if (answer || thinking){
+        ED.chat.push(am);
+        contentEl.innerHTML = mdChat(answer || thinking);
+        contentEl.insertAdjacentHTML("beforeend", `<p style="color:#d29922">⏹ 已手动停止</p>`);
+      } else bb.remove();
+    } else {
+      bb.remove();
+      let msg = e.message || String(e);
+      if (/fetch|network|load failed|timeout/i.test(msg))
+        msg = usingDeep() ? "无法连接 DeepSeek API——检查网络或代理设置"
+                          : "无法连接本地服务（" + BASE + "）——ollama serve 是否在运行？";
+      sysCard("请求失败：" + msg);
+    }
+  }
+  busy = false; ctrl = null;
+  $("#send").style.display = "inline-block"; $("#stopbtn").style.display = "none";
+  scrollBottom();
+  persistEditor();
+  extractMemory();
+}
+
+// 回复完成后后台提取记忆（与 chat.html 共享记忆库）
+async function extractMemory(){
+  const lastUser = [...ED.chat].reverse().find(m => m.role === "user");
+  const lastBot = ED.chat[ED.chat.length - 1];
+  if (!lastUser || lastBot?.role !== "assistant" || !lastUser.text) return;
+  memCtrl?.abort(); memCtrl = new AbortController();
+  const sys = "从下面的对话中提取值得跨对话长期记住的用户信息（称呼、职业、偏好、背景、长期目标等）。\n" +
+    "已有记忆（不要重复）：\n" + (memory.map(m => "- " + m.text).join("\n") || "（无）") +
+    "\n\n只输出新增记忆的 JSON 字符串数组（中文、每条一句话），没有新信息则输出 []。不要输出其他内容。";
+  try {
+    const r = await apiPost({
+        messages: [
+          {role: "system", content: sys},
+          {role: "user", content: "用户: " + lastUser.text + "\n助手: " + (lastBot.text || "").slice(0, 2000)}
+        ],
+        max_tokens: 300, temperature: 0,
+        chat_template_kwargs: {enable_thinking: false},
+      }, memCtrl.signal);
+    const j = await r.json();
+    let txt = (j.choices?.[0]?.message?.content || "[]").trim();
+    const mm = txt.match(/\[[\s\S]*\]/);
+    if (mm) txt = mm[0];
+    const items = JSON.parse(txt);
+    let added = 0;
+    for (const t of items){
+      if (typeof t === "string" && t.trim() && !memory.some(x => x.text === t.trim())){
+        memory.push({text: t.trim(), ts: Date.now()});
+        added++;
+      }
+    }
+    if (added){ saveMemory(); toast("🧠 已记住 " + added + " 条新记忆"); }
+  } catch {}
+}
+
+// ---------- 事件绑定 ----------
+$("#send").onclick = () => send();
+$("#stopbtn").onclick = () => ctrl?.abort();
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }
+});
+input.addEventListener("input", () => {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 160) + "px";
+});
+const ta = $("#secmd");
+ta.addEventListener("input", () => {
+  const sec = ED.sections[ED.cur]; if (!sec) return;
+  sec.md = ta.value;
+  $("#wordcount").textContent = wc(sec.md).toLocaleString() + " 字";
+  $("#savestate").textContent = "输入中…";
+  saveSection();
+  journalSoon();
+  clearTimeout(updateOutline._t);
+  updateOutline._t = setTimeout(updateOutline, 600);
+});
+// 选中文字浮动工具条：mouseup 在鼠标位置（≈选区末端）弹出；键盘选择按起始行估算
+// 键盘选择时按行级估算光标位置
+const selbar = $("#selbar");
+function syncSelbar(pos){
+  const sel = ta.selectionStart === ta.selectionEnd ? "" : ta.value.slice(ta.selectionStart, ta.selectionEnd);
+  if (!sel){ selbar.hidden = true; return; }
+  $("#selinfo").textContent = wc(sel) + " 字";
+  selbar.hidden = false;
+  const w = selbar.offsetWidth, h = selbar.offsetHeight;
+  let x, y;
+  if (pos){ x = pos.x; y = pos.y; }
+  else {
+    const r = ta.getBoundingClientRect();
+    const line = ta.value.slice(0, ta.selectionStart).split("\n").length - 1;
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 24;   // 老引擎返回 "normal"→NaN，兜底行高
+    y = r.top + line * lh - ta.scrollTop;
+    x = r.left + 60;
+  }
+  selbar.style.left = Math.max(8, Math.min(x - w / 2, innerWidth - w - 8)) + "px";
+  selbar.style.top = Math.max(8, y - h - 10) + "px";
+}
+ta.addEventListener("mouseup", e => syncSelbar({x: e.clientX, y: e.clientY}));
+ta.addEventListener("keyup", () => { if (!selbar.hidden) syncSelbar(); });   // 可见时跟随 Shift+方向键调整
+ta.addEventListener("scroll", () => { selbar.hidden = true; });             // 滚动后位置失真，收起
+selbar.addEventListener("click", e => {
+  const op = e.target.dataset.op; if (!op) return;
+  const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd).trim();
+  if (!sel){ selbar.hidden = true; return; }
+  selbar.hidden = true;   // 选区保留——AI 回复「插入到光标处」时替换选区
+  send(`请${op}以下选中的文字，直接输出可以整段替换原文的成段中文（Markdown），不要引导语、不要解释、不要重复未改动的部分：\n\n${sel}`);
+});
+// 点工具条与编辑区以外任意处收起（mouseup→click 顺序：编辑区自己的显隐交给 mouseup 处理）
+document.addEventListener("click", e => { if (!e.target.closest("#selbar") && e.target !== ta) selbar.hidden = true; });
+document.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s"){
+    e.preventDefault();
+    flushSave(); snapshot("manual").then(ok => toast(ok ? "已保存并快照" : "内容无变化，未新建快照"));
+  }
+  // ⌘B/⌘I 仅在编辑区生效
+  if ((e.metaKey || e.ctrlKey) && e.target === $("#secmd")){
+    if (e.key.toLowerCase() === "b"){ e.preventDefault(); FMT.bold(); }
+    if (e.key.toLowerCase() === "i"){ e.preventDefault(); FMT.italic(); }
+  }
+});
+// 代码块复制 + 建议追问链接（事件委托）
+document.addEventListener("click", e => {
+  const b = e.target.closest(".ccopy");
+  if (b) copyText(b.parentElement.querySelector("code")?.innerText ?? "", b);
+  const a = e.target.closest(".askq");
+  if (a){ e.preventDefault(); send(a.textContent.trim()); }
+});
+// 栏折叠与宽度（状态存 localStorage）
+const layout = Object.assign({left: true, right: true, leftW: 250, rightW: 400}, JSON.parse(localStorage.getItem("editor_layout") || "{}"));
+function applyLayout(persist = true){
+  $("#left").classList.toggle("folded", !layout.left);
+  $("#right").classList.toggle("folded", !layout.right);
+  $("#vs1").style.display = layout.left ? "" : "none";
+  $("#vs2").style.display = layout.right ? "" : "none";
+  $("#app").style.gridTemplateColumns =
+    `${layout.left ? layout.leftW : 0}px ${layout.left ? 5 : 0}px minmax(0,1fr) ${layout.right ? 5 : 0}px ${layout.right ? layout.rightW : 0}px`;
+  $("#expandleft").style.display = layout.left ? "none" : "block";
+  $("#expandright").style.display = layout.right ? "none" : "block";
+  if (persist) localStorage.setItem("editor_layout", JSON.stringify(layout));
+}
+$("#foldleft").onclick = () => { layout.left = !layout.left; applyLayout(); };
+$("#foldright").onclick = () => { layout.right = !layout.right; applyLayout(); };
+$("#expandleft").onclick = () => { layout.left = true; applyLayout(); };
+$("#expandright").onclick = () => { layout.right = true; applyLayout(); };
+// 分隔条拖拽调宽（pointer capture；拖动中只改样式不写 localStorage，松手才持久化）
+function bindSplit(el, side){
+  const def = side === "left" ? 250 : 400;
+  el.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    el.classList.add("dragging");
+    const x0 = e.clientX, w0 = side === "left" ? layout.leftW : layout.rightW;
+    const move = ev => {
+      const d = side === "left" ? ev.clientX - x0 : x0 - ev.clientX;
+      const w = Math.min(480, Math.max(150, Math.round(w0 + d)));
+      if (side === "left") layout.leftW = w; else layout.rightW = w;
+      applyLayout(false);
+    };
+    const up = () => {
+      el.classList.remove("dragging");
+      applyLayout();
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);   // 系统手势打断拖拽时也要解绑，防监听叠加
+  });
+  el.addEventListener("dblclick", () => {
+    if (side === "left") layout.leftW = def; else layout.rightW = def;
+    applyLayout();
+  });
+}
+bindSplit($("#vs1"), "left");
+bindSplit($("#vs2"), "right");
+// 顶栏
+$("#homebtn").onclick = () => location.href = "dashboard.html";
+$("#chatbtn").onclick = () => location.href = "chat.html?conv=" + encodeURIComponent(ED.convId || "");
+// 项目改名：存档名/内部 title/章节文件夹三处同步（/rename 端点），convDir 跟随更新
+async function renameProject(){
+  const raw = ED.projName.replace(/^(✍️\s*)+/, "");
+  const t = prompt("项目改名：", raw);
+  if (!t?.trim() || t.trim() === raw) return;
+  flushSave();
+  // 存储归一化：写作项目标题恒为一个 ✍️ 前缀（剥掉用户粘贴/历史多缀再补一个）
+  const title = "✍️ " + t.trim().replace(/^(✍️\s*)+/, "");
+  const safe = title.replace(/[\\/:*?"<>|\s]/g, "_").slice(0, 20);
+  const newFile = `${ED.convId}-${safe}.json`;
+  if (newFile === ED.projMeta.file) return;
+  try {
+    const r = await fetch(ARCH + "/rename", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({from: ED.projMeta.file, to: newFile, title}),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    // 同步 chat.html 本地会话标题，防其 persist 用旧标题重建旧存档
+    try {
+      const convs = JSON.parse(localStorage.getItem("qwen_convs") || "[]");
+      const c = convs.find(x => x.id === ED.convId);
+      if (c){ c.title = title; localStorage.setItem("qwen_convs", JSON.stringify(convs)); }
+    } catch {}
+    ED.projName = title; ED.projMeta.file = newFile;
+    ED.convDir = newFile.replace(/\.json$/, "");
+    $("#projname").textContent = title;
+    document.title = t.trim() + " · 写作";
+    toast("已改名（存档与写作数据同步迁移）");
+  } catch { toast("改名失败（存档服务未连接或版本过旧，需重启新版 LocalLLMServer）"); }
+}
+$("#projname").onclick = renameProject;
+// 模式选择（与 chat.html 共享设置）
+$("#mode").value = S.mode;
+$("#mode").onchange = e => { S.mode = e.target.value; saveSettings(); };
+// 设置面板
+$("#setbtn").onclick = e => { e.stopPropagation(); $("#settings").classList.toggle("open"); };
+document.addEventListener("click", e => {
+  if (!$("#settings").contains(e.target) && e.target !== $("#setbtn"))
+    $("#settings").classList.remove("open");
+});
+$("#set-provider").value = S.provider;
+$("#set-base").value = S.localbase;
+$("#set-model").value = S.localmodel;
+$("#set-key").value = S.dskey;
+$("#setsave").onclick = () => {
+  S.provider = $("#set-provider").value;
+  S.localbase = $("#set-base").value.trim();
+  S.localmodel = $("#set-model").value.trim();
+  S.dskey = $("#set-key").value.trim();
+  saveSettings();
+  location.reload();
+};
+// 关页/刷新前尽力落盘（localStorage 写同步可靠，journal 兜底）
+window.addEventListener("beforeunload", () => { journalWrite(); flushSave(); persistEditor(); });
+
+// ---------- 启动 ----------
+applyLayout();
+const convParam = new URLSearchParams(location.search).get("conv");
+if (convParam){
+  ED.convId = convParam;
+  loadProject();
+} else {
+  showPicker();
+}
+</script>
+</body>
+</html>

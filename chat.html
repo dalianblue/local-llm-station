@@ -1,0 +1,2985 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="pagetitle">Qwen3.8-27B · 本地对话</title>
+<!-- KaTeX 本地公式渲染（~/Qwen38/katex/，离线零 CDN）；缺失时 md() 降级为原样文本 -->
+<link rel="stylesheet" href="katex/katex.min.css">
+<script src="katex/katex.min.js"></script>
+<!-- html2canvas：海报/长图导出走"离屏 DOM 渲染 → 截图"，md 全量样式（表格/加粗/KaTeX）直接生效 -->
+<script src="html2canvas.min.js"></script>
+<!-- pptxgenjs：文献一键 PPT（背景/方法/结果/讨论 + 图表位图），本地单文件零 CDN -->
+<script src="pptxgen.bundle.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #2d333b;
+    --text: #e6edf3; --dim: #8b949e; --accent: #4f8cf7;
+    --user-bubble: #1c2a4a; --think: #6e7681;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    height: 100vh; display: flex; flex-direction: column;
+  }
+
+  /* ---------- 侧边栏 ---------- */
+  #sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; width: 260px; z-index: 50;
+    background: var(--panel); border-right: 1px solid var(--border);
+    transform: translateX(-100%); transition: transform .2s; display: flex; flex-direction: column;
+  }
+  #sidebar.open { transform: translateX(0); }
+  #sidebar .head { padding: 14px 14px 10px; }
+  #newchat {
+    width: 100%; background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 8px; font-size: 14px; cursor: pointer; font-weight: 500;
+  }
+  #convlist { flex: 1; overflow-y: auto; padding: 8px; }
+  .conv {
+    padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex;
+    align-items: center; gap: 6px; margin-bottom: 2px; font-size: 13.5px;
+  }
+  .conv:hover { background: #1f2630; }
+  .conv.active { background: #22304a; }
+  .conv .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv .d { font-size: 11px; color: var(--dim); }
+  .conv .del { color: var(--dim); border: none; background: none; cursor: pointer; font-size: 12px; opacity: 0; }
+  .conv:hover .del { opacity: 1; } .conv .del:hover { color: #f85149; }
+  #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 40; display: none; }
+  #overlay.show { display: block; }
+
+  header {
+    padding: 10px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; background: var(--panel);
+    position: relative; z-index: 30;
+  }
+  .hbtn { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 17px; padding: 2px 6px; }
+  .hbtn:hover { color: var(--text); }
+  header h1 { font-size: 15px; font-weight: 600; }
+  header .status { font-size: 12px; color: var(--dim); font-family: var(--mono); }
+  header .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+  .on { background: #3fb950; } .off { background: #f85149; }
+  .spacer { margin-left: auto; }
+
+  /* ---------- 设置面板 ---------- */
+  #settings {
+    position: absolute; right: 12px; top: 46px; width: 280px; z-index: 60;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; display: none; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  #settings.open { display: block; }
+  #settings .row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; font-size: 14px; }
+  #settings .row small { display: block; color: var(--dim); font-size: 11.5px; margin-top: 2px; }
+  #settings select {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 8px; font-size: 13px;
+  }
+  #settings hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+
+  /* ---------- 记忆面板 ---------- */
+  #mempanel {
+    position: absolute; right: 12px; top: 46px; width: 340px; z-index: 60;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; display: none; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    max-height: 62vh; overflow-y: auto;
+  }
+  #mempanel.open { display: block; }
+  #memhead { display: flex; align-items: center; gap: 8px; font-size: 13.5px; padding-bottom: 8px;
+             border-bottom: 1px solid var(--border); position: sticky; top: -12px; background: var(--panel); }
+  #memhead .cnt { color: var(--dim); font-size: 12px; }
+  #memhead button { background: none; border: 1px solid var(--border); border-radius: 6px;
+                    color: var(--dim); font-size: 12px; padding: 2px 8px; cursor: pointer; }
+  #memhead button:hover { color: var(--text); }
+  #memhead .spacer { margin-left: auto; }
+  .mrow { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0; font-size: 13px;
+          border-bottom: 1px solid var(--border); }
+  .mrow:last-child { border-bottom: none; }
+  .mrow .t { flex: 1; }
+  .mrow .del { color: var(--dim); border: none; background: none; cursor: pointer; font-size: 12px; }
+  .mrow .del:hover { color: #f85149; }
+  #memempty { color: var(--dim); font-size: 12.5px; padding: 14px 0; text-align: center; }
+
+  /* ---------- 项目面板（笔记 / 资料） ---------- */
+  #projpanel {
+    position: absolute; right: 12px; top: 46px; width: 400px; z-index: 60;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; display: none; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    max-height: 74vh; overflow-y: auto;
+  }
+  #projpanel.open { display: block; }
+  #projhead { display: flex; align-items: center; gap: 8px; font-size: 13.5px; padding-bottom: 8px;
+              border-bottom: 1px solid var(--border); }
+  #projtitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ptab { background: none; border: 1px solid var(--border); border-radius: 6px;
+          color: var(--dim); font-size: 12px; padding: 2px 8px; cursor: pointer;
+          white-space: nowrap; flex-shrink: 0; }
+  .ptab.on { color: var(--text); border-color: var(--accent); }
+  #notearea {
+    width: 100%; min-height: 40vh; margin-top: 8px; resize: vertical;
+    background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px; font: 13px/1.6 var(--mono);
+  }
+  #notebar { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--dim); }
+  #notebar button, #docdrop {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--dim); font-size: 12px; padding: 2px 8px; cursor: pointer;
+  }
+  #notebar button:disabled { opacity: .5; cursor: default; }
+  /* 划选文字的"添加到笔记"浮动按钮 */
+  #selbtn {
+    position: fixed; z-index: 85; display: none;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 8px;
+    padding: 4px 10px; font-size: 12.5px; color: var(--text); cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  }
+  #docdrop { border-style: dashed; text-align: center; padding: 14px 8px; margin-top: 10px; }
+  #docdrop:hover, #notebar button:hover { color: var(--text); border-color: var(--accent); }
+  .drow { display: flex; gap: 8px; align-items: center; padding: 8px 0; font-size: 13px;
+          border-bottom: 1px solid var(--border); }
+  .drow:last-of-type { border-bottom: none; }
+  .drow small { display: block; color: var(--dim); font-size: 11.5px; }
+  #gencards {
+    width: 100%; margin-top: 8px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--accent); border-radius: 8px; padding: 7px; font-size: 13px; cursor: pointer;
+  }
+  #gencards:disabled { opacity: .5; cursor: default; }
+  .kcard {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; margin-top: 8px; cursor: pointer; font-size: 13px;
+  }
+  .kcard:hover { border-color: var(--accent); }
+  .kcard .front b { font-size: 14px; }
+  .kcard .front small { color: var(--dim); font-size: 11.5px; display: block; margin-top: 2px; }
+  .kcard .back { display: none; }
+  .kcard.flip .front { display: none; }
+  .kcard.flip .back { display: block; }
+  .kcard .back .f { margin: 4px 0; }
+  .kcard .back .lbl { color: var(--accent); font-size: 11.5px; margin-right: 6px; }
+  .kcard .del { float: right; color: var(--dim); border: none; background: none; cursor: pointer; font-size: 12px; }
+  .kcard .del:hover { color: #f85149; }
+  #toast {
+    position: fixed; top: 54px; right: 16px; z-index: 80; max-width: 320px;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
+    padding: 8px 14px; font-size: 13px; box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    display: none;
+  }
+  /* PDF 解析等待条：纯 CSS 旋转，无 gif 依赖 */
+  #pdfwait {
+    position: fixed; inset: 0; z-index: 90; display: none;
+    align-items: center; justify-content: center; background: rgba(0,0,0,.45);
+  }
+  #pdfwait .card {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 12px;
+    padding: 18px 26px; font-size: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.6);
+  }
+  #pdfwait .spin {
+    width: 26px; height: 26px; border-radius: 50%; flex: none;
+    border: 3px solid var(--accent); border-top-color: transparent;
+    animation: pdfspin 0.9s linear infinite;
+  }
+  @keyframes pdfspin { to { transform: rotate(360deg); } }
+  /* ?ppt=1 / ?refs=1 引导条：顶部居中非阻断 */
+  #pptguide, #refsguide {
+    position: fixed; top: 66px; left: 50%; transform: translateX(-50%); z-index: 85;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 12px;
+    padding: 12px 22px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.5);
+    text-align: center; max-width: 520px;
+  }
+  #pptguide button, #refsguide button {
+    display: block; margin: 8px auto 0; background: var(--accent); color: #fff;
+    border: none; border-radius: 8px; padding: 7px 16px; font-size: 13px; cursor: pointer;
+  }
+  #pptguide .hint, #refsguide .hint { margin-top: 6px; font-size: 12px; color: var(--dim); }
+
+  /* PPT 长任务常驻状态条：无百分比，阶段文案 + 呼吸动画表示"工作中"，可安心离开 */
+  #pptbar {
+    position: fixed; top: 54px; left: 50%; transform: translateX(-50%); z-index: 70;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
+    padding: 8px 18px; font-size: 13px; display: none;
+    box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    animation: pptbreathe 2s ease-in-out infinite;
+  }
+  @keyframes pptbreathe { 50% { opacity: .55; } }
+
+  #chat { flex: 1; overflow-y: auto; padding: 24px 0; }
+  /* 空会话引导（谷歌首页式居中，首条消息后隐藏） */
+  #welcome {
+    position: fixed; inset: 0; z-index: 5; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; pointer-events: none;   /* 不挡输入框交互，按钮单独恢复可点 */
+  }
+  #welcome .wlogo { font-size: 56px; filter: saturate(.9); }
+  #welcome .wtitle { font-size: 26px; font-weight: 600; color: var(--text); letter-spacing: .5px; }
+  #welcome .whint { font-size: 13.5px; color: var(--dim); }
+  #welcome button {
+    pointer-events: auto; margin-top: 14px; background: var(--accent); color: #fff;
+    border: none; border-radius: 10px; padding: 9px 22px; font-size: 14px; cursor: pointer;
+  }
+  #welcome button:hover { filter: brightness(1.1); }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 0 20px; }
+  .msg { margin-bottom: 24px; display: flex; gap: 12px; position: relative; animation: msgin .18s ease-out; }
+  @keyframes msgin { from { opacity: 0; transform: translateY(4px); } }
+  /* 拖放上传的全页提示蒙层 */
+  body.dragging::after {
+    content: "松开以上传 图片 / PDF"; position: fixed; inset: 0; z-index: 90;
+    display: flex; align-items: center; justify-content: center; font-size: 16px; color: var(--accent);
+    background: rgba(13,17,23,.75); border: 2px dashed var(--accent); border-radius: 12px;
+    pointer-events: none;
+  }
+  .msg .avatar {
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+  }
+  .msg.user .avatar { background: var(--accent); color: #fff; }
+  .msg.bot  .avatar { background: linear-gradient(135deg,#6a5cff,#4f8cf7); color: #fff; }
+  .bubble { max-width: calc(100% - 44px); word-break: break-word; flex: 1; }
+  .msg.user .bubble .content { background: var(--user-bubble); padding: 10px 14px; border-radius: 12px; }
+  .content img.thumb { max-width: 220px; border-radius: 8px; margin-bottom: 6px; display: block; }
+  .msg .pick { position: absolute; top: -4px; left: -24px; opacity: .25; transition: opacity .1s; accent-color: var(--accent); cursor: pointer; }
+  .msg:hover .pick { opacity: 1; }
+
+  .think-block { margin-bottom: 8px; }
+  .think-block summary { color: var(--think); font-size: 13px; cursor: pointer; user-select: none; list-style: none; }
+  .think-block summary::before { content: "💭 "; }
+  .think-block .tcontent {
+    color: var(--think); font-size: 13px; border-left: 2px solid var(--border);
+    padding-left: 10px; margin-top: 6px; white-space: pre-wrap;
+  }
+  .content pre {
+    background: #0a0d12; border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; overflow-x: auto; font-family: var(--mono); font-size: 13px; margin: 8px 0;
+  }
+  .content code { font-family: var(--mono); font-size: 13.5px; }
+  .content :not(pre) > code { background: #21262d; padding: 2px 6px; border-radius: 4px; }
+  .content p { margin: 6px 0; } .content ul { margin: 6px 0 6px 22px; }
+  .content table { border-collapse: collapse; margin: 8px 0; font-size: 13.5px;
+                   display: block; overflow-x: auto; }
+  .content .katex-display { overflow-x: auto; overflow-y: hidden; margin: 10px 0; }
+  /* 离屏导出容器（海报/长图）：复用 .content 渲染但覆盖为浅色主题 */
+  .pngexport .content pre { background:#f6f8fa; border-color:#e1e4e8; color:#24292e; }
+  .pngexport .content :not(pre) > code { background:#eef0f4; color:#24292e; }
+  .pngexport .content th, .pngexport .content td { border-color:#d8dde6; }
+  .pngexport .content th { background:#e8eef7; color:#1a2f5e; }
+  .pngexport .content table { color:#2d2d2d; }
+  .pngexport .content h3, .pngexport .content h4 { color:#1a2f5e; }
+  .pngexport .content .think-block { display:none; }
+  .content th, .content td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
+  .content th { background: #21262d; }
+
+  .metrics { margin-top: 8px; font-size: 12px; color: var(--dim); font-family: var(--mono);
+             display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .metrics b { color: var(--accent); font-weight: 600; }
+  /* 消息操作行 + 代码块复制（借鉴 deepseek-harness turn-tail actions） */
+  .acts { display: flex; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity .12s; }
+  .msg:hover .acts, .acts.actson { opacity: 1; }   /* actson：带文献回复的操作栏常驻（PPT 入口不可见问题，issue #1） */
+  .acts button {
+    background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
+    font-size: 12px; padding: 2px 8px; cursor: pointer;
+  }
+  .acts button:hover { color: var(--text); border-color: var(--dim); }
+  .codewrap { position: relative; }
+  .codewrap .ccopy {
+    position: absolute; right: 8px; top: 8px; z-index: 2; opacity: 0;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--dim); font-size: 11.5px; padding: 2px 8px; cursor: pointer;
+  }
+  .codewrap:hover .ccopy { opacity: 1; }
+  .codewrap .ccopy:hover { color: var(--text); }
+  #sidebar #search {
+    width: 100%; margin-top: 8px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 13px; outline: none;
+  }
+  .typing::after { content: "▍"; animation: blink 1s step-start infinite; color: var(--accent); }
+  @keyframes blink { 50% { opacity: 0; } }
+  .syscard {
+    border: 1px dashed var(--border); border-radius: 10px; padding: 8px 12px;
+    font-size: 13px; color: var(--dim); margin-bottom: 16px; background: rgba(255,255,255,.02);
+    white-space: pre-wrap;
+  }
+
+  footer { border-top: 1px solid var(--border); background: var(--panel); padding: 14px 20px 18px; }
+  #inputbox {
+    max-width: 820px; margin: 0 auto; border: 1px solid var(--border); border-radius: 14px;
+    background: var(--bg); padding: 10px 12px; transition: border-color .15s;
+    position: relative;
+  }
+  #inputbox:focus-within { border-color: var(--accent); }
+  /* / 快捷指令菜单：首字符敲 / 唤起，隐藏指令的可见入口 */
+  #slashmenu {
+    display: none; position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 40;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 6px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  #slashmenu.open { display: block; }
+  #slashmenu .sopt { padding: 8px 12px; border-radius: 8px; cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
+  #slashmenu .sopt:hover { background: var(--bg); }
+  #slashmenu .sopt b { flex: none; }
+  #slashmenu .sopt small { color: var(--dim); font-size: 12px; }
+  #imgs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  #imgs .chip { position: relative; }
+  #imgs img { height: 56px; border-radius: 8px; }
+  #imgs button {
+    position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+    border: none; background: #f85149; color: #fff; font-size: 11px; line-height: 1; cursor: pointer;
+  }
+  #p { width: 100%; background: none; border: none; outline: none; color: var(--text);
+       font: inherit; resize: none; max-height: 180px; }
+  #bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  #bar .hint { font-size: 12px; color: var(--dim); }
+  #mode {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 6px; font-size: 12.5px;
+  }
+  .icon-btn { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 15px; padding: 2px 5px; }
+  .icon-btn:hover { color: var(--text); }
+  #send, #stopbtn {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 6px 18px; font-size: 14px; cursor: pointer;
+  }
+  #stopbtn { background: #f85149; display: none; }
+
+  #ctxbar { max-width: 820px; margin: 0 auto 8px; font-size: 12px; color: var(--dim); font-family: var(--mono); }
+  /* 文献快捷追问 chips：读一次全文（缓存），此后每问都是短输出快速任务 */
+  #qchips { max-width: 820px; margin: 0 auto 8px; display: none; flex-wrap: wrap; gap: 6px; }
+  /* FigureYa 图型推荐：纯前端关键词匹配，零 token；点击直达对应模块页 */
+  #fighint { max-width: 820px; margin: 0 auto 8px; display: none; align-items: center; gap: 6px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 5px 12px; font-size: 12.5px; color: var(--dim); }
+  #fighint a { color: var(--accent); text-decoration: none; }
+  #fighint a:hover { text-decoration: underline; }
+  .qchip {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 999px; color: var(--dim);
+    font-size: 12.5px; padding: 3px 12px; cursor: pointer;
+  }
+  .qchip:hover { color: var(--text); border-color: var(--accent); }
+  /* 解读结尾"建议追问"条目：点击填入输入框 */
+  .askq { color: var(--accent); text-decoration: none; border-bottom: 1px dashed var(--accent); cursor: pointer; }
+  .askq:hover { color: #7fb0ff; border-bottom-style: solid; }
+  /* 流式期间的大纲预览：吸顶显示已出现的标题，生成完毕后隐藏 */
+  .outline { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; gap: 5px;
+    padding: 4px 0 6px; margin-bottom: 4px; background: var(--bg); border-bottom: 1px dashed var(--border); }
+  .outline span { font-size: 11.5px; color: var(--dim); border: 1px solid var(--border);
+    border-radius: 999px; padding: 1px 9px; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  #ctxtrack { height: 4px; background: var(--border); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+  #ctxfill { height: 100%; width: 0%; background: var(--accent); border-radius: 2px; transition: width .3s; }
+  #ctxfill.warn { background: #d29922; } #ctxfill.danger { background: #f85149; }
+</style>
+</head>
+<body>
+<div id="overlay"></div>
+<div id="sidebar">
+  <div class="head"><button id="newchat">＋ 开启新对话</button><input id="search" placeholder="🔍 搜索对话…"></div>
+  <div id="convlist"></div>
+  <div id="sidever" style="padding:6px 10px;font-size:11px;color:var(--dim)"></div>
+</div>
+
+<header>
+  <button class="hbtn" id="sidebtn" title="对话列表">☰</button>
+  <h1 id="h1">Qwen3.8-27B</h1>
+  <button class="hbtn" id="homebtn" title="返回项目仪表盘" style="display:none">🏠</button>
+  <span class="status"><span class="dot off" id="dot"></span><span id="statustext">连接中…</span></span>
+  <span class="spacer"></span>
+  <button class="hbtn" id="writebtn" title="写作台：分章节写作、版本快照（当前项目）">✍️</button>
+  <button class="hbtn" id="projbtn" title="项目：笔记与资料">🗂</button>
+  <button class="hbtn" id="membtn" title="长期记忆">🧠</button>
+  <button class="hbtn" id="setbtn" title="设置">⚙️</button>
+  <div id="settings">
+    <div class="row">
+      <span>推理深度<small id="effortnote">深度推理模式下的思考量</small></span>
+      <select id="effort">
+        <option value="xhigh">xhigh · 最深</option>
+        <option value="medium">medium · 平衡</option>
+        <option value="low">low · 快速</option>
+      </select>
+    </div>
+    <hr>
+    <div class="row">
+      <span>自动压缩<small>剩余上下文 &lt;15% 时自动总结</small></span>
+      <input type="checkbox" id="autozip">
+    </div>
+    <div class="row">
+      <span>自动存档<small>连接后每轮对话写入 ~/Qwen38/chat_history（需 LocalLLMServer.app）</small></span>
+      <button id="arch" style="background:var(--bg);color:var(--dim);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12.5px;cursor:pointer">连接</button>
+    </div>
+    <hr>
+    <div class="row">
+      <span>API 服务<small>本地无模型时可改用 DeepSeek 云端 API</small></span>
+      <select id="provider">
+        <option value="local">🏠 本地 Qwen</option>
+        <option value="deepseek">☁️ DeepSeek API</option>
+      </select>
+    </div>
+    <div class="row" id="baserow">
+      <span>服务地址<small>任何 OpenAI 兼容服务：Ollama / vLLM / LM Studio 等</small></span>
+      <input type="text" id="localbase" placeholder="http://127.0.0.1:11434" autocomplete="off"
+             style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12.5px;width:150px">
+    </div>
+    <div class="row" id="modelrow">
+      <span>模型标签<small>Ollama 模型名，升级换模型只改这里</small></span>
+      <input type="text" id="localmodel" placeholder="qwen3.8:27b-mlx" autocomplete="off"
+             style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12.5px;width:150px">
+    </div>
+    <div class="row" id="dskeyrow" style="display:none">
+      <span>API Key<small>仅存本机 localStorage，platform.deepseek.com 获取</small></span>
+      <input type="password" id="dskey" placeholder="sk-…" autocomplete="off"
+             style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12.5px;width:150px">
+    </div>
+  </div>
+  <div id="mempanel">
+    <div id="memhead">
+      🧠 跨对话记忆 <span class="cnt" id="memcount"></span>
+      <span class="spacer"></span>
+      <button id="memadd">＋ 添加</button>
+      <button id="memclear">清空</button>
+    </div>
+    <details style="margin:8px 0;font-size:12.5px;color:var(--dim)">
+      <summary style="cursor:pointer">📋 能力边界规范（自动注入 · benchmark 实测 · 修改见代码 BOUNDARY_RULES）</summary>
+      <div style="white-space:pre-wrap;padding:6px 0 2px;border-left:2px solid var(--border);padding-left:10px;margin-top:6px" id="boundaryview"></div>
+    </details>
+    <div id="memlist"></div>
+  </div>
+  <div id="projpanel">
+    <div id="projhead">
+      🗂 <span id="projtitle"></span>
+      <span class="spacer"></span>
+      <button class="ptab on" id="ptab-note">📝 笔记</button>
+      <button class="ptab" id="ptab-docs">📄 资料</button>
+      <button class="ptab" id="ptab-cards">🃏 卡片</button>
+    </div>
+    <div id="projnote">
+      <textarea id="notearea" placeholder="项目笔记：想法、待办、结论…（Markdown，支持公式与代码块）&#10;对话里划选文字可一键收集到笔记"></textarea>
+      <div id="notebar">
+        <span id="notesaved">自动保存</span>
+        <span class="spacer"></span>
+        <button id="noteorg-btn">🪄 自动整理</button>
+      </div>
+    </div>
+    <div id="projdocs" style="display:none">
+      <div id="doclist"></div>
+      <div id="docdrop">拖入或点击上传 PDF（走本地提取，附到下一条消息）<input type="file" id="docfile" accept="application/pdf" multiple hidden></div>
+    </div>
+    <div id="projcards" style="display:none">
+      <button id="gencards">✨ 从本对话生成知识卡片</button>
+      <div id="cardmeta" style="font-size:12px;color:var(--dim);margin:6px 0">点击卡片翻面复习 · 生成后存入项目存档</div>
+      <div id="cardlist"></div>
+    </div>
+  </div>
+</header>
+<div id="toast"></div>
+<div id="pdfwait"><div class="card"><div class="spin"></div><span id="pdfwaittext">正在解析…</span></div></div>
+<div id="pptguide" style="display:none">
+  📊 <b>文献转 PPT</b>：请上传文献 PDF，解析完成后自动生成汇报 PPT
+  <button id="pptguidebtn">选择 PDF 文件</button>
+  <div class="hint">也可以直接把 PDF 拖进本页面任意位置</div>
+</div>
+<div id="refsguide" style="display:none">
+  📚 <b>引文校验</b>：把参考文献列表（任意格式）粘贴到下方输入框，按 Enter 开始校验
+  <div class="hint">逐条查询 Crossref / OpenAlex 公开学术数据库（需联网，仅外发引文信息）；校验完成后即可正常追问报告</div>
+</div>
+<div id="pptbar"></div>
+
+<div id="chat"><div class="wrap" id="msgs"></div></div>
+<div id="welcome">
+  <div class="wlogo">🔬</div>
+  <div class="wtitle">读一篇文献，讲清楚一篇文献</div>
+  <div class="whint">拖入 PDF：本地提取全文与图表 → 四段解读 · 海报 · 汇报 PPT</div>
+  <div class="whint">或直接在下方输入框提问——支持图片、追问走缓存</div>
+  <div class="whint">输入「找文献 关键词」检索最新文献（PubMed + OpenAlex，含开放获取全文链接）</div>
+  <button id="wup">📄 上传文献 PDF</button>
+</div>
+
+<footer>
+  <div id="fighint"></div>
+  <div id="qchips"></div>
+  <div id="ctxbar">
+    <span id="ctxtext">上下文：读取中…</span>
+    <div id="ctxtrack"><div id="ctxfill"></div></div>
+  </div>
+  <div id="inputbox">
+    <div id="slashmenu"></div>
+    <div id="imgs"></div>
+    <textarea id="p" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行——敲 / 查看指令"></textarea>
+    <div id="bar">
+      <input type="file" id="file" accept="image/*" multiple hidden>
+      <input type="file" id="pdffile" accept="application/pdf" multiple hidden>
+      <button class="icon-btn" id="attach" title="上传图片">📎 图片</button>
+      <button class="icon-btn" id="attachpdf" title="上传 PDF 文献（本地提取全文）">📑 文献</button>
+      <button class="icon-btn" id="shot" title="导出勾选消息为长图 PNG">📷</button>
+      <button class="icon-btn" id="save" title="导出全部对话为 Markdown">📄</button>
+      <select id="mode" title="智能：按消息内容自动选择模式；其余为手动覆盖（来自 benchmark 实测结论）">
+        <option value="auto">⚡ 智能</option>
+        <option value="think">💭 深度推理</option>
+        <option value="exact">🎯 精确 · 代码/翻译</option>
+        <option value="chat">💬 日常 · 写作</option>
+      </select>
+      <span class="hint">悬停消息可勾选导出</span>
+      <button id="stopbtn">■ 停止</button>
+      <button id="send" style="margin-left:auto">发送</button>
+    </div>
+  </div>
+</footer>
+
+<script>
+const DEEPSEEK_API = "https://api.deepseek.com/v1/chat/completions";
+const usingDeep = () => S.provider === "deepseek" && S.dskey;
+// 统一请求入口：本地 Ollama 或 DeepSeek 云端 API。
+// DeepSeek 不认 llama.cpp 专有参数（chat_template_kwargs/reasoning_effort），
+// 思考档映射 deepseek-reasoner、关思考映射 deepseek-chat；reasoner 的思考走 reasoning_content，前端本就兼容
+// 后端类型标记：pollStatus 探活时更新（/api/version 存在 = Ollama）；
+// 首次探明前按端口猜测。切后端（localbase 变更）会重置
+let isOllama = null;
+const ollamaBackend = () => isOllama !== null ? isOllama : /:11434\/?$/.test(BASE);
+function apiPost(body, signal){
+  if (usingDeep()){
+    body = {...body, model: body.chat_template_kwargs?.enable_thinking === false ? "deepseek-chat" : "deepseek-reasoner"};
+    delete body.chat_template_kwargs; delete body.reasoning_effort;
+    return fetch(DEEPSEEK_API, {method:"POST", signal,
+      headers:{"Content-Type":"application/json", Authorization:"Bearer " + S.dskey},
+      body: JSON.stringify(body)});
+  }
+  // llama-server 等 OpenAI 兼容端点：chat_template_kwargs 原样透传（enable_thinking 由其模板层生效）
+  if (!ollamaBackend())
+    return fetch(API, {method:"POST", signal, headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  // Ollama 方言：翻译 chat_template_kwargs → think + reasoning_effort，model 字段必传
+  const think = body.chat_template_kwargs?.enable_thinking;
+  delete body.chat_template_kwargs;
+  body = {...body, model: S.localmodel || "qwen3.8:27b-mlx"};
+  if (think !== undefined) body.think = think === true;
+  if (think === false) body.reasoning_effort = "none";
+  return fetch(API, {method:"POST", signal, headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+}
+const $ = s => document.querySelector(s);
+const msgsEl = $("#msgs"), input = $("#p"), imgsEl = $("#imgs");
+let pendingImages = [];
+let pendingDocs = [];   // {name, pages, text}：PDF 全文，发送时拼进上下文（声明置顶，updateChips 在 init 即引用）
+let busy = false, ctrl = null;
+let ctxTotal = null, ctxUsed = 0;
+
+// ---------- 设置（持久化） ----------
+const MODES = {
+  think: { thinking: true,  temp: null },   // 深度推理：思考开，温度交由服务端
+  exact: { thinking: false, temp: 0.0 },    // 精确：temp 0 + 思考关
+  chat:  { thinking: false, temp: 0.7 },    // 日常写作
+};
+const S = Object.assign(
+  { mode: "auto", effort: "xhigh", autozip: true, provider: "local", dskey: "", localbase: "", localmodel: "" },
+  JSON.parse(localStorage.getItem("qwen_settings") || "{}")
+);
+// 本地服务地址可配置：Ollama 默认 11434，vLLM 8000、LM Studio 1234 等，任意 OpenAI 兼容端点
+let BASE = (S.localbase || "http://127.0.0.1:11434").replace(/\/+$/, "");
+let API = BASE + "/v1/chat/completions";
+if (!MODES[S.mode] && S.mode !== "auto") S.mode = "auto";
+if (MODES[S.mode]) { S.thinking = MODES[S.mode].thinking; S.temp = MODES[S.mode].temp; }
+const MODE_LABEL = { think:"💭 深度推理", exact:"🎯 精确 · 代码/翻译", chat:"💬 日常 · 写作" };
+
+// 智能：按消息内容分类模式（纯前端关键词，零延迟零 GPU）
+function autoMode(t, hasImg){
+  // 精确：代码 / 翻译 / 润色 / 报错调试
+  if (/```/.test(t) ||
+      /(csv|excel|表格|数据(集|文件|分析)|可视化|绘图|画图|图表|直方图|散点|折线|柱状|箱线)/i.test(t) ||
+      /(写|改|生成|重构|优化|检查|调试|实现|补全|解释).{0,12}(代码|脚本|函数|正则|SQL|接口|组件|报错)/.test(t) ||
+      /(翻译|translate|译[成入]|中译英|英译中|回译)/i.test(t) ||
+      /\b(python|javascript|typescript|java|c\+\+|go|rust|sql|regex|api|json|html|css|bash|shell|bug|debug)\b/i.test(t))
+    return "exact";
+  // 深度推理：图片诊断/判读（带图+分析类动词）、数学 / 逻辑 / 证明 / 谜题
+  if ((hasImg && /(判断|诊断|分析|解读|判读|怎么看|怎么处理|如何处理|是什么问题|什么问题|故障|异常|原因|处理)/.test(t)) ||
+      /(计算|求解|解方程|证明|推导|推演|推理|逻辑|智力题|谜题|概率|排列组合|数列|几何)/.test(t) ||
+      /\d+\s*[\+\-*×÷x\/]\s*\d+/.test(t))
+    return "think";
+  return "chat";
+}
+function saveSettings(){ localStorage.setItem("qwen_settings", JSON.stringify(S)); }
+function applySettingsUI(){
+  $("#mode").value = S.mode;
+  $("#effort").value = S.effort;
+  $("#autozip").checked = S.autozip;
+  $("#provider").value = S.provider;
+  $("#dskey").value = S.dskey || "";
+  $("#dskeyrow").style.display = S.provider === "deepseek" ? "" : "none";
+  $("#localbase").value = S.localbase || "http://127.0.0.1:11434";
+  $("#baserow").style.display = S.provider === "local" ? "" : "none";
+  $("#localmodel").value = S.localmodel || "";
+  $("#modelrow").style.display = S.provider === "local" ? "" : "none";
+  // 标题跟随模型标签
+  if (S.provider === "local") $("#h1").textContent = S.localmodel || "Qwen3.8-27B";
+  // 云端 reasoning_effort 不可调，禁用并明示
+  $("#effort").disabled = usingDeep();
+  $("#effortnote").textContent = usingDeep()
+    ? "云端不可调：deepseek-reasoner 推理长度固定（切回本地后生效）"
+    : "深度推理模式下的思考量";
+}
+applySettingsUI();
+$("#mode").onchange = e => {
+  S.mode = e.target.value;
+  if (MODES[S.mode]) { S.thinking = MODES[S.mode].thinking; S.temp = MODES[S.mode].temp; }
+  saveSettings(); applySettingsUI();
+};
+$("#effort").onchange = e => { S.effort = e.target.value; saveSettings(); };
+$("#autozip").onchange = e => { S.autozip = e.target.checked; saveSettings(); };
+$("#provider").onchange = e => {
+  S.provider = e.target.value; saveSettings(); applySettingsUI(); pollStatus(); updateArchBtn();
+  if (S.provider === "deepseek")
+    toast("☁️ 已切 DeepSeek 云端：对话不依赖任何本地服务；PDF 提取与自动存档为可选功能（需 macOS 的 LocalLLMServer.app）");
+};
+$("#dskey").onchange = e => { S.dskey = e.target.value.trim(); saveSettings(); };
+$("#localbase").onchange = e => {
+  S.localbase = e.target.value.trim().replace(/\/+$/, "");
+  BASE = S.localbase || "http://127.0.0.1:11434";
+  API = BASE + "/v1/chat/completions";
+  ctxTotal = null;                 // 换服务后重新读上下文
+  isOllama = null;                 // 后端类型重新探测（apiPost 翻译层依赖）
+  saveSettings(); applySettingsUI(); pollStatus();
+};
+$("#localmodel").onchange = e => { S.localmodel = e.target.value.trim(); saveSettings(); };
+
+$("#setbtn").onclick = e => { e.stopPropagation(); $("#mempanel").classList.remove("open"); $("#settings").classList.toggle("open"); };
+document.addEventListener("click", e => {
+  if (!$("#settings").contains(e.target) && e.target !== $("#setbtn"))
+    $("#settings").classList.remove("open");
+});
+
+// ---------- 跨对话长期记忆（DeepSeek 式：所有会话共享，回复后后台提取） ----------
+const BOUNDARY_RULES = `[能力边界规范——基于本机 benchmark 实测，必须遵守]
+- 长尾事实（冷门人名、书目细节、历史日期等）：凡没有把握，必须明说"这点我可能记不准，请核实"，禁止自信编造
+- 训练截止后的时事、新知识（新指南/新版本/获奖者等）：直接回答不知道，禁止推测冒充
+- 医学：可以讲教科书概念与原理；涉及具体用药剂量、换药时机、临床决策时，只做方向性说明并明确提醒"以权威指南和主治医师为准"，不确定的细节要明说
+- 专业领域固定译名（法律/医学文献术语）：给出译法的同时提示用户核对标准译名
+- 代码/翻译等指令性任务：直接输出结果本身，不加多余解释
+- 数学/逻辑题：遇到矛盾或缺失条件时明确指出"无解/条件不足"，禁止强行作答`;
+
+// 文献解读专属身份：附 PDF 时注入；未输入问题时使用默认解读模板
+const PAPER_PERSONA = "你是一位资深医学研究员，熟悉临床研究方法学与统计解读。" +
+  "当用户回答或讨论「建议追问」中的问题时：先针对其回答的具体内容作出回应（指出它与本文方法/数据/结论的关联，或纠正偏差并说明依据），" +
+  "再顺着这个回答推进一层；禁止「很高兴看到」「说得很好」这类空泛夸奖。" +
+  "每次回答的末尾，若讨论仍有值得深挖的方向，以「### 建议追问」节给出 1-2 个简短（≤15 字）的下一步问题（读者好奇发问口吻，指向本次讨论新展开的具体方向）；" +
+  "话题已讨论充分时不硬造追问，省略该节。";
+// 默认解读固定四段结构（背景/方法/结果/讨论）——海报与 PPT 直接复用此结构渲染，无需二次生成
+const PAPER_DEFAULT_Q = "请用中文按固定四段结构总结这篇论文，每段以 ### 标题开头，每段 3-6 条简洁要点：\n"
+  + "### 背景（研究问题与现状）\n### 方法（研究设计、对象、统计）\n### 结果（主要发现，含关键数据）\n### 讨论与局限（临床意义与不足）\n"
+  + "最后单列一节「### 建议追问」，给出 3 个针对这篇文献最值得深入追问的问题。每条必须简短（不超过 15 字）、像读者好奇发问的口吻（如\"安慰剂组脱落率有多高？\"），禁止长句、禁止一条里挤多个问题；指向该文献独特的机制/方法/数据/结论。";
+const INPUT_PLACEHOLDER = input.placeholder;
+
+let memory = [];
+try { memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]"); } catch {}
+let memCtrl = null;
+
+function saveMemory(){
+  try { localStorage.setItem("qwen_memory", JSON.stringify(memory)); } catch {}
+  if (archOK)
+    fetch(ARCH + "/archive/memory.json", {
+      method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(memory)
+    }).catch(() => {});
+  renderMemory();
+}
+function renderMemory(){
+  $("#boundaryview").textContent = BOUNDARY_RULES;
+  $("#membtn").title = `长期记忆：已记住 ${memory.length} 条（点击查看管理）`;
+  $("#memcount").textContent = memory.length ? `${memory.length} 条` : "";
+  const el = $("#memlist"); el.innerHTML = "";
+  if (!memory.length){
+    el.innerHTML = `<div id="memempty">暂无记忆。对话中提到的个人信息、偏好会自动记到这里。</div>`;
+    return;
+  }
+  for (const m of memory){
+    const d = document.createElement("div");
+    d.className = "mrow";
+    d.innerHTML = `<span class="t">${esc(m.text)}</span><button class="del">✕</button>`;
+    d.querySelector(".del").onclick = () => { memory = memory.filter(x => x !== m); saveMemory(); };
+    el.appendChild(d);
+  }
+}
+function toast(text, ms){
+  const t = $("#toast");
+  t.textContent = text; t.style.display = "block";
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.style.display = "none", ms || 2600);
+}
+$("#membtn").onclick = e => { e.stopPropagation(); $("#settings").classList.remove("open"); $("#mempanel").classList.toggle("open"); };
+document.addEventListener("click", e => {
+  if (!$("#mempanel").contains(e.target) && e.target !== $("#membtn"))
+    $("#mempanel").classList.remove("open");
+});
+$("#memadd").onclick = () => {
+  const t = prompt("新增一条记忆：");
+  if (t?.trim()){ memory.push({text: t.trim(), ts: Date.now()}); saveMemory(); }
+};
+$("#memclear").onclick = () => {
+  if (memory.length && confirm("清空全部跨对话记忆？")){ memory = []; saveMemory(); }
+};
+
+// ---------- 项目面板：会话笔记（<id>.notes.md 经 /archive 任意文件名存取，零服务端改动） + 资料清单 ----------
+let notesFor = null, notesTimer = null, notesReq = 0;
+const notesName = id => encodeURIComponent(id + ".notes.md");
+async function loadNotes(){
+  if (notesFor === curId) return;
+  notesFor = curId;
+  const req = ++notesReq;   // 竞态守卫：快速切会话时晚到的旧响应不得覆盖
+  let txt = "";
+  try { const r = await fetch(`${ARCH}/archive/${notesName(curId)}`); if (r.ok) txt = await r.text(); }
+  catch {}
+  if (req !== notesReq) return;
+  $("#notearea").value = txt;
+  $("#notesaved").textContent = txt ? "已加载" : "（空，随写随存）";
+}
+function saveNotes(now){
+  if (notesFor !== curId) return;
+  clearTimeout(notesTimer);
+  // 调度时快照目标会话与内容
+  const id = notesFor, v = $("#notearea").value;
+  const doSave = async () => {
+    try {
+      // 空内容 = 删除笔记文件
+      await fetch(`${ARCH}/archive/${notesName(id)}`, {
+        method: v.trim() ? "PUT" : "DELETE",
+        ...(v.trim() ? {headers: {"Content-Type": "text/markdown"}, body: v} : {}) });
+      if (id === curId)
+        $("#notesaved").textContent = v.trim()
+          ? "已保存 " + new Date().toLocaleTimeString("zh-CN", {hour:"2-digit", minute:"2-digit"})
+          : "（空，随写随存）";
+    } catch { if (id === curId) $("#notesaved").textContent = "保存失败（存档服务未连接）"; }
+  };
+  if (now) doSave(); else notesTimer = setTimeout(doSave, 800);
+}
+$("#notearea").addEventListener("input", () => saveNotes());
+// 🪄 自动整理：把收集的只言片语结构化成一篇笔记（AI 重写，替换原片段）
+$("#noteorg-btn").onclick = async () => {
+  const v = $("#notearea").value.trim();
+  if (!v) return toast("笔记为空——先在对话里划选文字收集片段");
+  if (!confirm("自动整理：AI 将把片段重写为一篇结构化笔记（Markdown），原片段内容会被替换。继续？")) return;
+  const btn = $("#noteorg-btn"); btn.disabled = true; const old = btn.textContent; btn.textContent = "🪄 整理中…";
+  try {
+    const res = await apiPost({
+      messages: [{role: "user", content:
+        "把下面的笔记片段整理成一篇结构化的 Markdown 笔记：合理分节（二级/三级标题）、条目化、去掉重复，"
+        + "但保留全部信息点，不得新增原文没有的事实。直接输出笔记正文，不要任何前置说明。\n\n" + v}],
+      stream: false, temperature: 0.3,
+      chat_template_kwargs: {enable_thinking: false},
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const j = await res.json();
+    const out = (j.choices?.[0]?.message?.content || "").trim();
+    if (!out) throw new Error("模型未返回内容");
+    $("#notearea").value = out;
+    saveNotes(true);
+    toast("🪄 笔记已整理");
+  } catch (e) { toast("整理失败：" + e.message); }
+  finally { btn.disabled = false; btn.textContent = old; }
+};
+// 划选即收：消息区选中文字 → 浮动"添加到笔记"，一键追加到当前会话笔记
+const selbtn = document.createElement("button");
+selbtn.id = "selbtn"; selbtn.textContent = "添加到笔记";
+document.body.appendChild(selbtn);
+selbtn.addEventListener("mousedown", e => e.preventDefault());   // 保住选区不被点没了
+document.addEventListener("mouseup", e => {
+  if (e.target === selbtn) return;
+  setTimeout(() => {
+    const s = document.getSelection();
+    const t = s?.toString().trim();
+    if (t && t.length >= 2 && $("#msgs").contains(s.anchorNode)){
+      const r = s.getRangeAt(0).getBoundingClientRect();
+      selbtn.style.left = Math.max(6, Math.min(r.left + r.width / 2 - 50, innerWidth - 116)) + "px";
+      selbtn.style.top = Math.max(6, r.top - 34) + "px";
+      selbtn.style.display = "block";
+    } else selbtn.style.display = "none";
+  }, 0);
+});
+document.addEventListener("mousedown", e => { if (e.target !== selbtn) selbtn.style.display = "none"; });
+selbtn.onclick = async e => {
+  e.stopPropagation();
+  const t = document.getSelection().toString().trim();
+  selbtn.style.display = "none";
+  if (!t) return;
+  if (notesFor !== curId) await loadNotes();   // 面板没开过时先加载
+  const ta = $("#notearea");
+  ta.value += (ta.value.trim() ? "\n\n" : "") + "> " + t.replace(/\s+/g, " ");
+  saveNotes(true);
+  toast("📝 已添加到项目笔记");
+};
+function renderDocs(){
+  const seen = new Set(), docs = [];
+  for (const m of messages) for (const d of (m.docs || [])) if (!seen.has(d.name)){ seen.add(d.name); docs.push(d); }
+  for (const d of pendingDocs) if (!seen.has(d.name)){ seen.add(d.name); docs.push(d); }
+  const el = $("#doclist"); el.innerHTML = "";
+  if (!docs.length){
+    el.innerHTML = "<div style='color:var(--dim);font-size:12.5px;padding:14px 0;text-align:center'>本会话尚未附文献——拖入 PDF 或点下方上传</div>";
+    renderProjFiles();   // 项目文件（数据表/图表）独立于所附文献，无文献也要显示
+    return;
+  }
+  for (const d of docs){
+    const row = document.createElement("div");
+    row.className = "drow";
+    row.innerHTML = `<span>📄</span><div><b>${esc(d.name)}</b>
+      <small>${d.pages} 页 · 全文 ${(d.text || "").length.toLocaleString()} 字 · 图表 ${(d.imgs?.length || 0) + (d.timgs?.length || 0)} 张</small></div>`;
+    el.appendChild(row);
+  }
+  renderProjFiles();
+}
+// 项目文件夹（图表位图 / 数据表 CSV）：CSV 点击附到对话——GET 取回 → /file 概览 → pendingData
+function renderProjFiles(){
+  const key = projDirKey();
+  if (!key) return;
+  fetch(ARCH + "/projlist/" + key).then(r => r.json()).then(files => {
+    if (!Array.isArray(files) || !files.length || !$("#doclist")) return;
+    const box = document.createElement("div");
+    box.innerHTML = `<div style="margin:10px 0 4px;font-size:12px;color:var(--dim)">项目文件 ${files.length} · 点击 CSV 附到对话
+      <button id="auditbtn" style="float:right;font-size:12px;padding:2px 10px">🔍 数据体检</button></div>`;
+    box.querySelector("#auditbtn").onclick = () => { $("#projpanel").classList.remove("open"); dataAudit(); };
+    for (const fn of files){
+      const row = document.createElement("div");
+      row.className = "drow";
+      const isCsv = fn.endsWith(".csv");
+      if (isCsv) row.style.cursor = "pointer";
+      row.innerHTML = `<span>${isCsv ? "📊" : "🖼"}</span><div><b>${esc(fn)}</b>
+        <small>${isCsv ? "点击附到对话（统计讨论）" : "图表位图（已落盘）"}</small></div>`;
+      if (isCsv) row.onclick = async () => {
+        try {
+          const raw = await (await fetch(ARCH + "/projfile/" + key + "/" + encodeURIComponent(fn))).text();
+          const r = await fetch(ARCH + "/file?name=" + encodeURIComponent(fn), {
+            method: "POST", headers: {"Content-Type": "application/octet-stream"},
+            body: raw.replace(/^\uFEFF/, "")   // 去 BOM，防首列列名带不可见字符
+          });
+          const j = await r.json();
+          if (j.error) return toast("⚠ " + j.error);
+          addDataChip(j);
+          toast(`📊 ${j.name}（${j.rows}行×${j.cols}列）已附到下一条消息，输入问题即可讨论`, 5000);
+          input.focus();
+        } catch { toast("⚠ 附加失败（存档服务未连接？）"); }
+      };
+      box.appendChild(row);
+    }
+    $("#doclist").appendChild(box);
+  }).catch(() => {});
+}
+// ---------- 数据体检：造假/矛盾检测（GRIM + 求和闭合 + n 可加性） ----------
+// 分工：LLM 做结构提取，JS 做算术检验，最后 LLM 解读疑点
+function grimFail(n, mean, d){
+  // 整数型变量的均值 = 整数和/n；四舍五入到 d 位后应仍存在可行的整数和
+  const tol = 0.5 * Math.pow(10, -d) + 1e-9;
+  return Math.abs(Math.round(mean * n) / n - mean) > tol;
+}
+async function dataAudit(){
+  const key = projDirKey();
+  if (!key) return toast("⚠ 先开启一个已有项目（数据表按会话存放）");
+  if (busy) return toast("⚠ 正在生成中，稍后再试");
+  let csvs = [];
+  try {
+    const files = await (await fetch(ARCH + "/projlist/" + key)).json();
+    const names = files.filter(f => f.endsWith(".csv")).slice(0, 12);
+    csvs = await Promise.all(names.map(async fn =>
+      `【${fn}】\n` + await (await fetch(ARCH + "/projfile/" + key + "/" + encodeURIComponent(fn))).text()));
+  } catch { return toast("⚠ 项目文件夹读取失败（存档服务未连接？）"); }
+  if (!csvs.length) return toast("⚠ 项目文件夹里没有数据表 CSV（先做含表格的解读或生成 PPT）");
+
+  busy = true;
+  const header = "# 🔍 数据体检 · " + (curConv().title || "").replace(/^📄 /, "");
+  const out = {role: "assistant", text: header + "\n\n（正在提取数值事实…）", ts: Date.now()};
+  messages.push(out);
+  renderAll();
+  const update = t => { out.text = t; renderAll(); };
+  try {
+    // 第 1 步：LLM 抽取可检验的数值事实（JSON）
+    const r1 = await apiPost({
+      messages: [{role: "user", content:
+        `以下是从一篇文献提取的 CSV 数据表。请抽取可做一致性检验的数值事实，只输出一个 JSON 对象（可包在 \`\`\`json 代码块中），禁止输出其他文字：
+{"means":[{"table":"表名","variable":"变量名","group":"组名或空串","n":32,"mean":62.3,"decimals":1}],"pcts":[{"table":"表名","label":"哪一行的百分比","group":"组名或空串","values":[56.7,43.3]}],"nsums":[{"table":"表名","label":"说明","parts":[32,31],"total":63}]}
+规则：means 只收整数刻度变量（计数、年龄、整数评分量表；BMI/血压/时间等连续量不收，GRIM 不适用），decimals 为表中均值的小数位数；pcts 收"同一行内应加和为 100%"的百分比组（如性别构成、亚组占比）；nsums 收"部分之和应等于整体"的例数关系（分组例数 vs 总例数、亚组 vs 全样本）。数值逐字来自表格，识别不到就给空数组，严禁编造。
+
+${csvs.join("\n\n")}`}],
+      stream: false, temperature: 0, max_tokens: 2000,
+      chat_template_kwargs: {enable_thinking: false},
+    });
+    const raw1 = (await r1.json()).choices?.[0]?.message?.content || "";
+    const facts = JSON.parse((raw1.match(/```json\s*([\s\S]*?)```/) || [, raw1])[1].trim());
+    update(header + "\n\n（正在做算术检验…）");
+
+    // 第 2 步：JS 确定性检验
+    const F = [];
+    (facts.means || []).forEach(m => {
+      if (m.n > 0 && Number.isFinite(m.mean) && grimFail(m.n, m.mean, m.decimals || 0))
+        F.push(`【GRIM】表「${m.table}」变量「${m.variable}」${m.group ? "组「" + m.group + "」" : ""}：n=${m.n}，mean=${m.mean}（${m.decimals} 位小数）——mean×n=${(m.mean * m.n).toFixed(4)}，不存在与之相容的整数和，该均值与整数刻度矛盾`);
+    });
+    (facts.pcts || []).forEach(p => {
+      const s = (p.values || []).reduce((a, b) => a + (+b || 0), 0);
+      const tol = 0.5 + (p.values || []).length * 0.05;   // 每项舍入容差
+      if (p.values?.length > 1 && Math.abs(s - 100) > tol)
+        F.push(`【百分比】表「${p.table}」「${p.label}」${p.group ? "组「" + p.group + "」" : ""}：${p.values.join(" + ")} = ${s.toFixed(2)}%，偏离 100% 超出舍入容差（±${tol.toFixed(1)}）`);
+    });
+    (facts.nsums || []).forEach(x => {
+      const s = (x.parts || []).reduce((a, b) => a + (+b || 0), 0);
+      if (s !== +x.total)
+        F.push(`【n 可加性】表「${x.table}」「${x.label}」：${x.parts.join(" + ")} = ${s} ≠ 总数 ${x.total}`);
+    });
+
+    // 第 3 步：LLM 解读（无疑点时跳过，直接出结论）
+    const stat = `提取到 ${((facts.means||[]).length)} 项均值、${((facts.pcts||[]).length)} 组百分比、${((facts.nsums||[]).length)} 组例数关系；检出 ${F.length} 处不一致。`;
+    if (!F.length){
+      update(header + `\n\n✅ ${stat}\n\n未发现数值内部矛盾。注意：一致性检验只能证伪不能证真——数字自洽不代表数据真实，整组编造且算术过关的数据无法以此识别。`);
+      persist(); toast("🔍 数据体检完成：未发现矛盾");
+      return;
+    }
+    const r2 = await apiPost({
+      messages: [{role: "user", content:
+        `你是一位严谨的统计学审稿人。对下列文献数据表做的一致性检验检出如下疑点：\n\n${F.map((f, i) => (i + 1) + ". " + f).join("\n")}\n\n原始数据表：\n\n${csvs.join("\n\n").slice(0, 12000)}\n\n请逐条给出判读：属于哪种情况——(a) 舍入/单位造成的表面矛盾 (b) 表格转录错误 (c) 统计上不可能，疑点较高 (d) 无法判定；并对整篇数据可信度给一句总评。中文 markdown，500 字内，禁止编造表中没有的数字。`}],
+      stream: false, temperature: 0.3, max_tokens: 1200,
+      chat_template_kwargs: {enable_thinking: true},
+    });
+    const verdict = ((await r2.json()).choices?.[0]?.message?.content || "").trim() || "（解读生成失败）";
+    update(header + `\n\n${stat}\n\n## 检出疑点\n\n${F.map((f, i) => (i + 1) + ". " + f).join("\n\n")}\n\n## 审稿人判读\n\n${verdict}`);
+    persist(); toast("🔍 数据体检完成：检出 " + F.length + " 处不一致");
+  } catch (e) {
+    update(header + `\n\n⚠ 数据体检中断：${e.message}`);
+    persist();
+  } finally { busy = false; }
+}
+
+// ---------- 引文校验：LLM 解析引文串 + JS 确定性查证（Crossref→OpenAlex，PaSaMaster 式"排序而非生成"防幻觉） ----------
+const MAILTO = "local-llm-station@users.noreply.github.com";   // polite pool 标识
+const normTitle = s => (s || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ").trim();
+function titleSim(a, b){
+  const A = new Set(normTitle(a).split(/\s+/).filter(Boolean)), B = new Set(normTitle(b).split(/\s+/).filter(Boolean));
+  if (!A.size || !B.size) return 0;
+  let hit = 0; for (const t of A) if (B.has(t)) hit++;
+  return hit / Math.max(A.size, B.size);
+}
+// PubMed 限速：免 Key 3 req/s，全局节流器保证任意两次调用间隔 ≥350ms
+let pmLast = 0;
+async function pmGap(){
+  const wait = 350 - (Date.now() - pmLast);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  pmLast = Date.now();
+}
+async function refSearch(r){
+  // 返回最优候选 {score, title, year, doi|pmid, source}；查证绝不让模型凭记忆作答
+  let best = {score: 0};
+  try {
+    const q = encodeURIComponent(r.raw || r.title || "");
+    const j = await (await fetch(`https://api.crossref.org/works?query.bibliographic=${q}&rows=3&mailto=${MAILTO}`)).json();
+    for (const it of (j.message?.items || [])){
+      const s = titleSim(r.title, (it.title || [])[0]);
+      if (s > best.score) best = {score: s, title: (it.title || [])[0] || "",
+        year: it.issued?.["date-parts"]?.[0]?.[0], doi: it.DOI, source: "Crossref"};
+    }
+  } catch {}
+  if (best.score < 0.75){   // Crossref 未定：OpenAlex 按标题再查（迭代细化）
+    try {
+      const j = await (await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(r.title || r.raw || "")}&per-page=3&mailto=${MAILTO}`)).json();
+      for (const it of (j.results || [])){
+        const s = titleSim(r.title, it.display_name);
+        if (s > best.score) best = {score: s, title: it.display_name || "",
+          year: it.publication_year, doi: (it.doi || "").replace("https://doi.org/", ""), source: "OpenAlex"};
+      }
+    } catch {}
+  }
+  if (best.score < 0.75){   // 仍存疑：PubMed 交叉验证（医学文献覆盖最全；两步调用均走限流）
+    try {
+      await pmGap();
+      const j = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=3&term=${encodeURIComponent((r.title || "").slice(0, 200))}[Title]`)).json();
+      const ids = j.esearchresult?.idlist || [];
+      if (ids.length){
+        await pmGap();
+        const s = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=${ids.join(",")}`)).json();
+        for (const id of ids){
+          const it = s.result?.[id]; if (!it) continue;
+          const sc = titleSim(r.title, it.title);
+          if (sc > best.score) best = {score: sc, title: it.title || "",
+            year: +(it.pubdate || "").slice(0, 4) || null, pmid: id, source: "PubMed"};
+        }
+      }
+    } catch {}
+  }
+  return best;
+}
+async function refAudit(text){
+  text = (text || "").trim();
+  if (text.length < 20) return toast("⚠ 请先把参考文献列表粘贴到输入框（至少几条引文）");
+  if (busy) return toast("⚠ 正在生成中，稍后再试");
+  refsDone = true;   // 此后 Enter 恢复普通对话，报告可正常追问
+  $("#send").textContent = "发送";
+  input.value = ""; input.style.height = "auto";
+  input.placeholder = INPUT_PLACEHOLDER;
+  $("#refsguide").style.display = "none";
+  busy = true;
+  const out = {role: "assistant", text: "# 📚 引文校验\n\n（正在解析引文列表…）", ts: Date.now()};
+  messages.push(out);
+  renderAll();
+  const update = t => { out.text = t; renderAll(); };
+  try {
+    // 第 1 步：LLM 解析任意格式引文为结构化（提取是强项；不参与查证判定）
+    const r1 = await apiPost({
+      messages: [{role: "user", content:
+        `以下是参考文献列表（任意格式、任意语言）。把每条解析为一个 JSON 数组元素：{"raw":"该条原文","title":"文献标题（英文保留原文，去掉多余空格）","author":"第一作者姓氏","year":2019}。最多 60 条；解析不出标题的条目 title 给空字符串、year 给 null。只输出 JSON 数组（可包在 \`\`\`json 代码块中），禁止输出其他文字。\n\n${text.slice(0, 20000)}`}],
+      stream: false, temperature: 0, max_tokens: 6000,
+      chat_template_kwargs: {enable_thinking: false},
+    });
+    const raw1 = (await r1.json()).choices?.[0]?.message?.content || "";
+    const refs = JSON.parse((raw1.match(/```json\s*([\s\S]*?)```/) || [, /\[.*\]/.test(raw1.trim()) ? raw1 : "[]"])[1].trim()).slice(0, 60);
+    if (!refs.length) throw new Error("未能从文本中解析出引文");
+
+    // 第 2 步：逐条查证（串行 + 150ms 间隔，礼貌限流），进度实时可见
+    const lines = [];
+    let ok = 0, warn = 0, miss = 0;
+    for (let i = 0; i < refs.length; i++){
+      const r = refs[i];
+      const b = r.title ? await refSearch(r) : {score: 0};
+      let line;
+      if (b.score >= 0.75 && b.title){
+        const yd = r.year && b.year && Math.abs(r.year - b.year) > 1;
+        if (yd){ warn++; line = `⚠️ **[第 ${i + 1} 条] 标题匹配但年份不符**：引文 ${r.year}，数据库 ${b.year}（${b.source}）\n   > ${esc((r.title || r.raw || "").slice(0, 120))}`; }
+        else { ok++; line = `✅ **[第 ${i + 1} 条] 已验证**（${b.source}${b.year ? " · " + b.year : ""}${b.doi ? " · [doi:" + b.doi + "](https://doi.org/" + b.doi + ")" : b.pmid ? " · [pmid:" + b.pmid + "](https://pubmed.ncbi.nlm.nih.gov/" + b.pmid + "/)" : ""}）\n   > ${esc((r.title || "").slice(0, 120))}`; }
+      } else if (b.score >= 0.5){
+        warn++; line = `⚠️ **[第 ${i + 1} 条] 疑似相近但不一致**（相似度 ${(b.score * 100) | 0}%）\n   > 引文: ${esc((r.title || r.raw || "").slice(0, 100))}\n   > 数据库: ${esc(b.title.slice(0, 100))}（${b.source}${b.year ? " · " + b.year : ""}）`;
+      } else {
+        miss++; line = `❌ **[第 ${i + 1} 条] 未找到**（Crossref / OpenAlex / PubMed 均无匹配）\n   > ${esc((r.title || r.raw || "").slice(0, 120))}`;
+      }
+      lines.push(line);
+      update(`# 📚 引文校验\n\n已校验 ${i + 1}/${refs.length}…\n\n<details open>\n<summary>进度</summary>\n\n${lines.slice(-8).join("\n\n")}\n\n</details>`);
+      await new Promise(res => setTimeout(res, 150));
+    }
+    update(`# 📚 引文校验报告\n\n**${refs.length} 条引文：✅ ${ok} 已验证 · ⚠️ ${warn} 疑似不一致 · ❌ ${miss} 未找到**\n\n${lines.join("\n\n")}\n\n---\n边界：本校验确认"引文存在且元数据（标题/年份）吻合"，不核对"被引文献是否支撑正文观点"；"未找到"可能因未入库（会议论文集/预印本/撤稿）而非造假，仅提示人工复核。`);
+    persist(); toast(`📚 校验完成：${ok} 验证 · ${warn} 疑似 · ${miss} 未找到`);
+  } catch (e) {
+    update(`# 📚 引文校验\n\n⚠ 中断：${e.message}`);
+    refsDone = false;   // 校验未完成：留在校验模式，粘贴后可重试
+    $("#send").textContent = "校验";
+    $("#refsguide").style.display = "";
+    persist();
+  } finally { busy = false; }
+}
+
+// ---------- 文献检索：「找文献 关键词」前缀触发，PubMed（最新）+ OpenAlex（相关，含 OA 全文链接）双源 ----------
+async function litSearch(q){
+  if (busy) return toast("⚠ 正在生成中，稍后再试");
+  busy = true;
+  $("#welcome").style.display = "none";
+  const out = {role: "assistant", text: `# 🔍 文献检索：${q}\n\n（正在检索 PubMed 与 OpenAlex…）`, ts: Date.now()};
+  messages.push(out);
+  renderAll();
+  const update = t => { out.text = t; renderAll(); };
+  try {
+    // PubMed：按发表日期取最新 8 篇（esearch→esummary 两步，均过限流器）
+    let pm = [];
+    try {
+      await pmGap();
+      const j = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=8&sort=pub_date&term=${encodeURIComponent(q)}`)).json();
+      const ids = j.esearchresult?.idlist || [];
+      if (ids.length){
+        await pmGap();
+        const s = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=${ids.join(",")}`)).json();
+        pm = ids.map(id => s.result?.[id]).filter(Boolean).map(it => ({
+          title: it.title || "", author: (it.authors?.[0]?.name || "").split(" ").slice(-1)[0],
+          year: +(it.pubdate || "").slice(0, 4) || "", journal: it.source || "", pmid: it.uids || it.pmid || id,
+          doi: (it.articleids || []).find(a => a.idtype === "doi")?.value || "",
+        }));
+      }
+    } catch {}
+    update(`# 🔍 文献检索：${q}\n\n（PubMed 完成，正在检索 OpenAlex…）`);
+    // OpenAlex：按相关性 8 篇，附 OA 全文链接
+    let oa = [];
+    try {
+      const j = await (await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(q)}&per-page=8&mailto=${MAILTO}`)).json();
+      oa = (j.results || []).map(it => ({
+        title: it.display_name || "", author: (it.authorships?.[0]?.author?.display_name || "").split(" ").slice(-1)[0],
+        year: it.publication_year || "", journal: (it.primary_location?.source?.display_name || ""),
+        doi: (it.doi || "").replace("https://doi.org/", ""),
+        pdf: it.best_oa_location?.pdf_url || "",
+      }));
+    } catch {}
+    const card = (x, i, pmMode) => `**${i + 1}. ${esc(x.title.slice(0, 140))}**\n   ${x.author ? esc(x.author) + " et al. · " : ""}${x.year}${x.journal ? " · " + esc(x.journal) : ""}` +
+      (pmMode
+        ? `${x.pmid ? ` · [PubMed](https://pubmed.ncbi.nlm.nih.gov/${x.pmid}/)` : ""}${x.doi ? ` · [doi](${x.doi.startsWith("http") ? "" : "https://doi.org/"}${x.doi})` : ""}`
+        : `${x.doi ? ` · [doi](${"https://doi.org/"}${x.doi})` : ""}${x.pdf ? ` · [📄 OA 全文](${x.pdf})` : " · （无开放获取副本）"}`);
+    update(`# 🔍 文献检索：${q}\n\n` +
+      `## 最新（PubMed，按发表日期）\n\n${pm.length ? pm.map((x, i) => card(x, i, true)).join("\n\n") : "（无结果或网络不可达）"}\n\n` +
+      `## 相关（OpenAlex）\n\n${oa.length ? oa.map((x, i) => card(x, i, false)).join("\n\n") : "（无结果或网络不可达）"}\n\n` +
+      `---\n可继续追问，如"细讲第 2 篇的研究设计"（模型不联网，深读请下载 PDF 后拖入本页解读）。`);
+    persist(); toast(`🔍 检索完成：PubMed ${pm.length} 篇 · OpenAlex ${oa.length} 篇`);
+  } catch (e) {
+    update(`# 🔍 文献检索：${q}\n\n⚠ 中断：${e.message}`);
+    persist();
+  } finally { busy = false; }
+}
+
+function projTab(tab){
+  $("#ptab-note").classList.toggle("on", tab === "note");
+  $("#ptab-docs").classList.toggle("on", tab === "docs");
+  $("#ptab-cards").classList.toggle("on", tab === "cards");
+  $("#projnote").style.display = tab === "note" ? "" : "none";
+  $("#projdocs").style.display = tab === "docs" ? "" : "none";
+  $("#projcards").style.display = tab === "cards" ? "" : "none";
+  if (tab === "docs") renderDocs();
+  if (tab === "cards") loadCards();
+}
+$("#ptab-note").onclick = () => projTab("note");
+$("#ptab-docs").onclick = () => projTab("docs");
+$("#ptab-cards").onclick = () => projTab("cards");
+$("#projbtn").onclick = e => {
+  e.stopPropagation();
+  $("#settings").classList.remove("open"); $("#mempanel").classList.remove("open");
+  const p = $("#projpanel"), open = !p.classList.contains("open");
+  p.classList.toggle("open", open);
+  if (open){
+    const c = curConv();
+    $("#projtitle").textContent = c ? c.title : "（新对话）";
+    $("#projtitle").title = c ? c.title : "";
+    loadNotes(); loadCards(); renderDocs();   // 重开面板时资料也要按当前会话刷新
+  } else saveNotes(true);
+};
+document.addEventListener("click", e => {
+  const p = $("#projpanel");
+  if (p.classList.contains("open") && !p.contains(e.target) && e.target !== $("#projbtn")){
+    p.classList.remove("open"); saveNotes(true);
+  }
+});
+const docdrop = $("#docdrop"), docfile = $("#docfile");
+docdrop.onclick = () => docfile.click();
+docfile.onchange = async e => { for (const f of e.target.files) await addPdf(f); e.target.value = ""; };
+docdrop.addEventListener("dragover", e => { e.preventDefault(); e.stopPropagation(); });
+docdrop.addEventListener("drop", async e => {
+  e.preventDefault(); e.stopPropagation();
+  for (const f of e.dataTransfer.files)
+    if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) await addPdf(f);
+});
+
+// ---------- 知识卡片：<id>-cards.json（对话成果固化为可复习单元） ----------
+let cardsFor = null, cards = [], cardsBusy = false, cardsReq = 0;
+const cardsName = () => encodeURIComponent(curId + "-cards.json");
+async function loadCards(){
+  if (cardsFor === curId) return;
+  cardsFor = curId; cards = [];
+  const req = ++cardsReq;   // 竞态守卫：同 loadNotes
+  try {
+    const r = await fetch(`${ARCH}/archive/${cardsName()}`);
+    if (r.ok){ const j = await r.json(); if (Array.isArray(j)) cards = j; }
+  } catch {}
+  if (req !== cardsReq) return;
+  renderCards();
+}
+async function saveCards(){
+  try { await fetch(`${ARCH}/archive/${cardsName()}`, {
+    method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cards) }); } catch {}
+}
+function renderCards(){
+  const el = $("#cardlist"); el.innerHTML = "";
+  if (!cards.length){
+    el.innerHTML = "<div style='color:var(--dim);font-size:12.5px;padding:14px 0;text-align:center'>尚无卡片——点上方按钮从对话提取</div>";
+    return;
+  }
+  for (let i = 0; i < cards.length; i++){
+    const c = cards[i];
+    const d = document.createElement("div");
+    d.className = "kcard";
+    d.innerHTML = `<div class="front"><b>${esc(c.concept)}</b><small>点击翻面 · ${c.related ? "关联：" + esc(c.related) : ""}</small></div>
+      <div class="back">
+        <button class="del" title="删除">✕</button>
+        <div class="f"><span class="lbl">定义</span>${esc(c.definition)}</div>
+        ${c.example ? `<div class="f"><span class="lbl">例子</span>${esc(c.example)}</div>` : ""}
+        ${c.related ? `<div class="f"><span class="lbl">关联</span>${esc(c.related)}</div>` : ""}
+      </div>`;
+    d.onclick = () => d.classList.toggle("flip");
+    d.querySelector(".del").onclick = async e => {
+      e.stopPropagation(); cards.splice(i, 1);
+      await saveCards(); renderCards();
+    };
+    el.appendChild(d);
+  }
+}
+async function genCards(){
+  if (cardsBusy) return;
+  const hist = messages.filter(m => m.text).slice(-40)
+    .map(m => (m.role === "user" ? "问：" : "答：") + m.text.replace(/\s+/g, " ").slice(0, 600)).join("\n");
+  if (hist.length < 50) return toast("先有对话内容再生成卡片");
+  cardsBusy = true;
+  const btn = $("#gencards"); btn.disabled = true; btn.textContent = "✨ 生成中…（约 10-30 秒）";
+  try {
+    const res = await apiPost({
+      messages: [{role: "user", content:
+        `从下面的对话中提取 3-6 张最值得长期记忆的知识卡片，聚焦核心概念而非寒暄。\n`
+        + `只返回 JSON 数组（不要多余文字），每张卡片：{"concept":"概念名","definition":"一句话定义","example":"关键例子或数据","related":"关联概念"}\n\n` + hist}],
+      stream: false, temperature: 0.2,
+      chat_template_kwargs: {enable_thinking: false},
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const j = await res.json();
+    const txt = j.choices?.[0]?.message?.content || "";
+    const m = txt.match(/\[[\s\S]*\]/);
+    if (!m) throw new Error("未解析到卡片 JSON");
+    const got = JSON.parse(m[0]).filter(c => c?.concept && c?.definition);
+    if (!got.length) throw new Error("卡片为空");
+    cards.push(...got.map(c => ({...c, ts: Date.now()})));
+    await saveCards(); renderCards();
+    toast(`🃏 已生成 ${got.length} 张知识卡片（点击翻面复习）`);
+  } catch (e) {
+    toast("卡片生成失败：" + e.message);
+  } finally {
+    cardsBusy = false; btn.disabled = false; btn.textContent = "✨ 从本对话生成知识卡片";
+  }
+}
+$("#gencards").onclick = genCards;
+
+// 回复完成后后台提取记忆（fire-and-forget，不阻塞 UI）
+async function extractMemory(){
+  const lastUser = [...messages].reverse().find(m => m.role === "user");
+  const lastBot = messages[messages.length - 1];
+  if (!lastUser || lastBot?.role !== "assistant" || !lastUser.text) return;
+  if (lastUser.text.startsWith("[此前对话摘要")) return;   // 压缩摘要不是用户输入，不提取记忆
+  memCtrl?.abort(); memCtrl = new AbortController();
+  const sys = "从下面的对话中提取值得跨对话长期记住的用户信息（称呼、职业、偏好、背景、长期目标等）。\n" +
+    "已有记忆（不要重复）：\n" + (memory.map(m => "- " + m.text).join("\n") || "（无）") +
+    "\n\n只输出新增记忆的 JSON 字符串数组（中文、每条一句话），没有新信息则输出 []。不要输出其他内容。";
+  try {
+    const r = await apiPost({
+        messages: [
+          {role: "system", content: sys},
+          {role: "user", content: "用户: " + lastUser.text + "\n助手: " + (lastBot.text || "").slice(0, 2000)}
+        ],
+        max_tokens: 300, temperature: 0,
+        chat_template_kwargs: {enable_thinking: false},
+      }, memCtrl.signal);
+    const j = await r.json();
+    let txt = (j.choices?.[0]?.message?.content || "[]").trim();
+    const mm = txt.match(/\[[\s\S]*\]/);       // 容错：模型可能包 ```json 代码块
+    if (mm) txt = mm[0];
+    const items = JSON.parse(txt);
+    let added = 0;
+    for (const t of items){
+      if (typeof t === "string" && t.trim() && !memory.some(x => x.text === t.trim())){
+        memory.push({text: t.trim(), ts: Date.now()});
+        added++;
+      }
+    }
+    if (added){ saveMemory(); toast("🧠 已记住 " + added + " 条新记忆"); }
+  } catch {}
+}
+renderMemory();
+
+// ---------- 会话管理（持久化） ----------
+let convs = JSON.parse(localStorage.getItem("qwen_convs") || "[]");
+let curId = localStorage.getItem("qwen_cur") || null;
+let messages = [];   // {role, text, imgs?, think?, metrics?, checked}
+
+// ?conv= 模式（从 dashboard.html 项目卡跳入）：直达该会话，显示返回仪表盘按钮
+// ?new=1 模式（dashboard「开始新对话」）：强制新建会话——裸 chat.html 会按 qwen_cur 恢复上次会话
+// ?ppt=1 模式（dashboard「文献转PPT」）：新建会话 + 引导上传，上传确认后自动生成汇报 PPT
+// ?refs=1 模式（dashboard「引文校验」）：新建会话 + 粘贴引文列表校验
+const QSP = new URLSearchParams(location.search);
+const CONV = QSP.get("conv");
+const PPTMODE = QSP.has("ppt");
+const REFSMODE = QSP.has("refs");
+if (CONV){
+  const hit = convs.find(c => c.id === CONV);
+  if (hit) document.title = hit.title + " · Qwen";
+  $("#homebtn").style.display = "";   // localStorage 尚无该会话时也显示，导入后 applyConv 会切入
+} else if (QSP.has("new") || PPTMODE || REFSMODE){
+  $("#homebtn").style.display = "";
+  curId = null;   // 下方初始化判 !curConv() 即走 newConv(true)
+}
+let pptAuto = PPTMODE;   // ?ppt=1：第一份 PDF 附上后自动生成（后续上传恢复正常手动流程）
+if (PPTMODE){
+  $("#pptguide").style.display = "";
+  $("#pptguidebtn").onclick = () => $("#pdffile").click();
+}
+let refsDone = false;
+if (REFSMODE){
+  $("#refsguide").style.display = "";
+  $("#welcome").style.display = "none";   // 隐藏"上传文献"引导
+  input.placeholder = "📚 粘贴参考文献列表（任意格式），Enter 即开始校验";
+  $("#send").textContent = "校验";        // 此键此时触发校验，完成后改回
+}
+$("#homebtn").onclick = () => location.href = "dashboard.html";
+$("#writebtn").onclick = () => location.href = "editor.html" + (curId ? "?conv=" + encodeURIComponent(curId) : "");
+
+function curConv(){ return convs.find(c => c.id === curId); }
+function newConv(silent){
+  curId = "c" + Date.now();
+  convs.unshift({ id: curId, title: "新对话", ts: Date.now(), messages: [], ctxUsed: 0 });
+  messages = []; ctxUsed = 0;
+  persist(); renderConvs(); renderAll(); updateCtxBar();
+  notesFor = null; cardsFor = null;
+  if ($("#projpanel").classList.contains("open")){
+    $("#projtitle").textContent = "新对话";
+    loadNotes(); renderDocs(); loadCards();
+  }
+  if (!silent) sysCard("已开启新对话。");
+}
+function persist(){
+  const c = curConv();
+  if (!c) return;
+  c.messages = messages; c.ts = Date.now(); c.ctxUsed = ctxUsed;
+  // 标题只在首次产生正文时设定
+  if (c.title === "新对话" && (messages[0]?.text || messages[0]?.docs?.length))
+    c.title = (messages[0].text || "📄 " + messages[0].docs[0].name).slice(0, 24) || "图片对话";
+  try {
+    localStorage.setItem("qwen_convs", JSON.stringify(convs.slice(0, 50)));
+  } catch {
+    // localStorage 5MB 超限时降级剥离图片（磁盘存档保留全量）
+    const slim = convs.slice(0, 50).map(cv => ({...cv,
+      messages: cv.messages.map(m => {
+        let nm = m;
+        if (m.imgs?.length) nm = {...nm, imgs: []};
+        if (m.docs?.some(d => d.imgs?.length || d.timgs?.length)) nm = {...nm, docs: m.docs.map(d => (d.imgs?.length || d.timgs?.length) ? {...d, imgs: [], timgs: []} : d)};
+        return nm;
+      })}));
+    try { localStorage.setItem("qwen_convs", JSON.stringify(slim)); } catch {}
+  }
+  localStorage.setItem("qwen_cur", curId);
+  renderConvs();
+  archiveConv();
+  updateChips();
+}
+
+// ---------- 文献快捷追问 chips（三个普适问题；针对性追问由解读结尾的"建议追问"超链接承担） ----------
+const QUICK_QS = [
+  ["📊 统计评价", "评价这篇文献的统计方法：研究设计、主要检验方法、样本量依据是否充足，有何缺陷？简要回答。"],
+  ["🧮 样本量估算", "这篇文献的样本量是如何估算的？效应量假设与把握度（power）设置是否合理？简要评价。"],
+  ["🎓 引导式提问", "请帮我基于当前讨论的内容，从以下五个角度进行深入分析：\n1. 这是什么？（请给出清晰的定义）\n2. 它和我知道的哪个东西类似？（请提供一个恰当的类比）\n3. 它为什么是这样设计的？（请分析其底层逻辑或原理）\n4. 它和相近概念的关系是什么？（请说明其知识网络中的位置）\n5. 如果边缘/异常情况会怎样？（请进行边界测试或提出反例）"],
+];
+function updateChips(){
+  const show = pendingDocs.length > 0 || messages.some(m => m.docs?.length);
+  const el = $("#qchips");
+  el.style.display = show ? "flex" : "none";
+  if (!show) return;
+  el.innerHTML = "";
+  for (const [label, q] of QUICK_QS){
+    const b = document.createElement("button");
+    b.className = "qchip"; b.textContent = label;
+    // 点一下只填充输入框不发送——用户可先改写再手动发送
+    b.onclick = () => { input.value = q; input.focus(); input.dispatchEvent(new Event("input")); };
+    el.appendChild(b);
+  }
+}
+
+// ---------- FigureYa 图型推荐：纯前端关键词匹配，零 token 零网络——提示最合适的模块，点击直达 GitHub 模板页 ----------
+const FIG_HINTS = [
+  [/火山/, "FigureYa59volcanoV2", "差异基因火山图（classic/advanced 双模式）"],
+  [/热图/, "FigureYa9heatmap", "聚类热图"],
+  [/生存/, "FigureYa1survivalCurve_update", "KM 生存曲线"],
+  [/韦恩/, "FigureYa112venn", "韦恩图"],
+  [/气泡/, "FigureYa11bubble", "气泡图"],
+  [/柱状|柱形/, "FigureYa39bar", "柱状图"],
+  [/箱线/, "FigureYa12box", "箱线图"],
+  [/小提琴/, "FigureYa162boxViolin", "小提琴图"],
+  [/主成分|\bPCA\b/i, "FigureYa38PCA", "主成分分析"],
+  [/\bUMAP\b/i, "FigureYa93UMAP", "UMAP 降维"],
+  [/t.?sne/i, "FigureYa27tSNE_update", "t-SNE 降维"],
+  [/相关/, "FigureYa37correlationV2_update", "相关性分析图"],
+  [/桑基/, "FigureYa25Sankey_update", "桑基图"],
+  [/雷达/, "FigureYa8radar", "雷达图"],
+  [/聚类/, "FigureYa91cluster_heatmap", "聚类热图"],
+  [/诺莫|列线/, "FigureYa30nomogram_update", "列线图"],
+  [/时间依赖.*roc|time.?roc/i, "FigureYa85timeROC", "时间依赖 ROC"],
+  [/\bROC\b|受试者工作/i, "FigureYa24ROC", "ROC 曲线"],
+  [/瀑布|oncoprint|oncoplot/i, "FigureYa18oncoplot_update", "瀑布图 / 肿瘤突变概览"],
+  [/曼哈顿/, "FigureYa43ManhattanV2", "曼哈顿图"],
+  [/circos|环形图/i, "FigureYa14circos", "Circos 环形图"],
+  [/富集|\bGSEA\b/i, "FigureYa60GSEA_clusterProfilerV2", "GSEA 富集分析"],
+  [/\bGO\b|功能富集/, "FigureYa52GOplot", "GO 富集可视化"],
+  [/\bWGCNA\b/i, "FigureYa15WGCNA", "WGCNA 共表达网络"],
+  [/\bDCA\b|决策曲线/, "FigureYa33DCA_update", "临床决策曲线"],
+];
+input.addEventListener("input", () => {
+  const hit = FIG_HINTS.find(([re]) => re.test(input.value));
+  const el = $("#fighint");
+  if (!hit){ el.style.display = "none"; return; }
+  el.style.display = "flex";
+  el.innerHTML = `📚 可能适合的 FigureYa 模板：<a href="https://github.com/ying-ge/FigureYa/tree/main/${hit[1]}" target="_blank">${hit[1]}</a> · ${hit[2]} ↗`;
+});
+
+// ---------- 自动存档（LocalLLMServer.app 存档服务 :8081 读写 ~/Qwen38/chat_history） ----------
+const ARCH = "http://127.0.0.1:8081";
+let archOK = false;
+
+function updateArchBtn(){
+  const b = $("#arch");
+  b.textContent = archOK ? "✓ 已连接" : "连接";
+  b.title = archOK ? "自动存档：已开启（LocalLLMServer:8081 → ~/Qwen38/chat_history）"
+    : usingDeep() ? "自动存档：未连接（可选功能，需 macOS 的 LocalLLMServer.app；对话不受影响，浏览器内记录仍保留）"
+    : "自动存档：未连接，点击重试（需启动 LocalLLMServer.app）";
+  b.style.color = archOK ? "#3fb950" : "";
+}
+async function connectArch(){
+  try {
+    await fetch(ARCH + "/health");
+    archOK = true; updateArchBtn();
+    await importArchives();
+    return true;
+  } catch { archOK = false; updateArchBtn(); return false; }
+}
+$("#arch").onclick = async () => {
+  if (await connectArch()) archiveConv();
+  else alert("无法连接存档服务 127.0.0.1:8081——请先启动 LocalLLMServer.app");
+};
+function archiveName(c){
+  const safe = c.title.replace(/[\\/:*?"<>|\s]/g, "_").slice(0, 20);
+  return encodeURIComponent(`${c.id}-${safe}.json`);
+}
+async function archiveConv(){
+  if (!archOK || !messages.length) return;
+  try {
+    const c = curConv();
+    await fetch(`${ARCH}/archive/${archiveName(c)}`, {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({id:c.id, title:c.title, ts:c.ts, ctxUsed:c.ctxUsed, messages}),
+    });
+  } catch {}
+}
+// 启动时从 chat_history 导入 localStorage 里没有（或更旧）的会话
+async function importArchives(){
+  if (!archOK) return;
+  let changed = false;
+  try {
+    const names = await (await fetch(ARCH + "/list")).json();
+    for (const n of names){
+      if (n === "memory.json"){   // 记忆文件单独导入
+        try {
+          const j = await (await fetch(ARCH + "/archive/memory.json")).json();
+          if (Array.isArray(j) && j.length > memory.length){ memory = j; saveMemory(); }
+        } catch {}
+        continue;
+      }
+      try {
+        const j = await (await fetch(ARCH + "/archive/" + encodeURIComponent(n))).json();
+        if (!j?.id || !Array.isArray(j.messages)) continue;
+        const exist = convs.find(c => c.id === j.id);
+        if (!exist){ convs.push(j); changed = true; }
+        else {
+          // 磁盘存档无条件赢（本地图表可能被 localStorage 降级剥离；ts 比较不可靠）
+          const hasImgs = cv => (cv.messages || []).some(mm => (mm.docs || []).some(d => (d.imgs || []).length || (d.timgs || []).length));
+          if (j.messages.length >= exist.messages.length && (j.ts >= exist.ts || (hasImgs(j) && !hasImgs(exist)))){
+            Object.assign(exist, j); changed = true;
+          }
+        }
+      } catch {}
+    }
+    if (changed){
+      convs.sort((a,b) => b.ts - a.ts);
+      try { localStorage.setItem("qwen_convs", JSON.stringify(convs.slice(0,50))); } catch {}
+      renderConvs();
+    }
+  } catch {}
+}
+// ?conv= 模式：直达指定会话（localStorage 已有则立即，存档导入后再补一次）
+function applyConv(){
+  if (!CONV || curId === CONV) return;
+  const hit = convs.find(c => c.id === CONV);
+  if (hit){ document.title = hit.title + " · Qwen"; loadConv(CONV); }
+}
+applyConv();
+connectArch().then(applyConv);
+function loadConv(id){
+  if (busy) return;
+  curId = id;
+  const c = curConv();
+  messages = JSON.parse(JSON.stringify(c?.messages || []));
+  ctxUsed = c?.ctxUsed || 0;
+  msgsEl.innerHTML = "";
+  renderAll(); updateCtxBar(); persist();
+  $("#sidebar").classList.remove("open"); $("#overlay").classList.remove("show");
+  // 项目面板跟随会话切换：重载笔记与资料清单
+  notesFor = null; cardsFor = null;
+  if ($("#projpanel").classList.contains("open")){
+    $("#projtitle").textContent = c?.title || "（新对话）";
+    loadNotes(); renderDocs(); loadCards();
+  }
+}
+function delConv(id, e){
+  e.stopPropagation();
+  // 连磁盘存档一起删
+  const target = convs.find(c => c.id === id);
+  if (target && archOK)
+    fetch(`${ARCH}/archive/${archiveName(target)}`, {method: "DELETE"}).catch(() => {});
+  convs = convs.filter(c => c.id !== id);
+  if (id === curId){ if (convs.length) loadConv(convs[0].id); else newConv(true); return; }
+  persist();
+}
+function renderConvs(){
+  const el = $("#convlist"); el.innerHTML = "";
+  const q = ($("#search").value || "").trim().toLowerCase();
+  for (const c of convs){
+    if (q && !(c.title.toLowerCase().includes(q) ||
+              c.messages.some(m => m.text?.toLowerCase().includes(q)))) continue;
+    const d = document.createElement("div");
+    d.className = "conv" + (c.id === curId ? " active" : "");
+    const dt = new Date(c.ts);
+    d.innerHTML = `<span class="t">${esc(c.title)}</span>
+                   <span class="d">${dt.getMonth()+1}/${dt.getDate()}</span>
+                   <button class="del">✕</button>`;
+    d.onclick = () => loadConv(c.id);
+    d.querySelector(".del").onclick = e => delConv(c.id, e);
+    el.appendChild(d);
+  }
+}
+$("#newchat").onclick = () => {
+  if (busy) return;
+  newConv();
+  $("#sidebar").classList.remove("open"); $("#overlay").classList.remove("show");
+};
+$("#sidebtn").onclick = () => {
+  $("#sidebar").classList.toggle("open");
+  $("#overlay").classList.toggle("show");
+};
+$("#overlay").onclick = () => {
+  $("#sidebar").classList.remove("open"); $("#overlay").classList.remove("show");
+};
+$("#search").oninput = renderConvs;
+
+// 初始化：无会话则新建
+if (!curConv()) newConv(true); else { messages = JSON.parse(JSON.stringify(curConv().messages)); ctxUsed = curConv().ctxUsed || 0; renderAll(); }
+renderConvs();   // 修复：已有会话时初始未渲染侧边栏列表，首次打开为空
+updateChips();
+// 版本标识（git SHA）：侧栏底部常驻，issue 汇报有据可查
+fetch(ARCH + "/version").then(r => r.json()).then(v => {
+  $("#sidever").textContent = v.sha ? `v${v.sha} · ${v.date}` : "";
+}).catch(() => {});
+
+// ---------- 连接状态 + 动态上下文（每 5 秒轮询） ----------
+async function pollStatus(){
+  if (usingDeep()){   // 云端模式：不轮询本地 llama-server
+    $("#dot").className = "dot on";
+    $("#statustext").textContent = "DeepSeek API · 云端";
+    $("#ctxtext").textContent = "上下文：由 DeepSeek 管理";
+    $("#ctxfill").style.width = "0%";
+    if (!archOK) connectArch();
+    return;
+  }
+  try {
+    // Ollama 无 /health，探 /api/version；llama-server 等旧端点回落 /health。
+    // 探测结果同时更新后端类型标记（apiPost 翻译层按此选方言）
+    try { await fetch(BASE + "/api/version", {signal: AbortSignal.timeout(3000)}); isOllama = true; }
+    catch { await fetch(BASE + "/health", {signal: AbortSignal.timeout(3000)}); isOllama = false; }
+    $("#dot").className = "dot on";
+    $("#statustext").textContent = "本地模型 · " + BASE.replace("http://","") + " · 在线";
+    if (!ctxTotal){
+      try {
+        // Ollama：/api/ps 取已加载模型的 context_length（未加载时为空，加载后下次轮询补上）
+        // llama-server：/props 的 n_ctx
+        if (ollamaBackend()){
+          const j = await (await fetch(BASE + "/api/ps")).json();
+          ctxTotal = j?.models?.[0]?.context_length ?? null;
+        } else {
+          const j = await (await fetch(BASE + "/props")).json();
+          ctxTotal = j?.default_generation_settings?.n_ctx ?? j?.n_ctx ?? null;
+        }
+        if (ctxTotal) updateCtxBar();
+      } catch {}
+    }
+  } catch {
+    $("#dot").className = "dot off";
+    // 区分两种离线：宿主 app 在但模型没跑（未启动/加载中） vs 宿主 app 整个没开
+    let why = "（服务未启动）";
+    try {
+      await fetch(ARCH + "/health", {signal: AbortSignal.timeout(1500)});
+      why = "（模型未启动或加载中——托盘启动服务，加载约 30 秒）";
+    } catch { why = "（LocalLLMServer.app 未运行）"; }
+    $("#statustext").textContent = "本地模型 · " + BASE.replace("http://","") + " · 离线" + why;
+  }
+  if (!archOK) connectArch();   // 存档服务恢复后自动重连
+}
+pollStatus();
+setInterval(pollStatus, 5000);
+
+function updateCtxBar(){
+  if (usingDeep()){ $("#ctxtext").textContent = "上下文：由 DeepSeek 管理"; return; }
+  if (!ctxTotal){ $("#ctxtext").textContent = "上下文：未知（服务离线或旧版本）"; return; }
+  const pct = Math.min(ctxUsed / ctxTotal * 100, 100);
+  $("#ctxtext").textContent = `上下文：已用 ${ctxUsed.toLocaleString()} / ${ctxTotal.toLocaleString()} tok（剩 ${Math.max(ctxTotal-ctxUsed,0).toLocaleString()}）`;
+  const f = $("#ctxfill");
+  f.style.width = pct + "%";
+  f.className = pct > 85 ? "danger" : pct > 60 ? "warn" : "";
+}
+
+// ---------- markdown ----------
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+async function copyText(t, btn){
+  try { await navigator.clipboard.writeText(t); }
+  catch {  // clipboard API 被拒时降级 execCommand
+    const ta = document.createElement("textarea");
+    ta.value = t; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+  }
+  if (btn){ const o = btn.textContent; btn.textContent = "已复制"; setTimeout(()=> btn.textContent = o, 1200); }
+}
+function mdTable(b){
+  const rows = b.trim().split("\n").filter(l => l.trim().startsWith("|"));
+  const cells = r => r.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c => c.trim());
+  let html = "<table><thead><tr>" + cells(rows[0]).map(h => "<th>"+h+"</th>").join("") + "</tr></thead><tbody>";
+  for (let i = 2; i < rows.length; i++)
+    html += "<tr>" + cells(rows[i]).map(c => "<td>"+c+"</td>").join("") + "</tr>";
+  return html + "</tbody></table>";
+}
+// LaTeX 公式渲染：KaTeX 可用时渲染，缺失或出错降级为原样文本
+function texHtml(f, disp){
+  if (typeof katex === "undefined") return "<code>" + esc(f) + "</code>";
+  try { return katex.renderToString(f, {displayMode: disp, throwOnError: false}); }
+  catch { return "<code>" + esc(f) + "</code>"; }
+}
+function mdText(src){
+  // 先摘出公式（占位符保护），渲染后再放回
+  const math = [];
+  src = src.replace(/\$\$([\s\S]+?)\$\$/g, (_, f) => "\u0000M" + (math.push({f, disp:true}) - 1) + "\u0000")
+           .replace(/\$([^$\n]+?)\$/g, (_, f) => "\u0000M" + (math.push({f, disp:false}) - 1) + "\u0000");
+  return src
+    .replace(/^### (.*)$/gm,"<h4>$1</h4>").replace(/^## (.*)$/gm,"<h3>$1</h3>")
+    .replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")
+    .replace(/`([^`]+)`/g,"<code>$1</code>")
+    .replace(/^\s*[-*] (.*)$/gm,"<li>$1</li>")
+    .split(/\n{2,}/).map(b=>{
+      const lines = b.trim().split("\n");
+      // 表格：整块都是 | 开头，且第二行是 |---| 分隔行
+      if (lines.length >= 2 && lines.every(l => l.trim().startsWith("|")) &&
+          /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[1]) && lines[1].includes("-"))
+        return mdTable(b);
+      if(/^\s*<(h[34]|ul|li)/.test(b)) return b.replace(/((?:<li>.*<\/li>\s*)+)/gs,"<ul>$1</ul>");
+      return b.trim() ? "<p>"+b.replace(/\n/g,"<br>")+"</p>" : "";
+    }).join("")
+    .replace(/\u0000M(\d+)\u0000/g, (_, i) => texHtml(math[+i].f, math[+i].disp));
+}
+function md(src){
+  const parts = src.split(/```([\w-]*)\n?/);
+  let out = mdText(parts[0] || "");
+  for (let i=1; i<parts.length; i+=2){
+    out += '<div class="codewrap"><button class="ccopy">复制</button><pre><code>' + esc(parts[i+1] || "") + "</code></pre></div>";
+    out += mdText(parts[i+2] || "");
+  }
+  return out;
+}
+// "建议追问"节的条目渲染为可点击链接：点击把问题填入输入框，用户确认后发送。
+// 兼容 <li> 与编号行（编号行被 mdText 渲染成 <p>），并剥掉编号/圆点前缀
+function mdChat(src){
+  const linkify = q => `<a href="#" class="askq">${q.replace(/^(?:\d+[.、]|[-*•])\s*/, "")}</a>`;
+  return md(src).replace(/(<h[34]>建议追问<\/h[34]>)([\s\S]*?)(?=<h[34]|$)/,
+    (m, head, body) => head + body
+      .replace(/<li>([\s\S]*?)<\/li>/g, (_, q) => `<li>${linkify(q)}</li>`)
+      .replace(/<p>([^<>].*?)<\/p>/g, (_, q) => `<p>${linkify(q)}</p>`));
+}
+
+// ---------- 渲染 ----------
+function addMsgEl(role){
+  const el = document.createElement("div");
+  el.className = "msg " + (role==="user"?"user":"bot");
+  const box = document.createElement("input");
+  box.type = "checkbox"; box.className = "pick"; box.checked = true;
+  el.appendChild(box);
+  el.insertAdjacentHTML("beforeend", `<div class="avatar">${role==="user"?"我":"Q"}</div><div class="bubble"></div>`);
+  msgsEl.appendChild(el);
+  return el.querySelector(".bubble");
+}
+function sysCard(text){
+  const el = document.createElement("div");
+  el.className = "syscard"; el.textContent = text;
+  msgsEl.appendChild(el);
+}
+function bindPick(el, m){
+  el.parentElement.querySelector(".pick")?.addEventListener("change", e=> m.checked = e.target.checked);
+}
+// ---------- 消息操作（借鉴 dsh turn-tail actions：复制 / 重新生成 / 编辑重发） ----------
+function actionRow(m, idx){
+  const row = document.createElement("div"); row.className = "acts";
+  const b = (label, fn) => { const x = document.createElement("button"); x.textContent = label; x.onclick = fn; row.appendChild(x); };
+  b("📋 复制", () => copyText(m.text));
+  if (m.role === "assistant"){
+    b("↻ 重新生成", () => regen(idx));
+    const prev = messages[idx - 1];   // 仅紧跟"带 PDF 附件的提问"的解读回复显示（后续讨论消息不挂）
+    if (prev?.role === "user" && prev.docs?.length){
+      row.classList.add("actson");   // 文献操作栏常驻可见
+      b("🎨 海报", () => makePoster(m));
+      b("📊 PPT", () => makePPT(m));
+      b("🔍 图表深读", () => deepReadCharts(m));
+    }
+  }
+  else b("✏️ 编辑重发", () => editMsg(idx));
+  return row;
+}
+// 一图总结：离屏 DOM（复用 md() 全量渲染：表格/加粗/KaTeX 公式）→ html2canvas 截图。
+// 默认解读已按 背景/方法/结果/讨论 四段输出，海报直接复用；结果段插入 PDF 提取的图表位图（与 PPT 同源）
+// 定位消息所属文献：点击的回复之前、最近一条附文献消息的第一篇（多文献会话从哪条回复点操作就用哪篇）
+function docBefore(m){
+  const mi = messages.indexOf(m);
+  for (let i = mi >= 0 ? mi : messages.length - 1; i >= 0; i--)
+    if (messages[i].docs?.length) return messages[i].docs[0];
+  return null;
+}
+function makePoster(m){
+  if (typeof html2canvas === "undefined") return alert("缺少 html2canvas.min.js（应位于 ~/Qwen38/）");
+  const docObj = docBefore(m);
+  const doc = (docObj?.name || "文献").replace(/\.pdf$/i, "");
+  const box = document.createElement("div");
+  box.className = "pngexport";
+  box.style.cssText = "position:fixed;left:-99999px;top:0;width:1000px;background:#fafaf8;"
+    + "font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif";
+  box.innerHTML = `
+    <div style="background:linear-gradient(135deg,#1a2f5e,#2b6cb0);padding:46px 56px 38px">
+      <div style="font-size:15px;font-weight:600;color:rgba(255,255,255,.85)">文献速览 · Qwen3.8 本地解读</div>
+      <div style="font-size:30px;font-weight:700;color:#fff;margin-top:10px;line-height:1.4">${esc(doc)}</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.65);margin-top:14px">${new Date().toLocaleDateString()}</div>
+    </div>
+    <div class="content" style="padding:30px 56px 8px;color:#2d2d2d;line-height:1.8"></div>
+    <div style="padding:24px 56px 34px;font-size:12px;color:#9a9a9a">${usingDeep() ? "DeepSeek API 生成" : "本地模型生成 · 完全离线"} · ${new Date().toLocaleString()}</div>`;
+  const contentEl = box.querySelector(".content");
+  contentEl.innerHTML = md(m.text);
+  const figs = usingDeep() ? [] : (docObj?.imgs || []);
+  if (figs.length){
+    const fig = document.createElement("div");
+    fig.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0";
+    fig.innerHTML = figs.slice(0, 4).map(u =>
+      `<img src="${imgUrl(u)}" style="width:100%;border:1px solid #e1e4e8;border-radius:6px;background:#fff">`).join("");
+    ([...contentEl.querySelectorAll("h3,h4")].find(e => /结果/.test(e.textContent)) || contentEl.firstChild)
+      .after(fig);
+  }
+  document.body.appendChild(box);
+  Promise.all([...box.querySelectorAll("img")].map(im =>
+    im.complete ? null : new Promise(r => { im.onload = im.onerror = r; })))
+  .then(() => html2canvas(box, {scale: 2, backgroundColor: "#fafaf8"}))
+  .then(cnv => {
+    box.remove();
+    cnv.toBlob(b => downloadBlob(b, `文献海报-${Date.now()}.png`), "image/png");
+  });
+}
+
+// ---------- 文献一键 PPT（五段批判性阅读框架：背景-方法-结果-讨论-评价） ----------
+// 背景=为什么做；方法=假设+设计实施；结果=观察指标+主要/次要发现（逐图）；讨论=临床意义+启发；评价=说服力+局限+与既往比较。
+// 云端专属：deepseek-reasoner 一次结构化调用出 deck_spec JSON（本地 27B 需 10-25 分钟且质量较低，故不做本地路径）；
+// 图表位图来自 /pdf 提取（与模型无关，PDF 文本/图表提取仍走本地 QwenServer），panel 要点基于图注+Results 撰写。失败回退四段简易版
+let pptBusy = false;
+// /pdf 新版 imgs 为 {w,h,url} 字典（老会话/用户上传图为字符串），消费端统一走此兼容层
+const imgUrl = u => typeof u === "string" ? u : (u?.url || "");
+// 服务端 Vision OCR 回填的图内文字（老会话/无文字图为空串）
+const imgOcr = o => (o && typeof o === "object" && o.ocr) ? String(o.ocr).trim() : "";
+// 图宽高比（w/h）预量：竖图（<0.83）在 PPT 逐图页自动换左图排版
+let PPT_FIGDIMS = {};
+async function measureFigs(urls){
+  const d = {};
+  await Promise.all(urls.filter(Boolean).map(u => new Promise(r => {
+    const im = new Image();
+    im.onload = () => { d[u] = im.naturalWidth / Math.max(im.naturalHeight, 1); r(); };
+    im.onerror = () => r();
+    im.src = u;
+  })));
+  return d;
+}
+async function makePPT(m){
+  if (typeof PptxGenJS === "undefined") return alert("缺少 pptxgen.bundle.js（应位于 ~/Qwen38/）");
+  // 取该消息之前最近一条附文献消息（多文献会话中，从哪条回复点的 PPT 就用哪篇）
+  const doc = docBefore(m);
+  if (!doc) return alert("会话中未找到附文献消息");
+  if (pptBusy) return toast("📊 正在生成中，请稍候…");
+  // 云端专属：本地 27B 生成 deck 需 10-25 分钟且文笔较弱；已配 Key 一键切云端，未配引导去设置
+  if (!usingDeep()){
+    if (!S.dskey) return alert("📊 PPT 为云端专属功能（约 2-3 分钟；本地 27B 需 10-25 分钟且质量较低）。\n请在设置（⚙️）切换 API 服务为 DeepSeek 并填入 Key 后再试。");
+    if (!confirm("📊 PPT 为云端专属功能（约 2-3 分钟；本地 27B 需 10-25 分钟且质量较低）。\n已检测到 DeepSeek Key，切换到云端生成？")) return;
+    S.provider = "deepseek"; saveSettings(); applySettingsUI(); pollStatus(); updateArchBtn();
+  }
+  // 图表位图可能被 localStorage 5MB 降级剥离——磁盘存档始终全量，生成前救回
+  if (!(doc.imgs || []).length && archOK){
+    try {
+      const j = await (await fetch(ARCH + "/archive/" + archiveName(curConv()))).json();
+      // 先取同位置消息的 doc，找不到再按文件名兜底
+      const mi = messages.indexOf(m);
+      const full = (mi >= 0 ? (j.messages[mi]?.docs || []) : []).find(d => (d.imgs || []).length)
+        || (j.messages || []).flatMap(mm => mm.docs || []).find(d => d.name === doc.name && (d.imgs || []).length);
+      if (full){
+        doc.imgs = full.imgs; doc.timgs = full.timgs || doc.timgs;
+        toast(`📊 已从磁盘存档恢复 ${full.imgs.length} 张图表位图`, 5000);
+      }
+    } catch {}
+  }
+  const figsAvail = (doc.imgs || []).length;
+  if (!figsAvail) toast("⚠ 本会话无图表位图（浏览器存储超限时会被剥离）：刷新页面从磁盘存档恢复、或重新上传 PDF，即可生成逐图页", 8000);
+  const figN = 5, maxTok = 6500;   // 固定详尽档：全图表 + 最高密度（云端生成，速度不是约束）
+  if (!confirm(`📊 将按五段框架生成《${doc.name.replace(/\.pdf$/i, "")}》文献汇报：\n1 背景 · 为什么要做这个研究\n2 方法 · 假设与试验设计、如何实施\n3 结果 · 观察指标、主要/次要结果（逐图，本文 ${figsAvail} 张图表全嵌入）\n4 讨论 · 临床意义与对我们的启发\n5 评价 · 是否令人信服、局限、与既往证据的一致/矛盾\n\n含每页讲稿备注、正文全部表格（原生可编辑，每张一页，并同步导出 CSV 供统计讨论）与数字一致性自检。DeepSeek 云端约 2-3 分钟\n\n开始生成？`)) return;
+
+  pptBusy = true;
+  const pptBar = t => { const el = $("#pptbar"); el.textContent = t; el.style.display = t ? "block" : "none"; };
+  pptBar("📊 PPT 生成中 · 云端约 2-3 分钟，可切走做别的");
+  toast("📊 正在生成汇报结构…");
+  try {
+    PPT_FIGDIMS = await measureFigs((doc.imgs || []).map(imgUrl));
+    const pptx = new PptxGenJS();
+    const spec = await genDeckSpec(doc, figN, maxTok);
+    if (spec){
+      pptBar(`📊 结构已生成：转录 ${Math.min((spec.tables || []).filter(t => t?.rows?.length).length, 8)} 张表格，正在核对数字…`);
+      toast(`📊 结构已生成：转录 ${Math.min((spec.tables || []).filter(t => t?.rows?.length).length, 8)} 张表格，正在核对数字…`);
+      let issues = null;
+      try { issues = await checkDeckNumbers(spec, doc); } catch {}
+      if (issues){
+        const n = markNumIssues(spec, issues);
+        toast(n ? `📊 数字自检：${n} 处存疑已在 PPT 标注 ⚠️（要点末尾），请汇报前核对`
+                : "📊 数字自检：全部数值与原文一致 ✓", 6000);
+      } else toast("📊 数字自检跳过（接口异常，不影响 PPT）");
+      renderDeck(pptx, spec, doc, figN);
+      // 数据表 CSV 落盘项目文件夹（全量行/列，不受 PPT 每页 12 行限制）——资料页可"附到对话"做统计讨论
+      const csvTables = (spec.tables || []).filter(t => Array.isArray(t?.rows) && t.rows.length);
+      if (csvTables.length){
+        const key = projDirKey();
+        const base = doc.name.replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|]/g, "_").slice(0, 40);
+        const esc = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+        for (let i = 0; i < csvTables.length; i++){
+          const t = csvTables[i];
+          const csv = "\uFEFF" + [(t.header || []), ...t.rows].map(r => r.map(esc).join(",")).join("\n");   // BOM：Excel 中文不乱码
+          if (key) await fetch(ARCH + "/projfile/" + key + "/"
+              + encodeURIComponent(`表${i + 1}-${String(t.label || "table").replace(/[\\/:*?"<>|]/g, "_")}-${base}.csv`), {
+            method: "PUT", headers: {"Content-Type": "text/octet-stream"}, body: csv
+          }).catch(() => {});
+        }
+        toast(key ? `📊 ${csvTables.length} 张数据表已存入项目文件夹（资料页 📄 可查看/附到对话）`
+                  : "📊 数据表已生成（存档服务未连接，未落盘）", 6000);
+      }
+    }
+    else { buildSimpleDeck(pptx, m, doc, figN); toast("⚠ 结构生成失败，已改用简易四段版"); }
+    pptBar("📊 正在写出 .pptx 文件…");
+    await pptx.writeFile({ fileName: `文献汇报-${doc.name.replace(/\.pdf$/i, "")}-${Date.now()}.pptx` });
+    toast("📊 文献汇报 PPT 已生成下载");
+  } catch (e) {
+    alert("PPT 生成失败：" + e.message);
+  } finally {
+    pptBar(null);
+    pptBusy = false;   // 任何失败路径都必须解锁
+  }
+}
+
+// ---------- 图表深读（本地限定：27B + mmproj 逐张多模态解读，图表不出本机） ----------
+let drBusy = false;
+async function deepReadCharts(m){
+  if (drBusy) return toast("🔍 正在深读中，请稍候…");
+  if (usingDeep()) return alert("🔍 图表深读为本地多模态功能（qwen3.8-mlx 本地模型，图表不出本机）。\n请在设置（⚙️）切回本地模式，并确保 ollama serve 已启动。");
+  try { await fetch(BASE + "/api/version", {signal: AbortSignal.timeout(3000)}); }
+  catch {
+    try { await fetch(BASE + "/health", {signal: AbortSignal.timeout(3000)}); }
+    catch { return alert("🔍 本地服务未在线（" + BASE + "）。\n请在 LocalLLMServer.app 托盘点「启动服务」——模型加载约 30 秒，就绪后状态点变绿再试。"); }
+  }
+  const doc = docBefore(m);
+  if (!doc) return alert("会话中未找到附文献消息");
+  const figs = (doc.imgs || []).filter(o => imgUrl(o));
+  const tbls = (doc.timgs || []).filter(o => imgUrl(o));
+  if (!figs.length && !tbls.length)
+    return alert("本文未提取到图表图片：刷新页面从磁盘存档恢复、或重新上传 PDF 后再试");
+  // 范围选择："图1,3 表2"；裸数字默认图；全部/留空=全量
+  const sel = prompt(`🔍 选择深读范围（本文：图 ${figs.length} 张 · 表 ${tbls.length} 张，每张约 1-2 分钟）\n\n示例：图1,3 表2　或　图1-3　或　全部`, "全部");
+  if (sel === null) return;
+  let pickF = [], pickT = [], missed = [];
+  const s = sel.trim();
+  const parseNums = t => {
+    const out = [];
+    for (const tok of t.split(/[,\s、，]+/).filter(Boolean)){
+      const r = tok.match(/^(\d+)-(\d+)$/);   // 图1-3 范围展开
+      if (r) for (let i = +r[1]; i <= +r[2]; i++) out.push(i);
+      else if (Number.isInteger(+tok)) out.push(+tok);
+    }
+    return [...new Set(out)].sort((a, b) => a - b);
+  };
+  if (s && !/^(全部|all|全部图表)$/i.test(s)){
+    for (const m of s.matchAll(/图\s*([\d,\s、，\-]+)/g)) pickF.push(...parseNums(m[1]));
+    for (const m of s.matchAll(/(?:表|table)\s*([\d,\s、，\-]+)/gi)) pickT.push(...parseNums(m[1]));
+    if (!pickF.length && !pickT.length) pickF = parseNums(s);   // 裸数字默认图
+    pickF = [...new Set(pickF)]; pickT = [...new Set(pickT)];
+    missed = [...pickF.filter(n => n < 1 || n > figs.length).map(n => `图${n}`),
+              ...pickT.filter(n => n < 1 || n > tbls.length).map(n => `表${n}`)];
+  }
+  const fSel = pickF.length || pickT.length ? pickF.filter(n => n >= 1 && n <= figs.length) : figs.map((_, i) => i + 1);
+  const tSel = pickF.length || pickT.length ? pickT.filter(n => n >= 1 && n <= tbls.length) : tbls.map((_, i) => i + 1);
+  const total = fSel.length + tSel.length;
+  if (!total) return alert(`所选编号均不在范围内（本文：图 ${figs.length} 张 · 表 ${tbls.length} 张）。`);
+  if (!confirm(`🔍 将深读《${doc.name.replace(/\.pdf$/i, "")}》：图 ${fSel.join("、") || "无"} · 表 ${tSel.join("、") || "无"}（共 ${total} 项本地离线调用）。\n\n开始？`)) return;
+
+  drBusy = true;
+  const header = `# 🔍 图表深读 · ${doc.name.replace(/\.pdf$/i, "")}\n`;
+  const out = {role: "assistant", text: header + "\n（本地多模态逐张解读，生成中…）", ts: Date.now()};
+  messages.push(out);
+  renderAll();
+  const update = t => { out.text = t; renderAll(); };
+  try {
+    const jobs = [...fSel.map(n => ["图", n, figs[n - 1]]), ...tSel.map(n => ["表", n, tbls[n - 1]])];
+    let done = missed.length
+      ? `\n> ⚠ 编号不存在已跳过：${missed.join("、")}（本文：图 ${figs.length} 张 · 表 ${tbls.length} 张）\n`
+      : "";
+    jobs.forEach(([kind, n, o], i) => { if (!imgUrl(o)) jobs[i] = null; });   // 编号在范围内但图缺失（剥离/提取失败）跳过
+    for (let i = 0; i < jobs.length; i++){
+      const [kind, n, o] = jobs[i];
+      const u = imgUrl(o);
+      if (!u) continue;
+      const ocr = imgOcr(o);
+      update(header + done + `\n> 正在解读 ${kind}${n}（${i + 1}/${jobs.length}）…\n`);
+      const r = await apiPost({
+        messages: [{role: "user", content: [
+          {type: "image_url", image_url: {url: u}},
+          {type: "text", text: `你是资深医学研究员。这是从文献《${doc.name}》提取的第 ${n} 张${kind}（原样裁剪，边缘可能含少量版面杂讯）。请深度解读：\n1) ${kind}型与展示内容（轴/列含义、分组、各 panel 主题）\n2) 关键发现：组间差异与趋势，引用${kind}中可见的具体数值\n3) 统计学要点：显著性标记、误差线/CI 类型、样本量\n4) 解读注意点：易误读之处或局限\n${kind}中看不清或信息不足时明确说明，严禁编造数值。${ocr ? `\n（系统 OCR 识别的图内文字，供参考、以图为准：${ocr}）` : ""}中文 markdown，400 字内。`},
+        ]}],
+        stream: false, temperature: 0.3, max_tokens: 1000,
+        chat_template_kwargs: {enable_thinking: true},
+      });
+      const j = await r.json();
+      done += `\n## ${kind}${n}\n\n${(j.choices?.[0]?.message?.content || "").trim() || "（解读失败）"}\n`;
+      update(header + done);
+    }
+    update(header + done);
+    persist();
+    toast("🔍 图表深读完成");
+  } catch (e) {
+    update(header + `\n⚠ 深读中断：${e.message}`);
+    persist();
+  } finally { drBusy = false; }
+}
+
+// deck_spec 生成（云端专属）：论文全文（截断防预填充过慢）→ 五段批判性阅读框架 JSON
+async function genDeckSpec(doc, figN, maxTok){
+  const nFig = Math.min((doc.imgs || []).length, 20);   // 图全量呈现，档位不再截断图数
+  // 各图 Vision OCR 文字（img 顺序与 figures 对应）——云端调用看不到图，图内数值经此回填
+  const figOcr = (doc.imgs || []).slice(0, nFig).map((o, i) => {
+    const t = imgOcr(o); return t ? `img${i + 1}：${t}` : "";
+  }).filter(Boolean).join("\n");
+  const prompt = `你是一位资深医学研究员，要做批判性文献汇报。阅读以下论文全文，按五段框架（背景→方法→结果→讨论→评价）生成汇报 PPT 的结构 JSON。只输出一个 JSON 对象（可包在 \`\`\`json 代码块中），禁止输出其他文字。
+
+字段规范（条目保留 "• " 前缀；每条要点必须带论文中的具体数据或事实——样本量、效应量、CI、p 值、随访时长等，禁止空泛套话，禁止编造）：
+{
+ "title": "论文英文原题",
+ "one_line": "一句中文全文概括",
+ "journal": "期刊与年份（找不到就空字符串）",
+ "background": [["结论式短句概括现状（≤20字，如：老年创伤死亡率高而现有评分低估其风险）",["• 临床/疾病现状与未满足需求（含流行病学数字）","• …","• …"]],["结论式短句概括证据缺口",["• 既往研究证明了什么、还缺什么","• …","• …"]],["结论式短句概括本研究动机",["• 为什么现在做、想解决什么问题","• …","• …"]]],
+ "hypothesis": "作者要验证的核心假设，一句话（如：X 干预可通过 Y 机制降低 Z 结局）",
+ "methods": [["研究设计", "设计类型+分组+随访时长"],["研究对象", "入排标准、例数、场所"],["实施过程", "干预/暴露如何实施、对照与盲法"],["统计分析", "主要分析方法、样本量依据"]],
+ "tables": [{"label":"基线特征","caption":"Table 1. Baseline ...（表标题原文）","header":["变量","组A名","组B名"],"rows":[["年龄, mean (SD)","62.3 (8.1)","61.8 (7.9)"],["女性, n (%)","34 (56.7)","31 (51.7)"]]},{"label":"主要结果","caption":"Table 2. Primary ...","header":["终点","组A","组B","HR (95% CI)"],"rows":[["主要复合终点","5.5%","7.1%","0.74 (0.60-0.90)"]]}],
+ "outcomes_primary": ["• 主要观察指标及其定义","• …"],
+ "outcomes_secondary": ["• 次要观察指标","• …"],
+ "figures": [{"fig":"Fig.1","title":"主要结果的结论式标题","caption_zh":"图注中文翻译（一两句话，忠实原意）","panels":["• Fig.1B：发现≤30字"],"summary":"该图总体结论一句话","notes":"该页讲稿2-3句"}],
+ "secondary_results": ["• 次要结果发现 2-4 条（含数据）"],
+ "significance": ["• 临床意义：结果如何改变实践（含数据支撑）","• …"],
+ "significance_title": "临床意义的结论式短句（≤18字，陈述发现而非标签）",
+ "insights": ["• 对我们工作/研究的启发","• …"],
+ "insights_title": "启发的结论式短句（≤18字）",
+ "convincing": ["• 支持可信度的要点：设计强度、结果一致性、效应大小","• …"],
+ "hypothesis_answer": "能否验证作者假设：明确回答+一句理由",
+ "limitations": ["• 局限 1 及其对解读的影响","• 局限 2…","• 局限 3…"],
+ "comparison": "与既往研究一致还是矛盾：结论+引用方向（如与 XX 研究/既往 meta 分析一致）",
+ "notes": {"agenda":"…","background":"…","methods":"…","outcomes":"…","secondary":"…","discussion":"…","appraisal":"…"}
+}
+要求：background 三块按 现状→缺口→动机 顺序、各 ${figN >= 5 ? 5 : 3} 条，块标题用结论式短句陈述核心事实（禁用"现状与问题"这类纯分类标签）；significance_title/insights_title 同理；全部页标题连读应能讲通全文论证（ghost deck 测试）；methods 恰好 4 组按上述方面；tables 只转录**结构清晰的结果类表格**（基线特征、主要/次要终点、亚组分析、多因素回归、安全性事件等，按文中出现顺序，不含 Supplementary 补充表）；**识别不到结构清晰的表格就输出空数组，严禁把正文数字拼凑成表**——PDF 文本提取会把表格打乱成碎片流（引物序列/试剂清单类方法学表尤其碎），这类表直接跳过不要强行重建；能识别的表按"行变量 + 各组数值"重建行列，超过 12 行挑汇报必用的行；label 为简短中文归类，每张最多 12 行、每行最多 5 列，数字逐字来自原文（保留括号内 SD/%/CI）；figures 恰好 ${nFig} 个、对应主要结果图、按附图顺序输出（img1…img${nFig}，图表会原样嵌入 PPT），panels 2-4 条，基于图注与 Results 正文撰写，信息不足给概括性要点，禁止编造图中没有的数值；evaluation 部分要有真实判断（该研究是否验证了假设、证据强弱），不许和稀泥；notes 各 1-3 句、可直接朗读。
+
+论文：《${doc.name}》
+[论文全文开始]
+${doc.text.slice(0, 100_000)}
+[论文全文结束]${figOcr ? `
+[各图 OCR 文字（img 顺序与 figures 对应，含轴标签/图中数值；panels 可引用其中数值，与全文矛盾时以全文为准）]
+${figOcr}` : ""}`;
+  const r = await apiPost({
+    messages: [{role: "user", content: prompt}],
+    stream: false, temperature: 0, max_tokens: maxTok,
+    chat_template_kwargs: {enable_thinking: false},
+  });
+  const j = await r.json();
+  let t = (j.choices?.[0]?.message?.content || "").trim();
+  const mm = t.match(/\{[\s\S]*\}/);   // 容错：剥掉代码块围栏/前后杂文
+  if (!mm) return null;
+  try { return JSON.parse(mm[0]); } catch { return null; }
+}
+
+// ---------- 数字一致性自检（防幻觉）：deck 要点中所有数值断言 vs 论文全文，deepseek-chat 便宜二次调用 ----------
+async function checkDeckNumbers(spec, doc){
+  const strs = [];
+  (function walk(x){ typeof x === "string" ? strs.push(x) : Array.isArray(x) ? x.forEach(walk) : x && typeof x === "object" && Object.values(x).forEach(walk); })(spec);
+  const claims = [...new Set(strs.filter(s => /\d/.test(s)))].slice(0, 150);
+  if (!claims.length) return [];
+  const prompt = `你是数据核对员。"PPT 要点列表"来自一次文献汇报生成，其中可能存在编造或抄错的数字。任务：逐条抽取要点中的具体数值断言（样本量、百分比、均值±SD、中位数、效应量、CI、p 值、随访时长等），与"论文全文"核对。只输出一个 JSON 数组（可包在 \`\`\`json 代码块中），元素为 {"quote":"含该数字的要点短语，从上方列表原样摘录且不少于 12 字","verdict":"不一致"或"未找到","correction":"全文中的正确表述（未找到则留空）"}；全部一致输出 []。禁止输出其他文字，禁止编造 correction。
+
+[PPT 要点列表]
+${claims.join("\n")}
+
+[论文全文]
+${doc.text.slice(0, 100_000)}`;
+  const r = await apiPost({
+    messages: [{role: "user", content: prompt}],
+    stream: false, temperature: 0, max_tokens: 1500,
+    chat_template_kwargs: {enable_thinking: false},
+  });
+  const j = await r.json();
+  const mm = ((j.choices?.[0]?.message?.content || "").trim()).match(/\[[\s\S]*\]/);
+  if (!mm) return null;   // 响应格式异常 → null（调用方按"跳过"处理）
+  try { return JSON.parse(mm[0]).filter(i => i?.quote?.length >= 12); } catch { return null; }
+}
+// 把存疑项回标到 spec 字符串末尾（含 table1 单元格），渲染进 PPT 提醒人工核对
+function markNumIssues(spec, issues){
+  let n = 0;
+  const walk = v => {
+    if (typeof v === "string"){
+      const hit = issues.find(i => v.includes(i.quote));
+      if (hit){ n++; return v + ` ⚠️自检存疑（${hit.verdict}${hit.correction ? "，原文：" + hit.correction : ""}）`; }
+      return v;
+    }
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object"){ for (const k of Object.keys(v)) v[k] = walk(v[k]); }
+    return v;
+  };
+  walk(spec);
+  return n;
+}
+
+// ---------- 渲染：五段批判性阅读框架 → pptxgen 原生可编辑页 ----------
+const NAVY = "1A2F5E", ACCENT = "2B6CB0", CARD = "F1F4F9", GRAY = "5A6472", INK = "222A35";
+function deckHeader(pptx, title){
+  const s = pptx.addSlide({masterName: "MAIN"});
+  // 标题字号按长度自算单行（9" 宽 / 全角字宽 = fontSize/72）——pptxgenjs 的 fit:"shrink"
+  // 只写溢出标记，PowerPoint 打开时不重算，长标题仍会折行压住下方装饰线
+  const tfs = Math.max(15, Math.min(26, Math.floor(648 / Math.max(String(title).length, 1))));
+  s.addText(title, { x: 0.5, y: 0.3, w: 9, h: 0.55, fontSize: tfs, bold: true, color: NAVY, valign: "middle" });
+  s.addShape(pptx.ShapeType.rect, { x: 0.5, y: 0.92, w: 1.6, h: 0.05, fill: {color: ACCENT} });
+  return s;
+}
+function deckCard(pptx, slide, x, y, w, h, head, lines, opt = {}){
+  slide.addShape(pptx.ShapeType.roundRect,
+    { x, y, w, h, fill: {color: opt.fill || CARD}, line: {color: opt.line || "D8DEE9", width: 0.75}, rectRadius: 0.06 });
+  slide.addText(head, { x: x + 0.16, y: y + 0.08, w: w - 0.32, h: 0.34, fontSize: 14, bold: true, color: opt.headColor || NAVY, fit: "shrink" });
+  if (lines?.length)
+    slide.addText(lines.map(t => ({text: t, options: {breakLine: true}})),
+      { x: x + 0.16, y: y + 0.44, w: w - 0.32, h: h - 0.56, fontSize: opt.size || 11, color: INK, valign: "top" });
+}
+// 内容自动分页：按总行数均分到各页。页数 k = ceil(总行数/每页容量)，
+// 第 j 个切点取累计行数最接近 j*total/k 的条目边界（前缀和就近），条目不跨页
+function paginate(items, maxLines, charsPerLine){
+  const ln = t => Math.max(1, Math.ceil(t.length / charsPerLine));
+  const lns = items.map(ln);
+  const pre = [0];
+  lns.forEach((l, i) => pre.push(pre[i] + l));
+  const total = pre[pre.length - 1];
+  if (!total) return [];
+  const k = Math.max(1, Math.ceil(total / maxLines));
+  const cuts = [0];
+  for (let j = 1; j < k; j++){
+    const goal = Math.round(j * total / k);
+    let best = cuts[j - 1], bestDiff = Infinity;
+    for (let c = cuts[j - 1] + 1; c <= items.length - (k - j); c++){   // 每页至少留一条
+      const d = Math.abs(pre[c] - goal);
+      if (d <= bestDiff){ bestDiff = d; best = c; } else break;        // pre 单调，就近即最优
+    }
+    cuts.push(Math.max(best, cuts[j - 1] + 1));
+  }
+  cuts.push(items.length);
+  const pages = [];
+  for (let j = 0; j < k; j++){
+    const pg = items.slice(cuts[j], cuts[j + 1]);
+    if (pg.length) pages.push(pg);
+  }
+  // 容量兜底：切点被长条目顶过 maxLines 时，把末条推给后页
+  for (let j = 0; j < pages.length - 1; j++){
+    while (pages[j].length > 1 && pages[j].reduce((a, t) => a + ln(t), 0) > maxLines){
+      pages[j + 1].unshift(pages[j].pop());
+    }
+  }
+  return pages;
+}
+function renderDeck(pptx, spec, doc, figN){
+  pptx.layout = "LAYOUT_16x9";
+  pptx.theme = { headFontFace: "Microsoft YaHei", bodyFontFace: "Microsoft YaHei" };
+  pptx.defineSlideMaster({ title: "MAIN", background: {color: "FFFFFF"}, objects: [
+      { rect: { x: 0, y: 0, w: 10, h: 0.12, fill: {color: NAVY} } },
+      { text: { text: "Qwen3.8 文献汇报", options: { x: 0.4, y: 5.32, w: 4, h: 0.25, fontSize: 9, color: "9AA3AF" } } },
+    ], slideNumber: { x: 9.4, y: 5.32, fontSize: 9, color: "9AA3AF" } });
+  // 不 filter 空项：figs[i] 必须与 spec.figures[i]（按 img1..imgN 生成）一一对齐，空项在循环内跳过
+  const notes = spec.notes || {}, figs = (doc.imgs || []).slice(0, 20).map(imgUrl);
+  const bgBlocks = (spec.background || []).slice(0, 3);
+  // 页数补足：骨架固定 10-11 页 + 图 + 表，可能低于所选档位——不够时背景拆三页(+2)、讨论拆两页(+1)；
+  // 内容超限也强制拆（单页模式每卡只有 1.18" 高）；基础页数按 10 估
+  const target = figN >= 5 ? 16 : figN === 3 ? 12 : 9;
+  const tblN = Math.min((spec.tables || []).filter(t => Array.isArray(t?.rows) && t.rows.length).length, 8);
+  const need = target - (10 + figs.length + tblN);
+  const splitBg = need > 0 || bgBlocks.some(([, l]) => (l || [])
+    .reduce((a, s) => a + Math.max(1, Math.ceil(String(s).length / 46)), 0) > 3);   // 单页模式每卡仅容 ~3 行
+
+  // 1 封面（标题按全角/半角加权自算字号）
+  const fitFont = (t, maxFs, wIn, hIn) => {
+    const units = [...String(t)].reduce((a, c) => a + (c.charCodeAt(0) > 0x2E7F ? 1 : 0.55), 0) || 1;   // 全角1 半角0.55
+    for (let fs = maxFs; fs >= 11; fs--){
+      if (Math.ceil(units / Math.floor(wIn / (fs / 72))) * fs * 1.25 / 72 <= hIn) return fs;
+    }
+    return 11;
+  };
+  const cover = pptx.addSlide();
+  cover.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 10, h: 5.625, fill: {color: NAVY} });
+  const coverTitle = spec.title || doc.name.replace(/\.pdf$/i, "");
+  cover.addText(coverTitle,
+    { x: 0.7, y: 1.5, w: 8.6, h: 1.6, fontSize: fitFont(coverTitle, 26, 8.6, 1.6), bold: true, color: "FFFFFF", valign: "top" });
+  cover.addText(spec.one_line || "", { x: 0.7, y: 3.2, w: 8.6, h: 0.7, fontSize: fitFont(spec.one_line || "", 15, 8.6, 0.7), color: "C9D6EE", valign: "top" });
+  cover.addText(`${spec.journal ? spec.journal + "    |    " : ""}${new Date().toLocaleDateString()}    |    DeepSeek API 生成`,
+    { x: 0.7, y: 4.4, w: 8.6, h: 0.4, fontSize: 12, color: "8FA3C8" });
+
+  // 2 目录（五段框架）
+  const agenda = deckHeader(pptx, "目录");
+  const items = [["背景", "为什么要做这个研究"], ["方法", "假设 · 设计 · 实施"], ["结果", "指标 · 主要/次要发现"], ["讨论", "临床意义 · 启发"], ["评价", "说服力 · 局限 · 证据比较"]];
+  items.forEach(([t, sub], i) => {
+    const x = 0.5 + i * 1.86;
+    agenda.addShape(pptx.ShapeType.roundRect, { x, y: 1.7, w: 1.7, h: 2.0, fill: {color: CARD}, line: {color: "D8DEE9", width: 0.75}, rectRadius: 0.06 });
+    agenda.addText(String(i + 1), { x: x + 0.14, y: 1.85, w: 0.6, h: 0.5, fontSize: 22, bold: true, color: ACCENT });
+    agenda.addText(t, { x: x + 0.14, y: 2.45, w: 1.42, h: 0.4, fontSize: 15, bold: true, color: NAVY });
+    agenda.addText(sub, { x: x + 0.14, y: 2.9, w: 1.42, h: 0.7, fontSize: 9, color: GRAY, valign: "top" });
+  });
+  if (notes.agenda) agenda.addNotes(notes.agenda);
+
+  // 3 背景：为什么要做这个研究（三块递进；页数不足或条目多时每块独立成页）
+  if (splitBg && bgBlocks.length){
+    const bgNums = ["一", "二", "三"];
+    bgBlocks.forEach(([t, lines], i) => {
+      const s = deckHeader(pptx, `背景${bgNums[i] || i + 1} · ${t || ""}`);
+      paginate(lines || [], 10, 42).forEach((pg, k, all) => {
+        const bs = k === 0 ? s : deckHeader(pptx, `背景 · ${t || ""}（续）`);
+        deckCard(pptx, bs, 0.5, 1.25, 9.0, 3.55, t || "", pg, {size: 13.5});
+        if (k === 0 && i === 0 && notes.background) bs.addNotes(notes.background);
+      });
+    });
+  } else {
+    const bg = deckHeader(pptx, "背景 · 为什么要做这个研究");
+    bgBlocks.forEach(([t, lines], i) =>
+      deckCard(pptx, bg, 0.5, 1.2 + i * 1.32, 9.0, 1.18, t || "", lines || [], {size: 12}));
+    if (notes.background) bg.addNotes(notes.background);
+  }
+
+  // 4 方法：核心假设 + 试验设计四方面（2×2 小卡仅容 ~100 字/卡；任一方面超长 → 每页两组通栏卡，密度降半）
+  const mthItems = (spec.methods || []).slice(0, 4);
+  const mthWide = mthItems.some(([, t]) => String(t || "").length > 80);
+  const mth = deckHeader(pptx, "方法 · 假设与试验设计");
+  mth.addShape(pptx.ShapeType.roundRect, { x: 0.5, y: 1.15, w: 9.0, h: 0.78, fill: {color: "EAF1FB"}, line: {color: ACCENT, width: 1}, rectRadius: 0.06 });
+  mth.addText([{text: "核心假设  ", options: {bold: true, color: ACCENT, fontSize: 13}},
+               {text: spec.hypothesis || "", options: {bold: true, color: INK, fontSize: 13.5}}],
+    { x: 0.72, y: 1.22, w: 8.56, h: 0.64, valign: "middle" });
+  if (mthWide){
+    // 通栏卡按字数自适应高度（12pt 通栏约 50 字/行），堆到页底自动流到续页
+    let s = mth, y = 2.12;
+    mthItems.forEach(([name, txt]) => {
+      const lines = Math.max(1, Math.ceil(String(txt || "").length / 46));
+      const h = Math.min(0.6 + lines * 0.24, 2.9);
+      if (y + h > 5.25){ s = deckHeader(pptx, "方法 · 假设与试验设计（续）"); y = 1.15; }
+      deckCard(pptx, s, 0.5, y, 9.0, h, name || "", [txt || ""], {size: 13});
+      y += h + 0.12;
+    });
+    if (notes.methods) mth.addNotes(notes.methods);
+  } else {
+    mthItems.forEach(([name, txt], i) =>
+      deckCard(pptx, mth, 0.5 + (i % 2) * 4.65, 2.12 + Math.floor(i / 2) * 1.5, 4.35, 1.38, name || "", [txt || ""], {size: 12}));
+    if (notes.methods) mth.addNotes(notes.methods);
+  }
+
+  // 4.5 表格页（正文全部表格，每张一页）：spec 转录 → pptxgenjs 原生表格，完全可编辑
+  (spec.tables || []).slice(0, 8).forEach((t1, ti) => {
+    if (!Array.isArray(t1?.rows) || !t1.rows.length) return;
+    const s = deckHeader(pptx, `数据表${ti + 1} · ${t1.label || "原文表格"}`);
+    const header = (t1.header || []).slice(0, 5);
+    const rows = t1.rows.map(r => (r || []).slice(0, 5)).filter(r => r.some(c => String(c ?? "").trim())).slice(0, 12);
+    const nCol = Math.max(header.length, ...rows.map(r => r.length));
+    const colW = [3.0, ...Array(Math.max(nCol - 1, 0)).fill(nCol > 1 ? (9.0 - 3.0) / (nCol - 1) : 6)];
+    if (header.length){
+      s.addTable([header.map(h => ({text: String(h ?? ""), options: {bold: true, color: "FFFFFF", fill: {color: NAVY}}}))],
+        { x: 0.5, y: 1.5, w: 9.0, colW, fontSize: 11, border: {type: "solid", pt: 0.5, color: "D8DEE9"}, valign: "middle", rowH: 0.3 });
+    }
+    if (rows.length){
+      s.addTable(rows.map(r => r.map(c => ({text: String(c ?? ""), options: {color: INK}}))),
+        { x: 0.5, y: 1.5 + (header.length ? 0.3 : 0), w: 9.0, colW, fontSize: 11, border: {type: "solid", pt: 0.5, color: "D8DEE9"}, valign: "middle", rowH: 0.3 });
+    }
+    s.addText(`${t1.caption || "Table"}${t1.rows.length - rows.length > 0 ? `（原表 ${t1.rows.length} 行，取前 ${rows.length} 行）` : ""}`,
+      { x: 0.5, y: 1.12, w: 9.0, h: 0.3, fontSize: 11, italic: true, color: GRAY });
+    s.addNotes("表格由模型从论文原文转录，数字自检会标注存疑项（⚠️），汇报前建议抽查关键行。");
+  });
+
+  // 5 结果·观察指标（主要/次要双栏，条目多时按栏自动续页）
+  const prPg = paginate((spec.outcomes_primary || ["（模型未提供）"]).slice(0, 12), 10, 23);
+  const scPg = paginate((spec.outcomes_secondary || []).slice(0, 12), 10, 23);
+  const ocN = Math.max(prPg.length, scPg.length);
+  for (let k = 0; k < ocN; k++){
+    const oc = deckHeader(pptx, `结果 · 观察指标${ocN > 1 ? `（${k + 1}/${ocN}）` : ""}`);
+    deckCard(pptx, oc, 0.5, 1.2, 4.4, 3.7, "主要观察指标", prPg[k] || [], {size: 13});
+    deckCard(pptx, oc, 5.1, 1.2, 4.4, 3.7, "次要观察指标", scPg[k] || [], {size: 13});
+    if (k === 0 && notes.outcomes) oc.addNotes(notes.outcomes);
+  }
+
+  // 6 逐图主要结果页（每图一页，以提取到的图为准——spec.figures 缺项时标题退化，图片不丢）
+  const fspecs = spec.figures || [];
+  figs.forEach((figUrl_, i) => {
+    const u = figUrl_;
+    if (!u) return;   // imgs 含无效项时跳过该图页，保持配对不错位
+    const f = fspecs[i] || {};
+    const s = deckHeader(pptx, `结果 · ${f.fig || "图" + (i + 1)} ${f.title || ""}`);
+    const capZh = f.caption_zh ? `图注：${f.caption_zh}` : "";
+    if ((PPT_FIGDIMS[figs[i]] || 1) < 0.83){   // 竖图（h/w>1.2，如整栏 KM 曲线）：图左满高，文字右
+      s.addImage({ data: figs[i].replace(/^data:/, ""), x: 0.5, y: 1.15, w: 3.5, h: 4.0,
+        sizing: {type: "contain", w: 3.5, h: 4.0} });
+      s.addText((f.panels || []).map(t => ({text: t, options: {breakLine: true}})),
+        { x: 4.25, y: 1.25, w: 5.25, h: 2.5, fontSize: 13, color: INK, valign: "top" });
+      s.addText(f.summary || "", { x: 4.25, y: 3.85, w: 5.25, h: 0.42, fontSize: 13, bold: true, color: NAVY, valign: "middle" });
+      if (capZh) s.addText(capZh, { x: 4.25, y: 4.32, w: 5.25, h: 0.95, fontSize: 11, italic: true, color: GRAY, valign: "top" });
+    } else {                                    // 横图：图左（证据先行），要点右，底部总结条
+      s.addImage({ data: figs[i].replace(/^data:/, ""), x: 0.5, y: 1.15, w: 4.65, h: 2.85,
+        sizing: {type: "contain", w: 4.65, h: 2.85} });
+      if (capZh) s.addText(capZh, { x: 0.5, y: 4.02, w: 4.65, h: 0.44, fontSize: 11, italic: true, color: GRAY, valign: "top" });
+      s.addText((f.panels || []).map(t => ({text: t, options: {breakLine: true}})),
+        { x: 5.45, y: 1.25, w: 4.05, h: 3.1, fontSize: 13, color: INK, valign: "top" });
+      s.addShape(pptx.ShapeType.roundRect, { x: 0.5, y: 4.5, w: 9.0, h: 0.62, fill: {color: CARD}, line: {color: "D8DEE9", width: 0.75}, rectRadius: 0.06 });
+      s.addText(f.summary || "", { x: 0.7, y: 4.56, w: 8.6, h: 0.5, fontSize: 13, bold: true, color: NAVY, valign: "middle" });
+    }
+    if (f.notes) s.addNotes(f.notes);
+  });
+  // 7 次要结果页（无图要点，条目多时自动分页；figures 为空时兼作结果兜底页）
+  const secR = (spec.secondary_results || []).filter(Boolean);
+  if (secR.length || !figs.length){
+    const bullets = (secR.length ? secR : (spec.outcomes_primary || [])).map(t => t.replace(/^•\s*/, ""));
+    paginate(bullets, 10, 46).forEach((pg, k, all) => {
+      const sr = deckHeader(pptx, (figs.length ? "结果 · 次要发现" : "结果 · 主要发现") + (all.length > 1 ? `（${k + 1}/${all.length}）` : ""));
+      sr.addText(pg.map(t => ({text: t, options: {bullet: true, breakLine: true}})),
+        { x: 0.6, y: 1.3, w: 8.8, h: 3.6, fontSize: 14, color: INK, valign: "top" });
+      if (k === 0 && notes.secondary) sr.addNotes(notes.secondary);
+    });
+  }
+
+  // 8 讨论：临床意义 / 对我们的启发（条目多时自动分页，通栏卡片；标题优先用模型给的结论式短句）
+  [["临床意义", spec.significance, spec.significance_title], ["对我们的启发", spec.insights, spec.insights_title]].forEach(([t, items, at], si) => {
+    paginate((items || []).slice(0, 12), 10, 42).forEach((pg, k, all) => {
+      const s = deckHeader(pptx, `讨论 · ${at || t}${all.length > 1 ? `（${k + 1}/${all.length}）` : ""}`);
+      deckCard(pptx, s, 0.5, 1.25, 9.0, 3.55, t, pg, {size: 13.5});
+      if (si === 0 && k === 0 && notes.discussion) s.addNotes(notes.discussion);
+    });
+  });
+
+  // 9 评价（两页起步，条目多时自动续页）：① 假设验证结论条 + 说服力要点；② 局限 + 证据比较
+  const convPg = paginate((spec.convincing || []).filter(Boolean), 9, 42);
+  (convPg.length ? convPg : [[]]).forEach((pg, k, all) => {
+    const s = deckHeader(pptx, `评价 · 是否令人信服${all.length > 1 ? `（${k + 1}/${all.length}）` : ""}`);
+    if (k === 0){   // 假设验证结论条只在第一页
+      s.addShape(pptx.ShapeType.roundRect, { x: 0.5, y: 1.15, w: 9.0, h: 0.78, fill: {color: "FDF3E3"}, line: {color: "B45309", width: 1}, rectRadius: 0.06 });
+      s.addText([{text: "假设验证  ", options: {bold: true, color: "B45309", fontSize: 13}},
+                  {text: spec.hypothesis_answer || "", options: {color: INK, fontSize: 12.5}}],
+        { x: 0.72, y: 1.22, w: 8.56, h: 0.64, valign: "middle" });
+      deckCard(pptx, s, 0.5, 2.12, 9.0, 2.85, "支持可信度的要点", pg.length ? pg : ["（模型未提供）"], {size: 13.5});
+      if (notes.appraisal) s.addNotes(notes.appraisal);
+    } else {
+      deckCard(pptx, s, 0.5, 1.25, 9.0, 3.55, "支持可信度的要点（续）", pg, {size: 13.5});
+    }
+  });
+  const limPg = paginate((spec.limitations || []).filter(Boolean), 8, 42);
+  if (!limPg.length && spec.comparison) limPg.push([]);   // 无局限但有证据比较时，仍出比较页
+  limPg.forEach((pg, k, all) => {
+    const last = k === all.length - 1;
+    const s = deckHeader(pptx, `评价 · 局限与证据比较${all.length > 1 ? `（${k + 1}/${all.length}）` : ""}`);
+    deckCard(pptx, s, 0.5, 1.25, 9.0, last && spec.comparison ? 2.5 : 3.55, "局限性", pg.length ? pg : ["（模型未提供）"], {size: 13});
+    if (last && spec.comparison)
+      deckCard(pptx, s, 0.5, 3.85, 9.0, 1.3, "与既往证据比较", [spec.comparison], {size: 13});
+  });
+
+  // 10 结论页（独立成页，停留做 Q&A）+ 致谢页（中文组会惯例收尾）
+  // hypothesis_answer 是评价页"能否验证假设"的问答字段，结论页剥离开头的 是/否 回答词
+  const concl = [spec.one_line,
+    String(spec.hypothesis_answer || "").replace(/^(?:是的?|不能|否|能)[。，,、.\s]*/, ""),
+    ...(spec.significance || []).slice(0, 1)].filter(Boolean).slice(0, 3);
+  if (concl.length){
+    const cs = pptx.addSlide();
+    cs.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 10, h: 5.625, fill: {color: NAVY} });
+    cs.addText("结论", { x: 0.5, y: 0.4, w: 9, h: 0.4, fontSize: 17, color: "8FA3C8" });
+    cs.addShape(pptx.ShapeType.rect, { x: 0.5, y: 0.88, w: 1.6, h: 0.05, fill: {color: ACCENT} });
+    cs.addText(concl.map((t, i) => ({text: `${i + 1}. ${t.replace(/^•\s*/, "")}`, options: {breakLine: true}})),
+      { x: 0.5, y: 1.15, w: 9.0, h: 3.6, fontSize: 15, color: "FFFFFF", paraSpaceAfter: 12, valign: "top" });
+  }
+  const end = pptx.addSlide();
+  end.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 10, h: 5.625, fill: {color: NAVY} });
+  end.addText("恳请各位老师批评指正", { x: 1, y: 2.3, w: 8, h: 0.9, fontSize: 30, bold: true, color: "FFFFFF", align: "center" });
+  end.addText(spec.title || "", { x: 1, y: 3.4, w: 8, h: 0.4, fontSize: 11, color: "8FA3C8", align: "center", fit: "shrink" });
+}
+
+// 兜底：解析当前回复的四段结构直接成页（deck_spec 失败时用）
+function buildSimpleDeck(pptx, m, doc, figN){
+  pptx.layout = "LAYOUT_16x9";
+  pptx.defineSlideMaster({ title: "MAIN", background: {color: "FFFFFF"}, objects: [
+      { rect: { x: 0, y: 0, w: 10, h: 0.12, fill: {color: NAVY} } },
+    ], slideNumber: { x: 9.4, y: 5.32, fontSize: 9, color: "9AA3AF" } });
+  const cover = pptx.addSlide({masterName: "MAIN"});
+  cover.addText((doc?.name || "文献").replace(/\.pdf$/i, ""),
+    { x: 0.6, y: 1.8, w: 8.8, h: 1.5, fontSize: 28, bold: true, color: NAVY, fit: "shrink" });
+  const secs = [];
+  let cur = {title: "", lines: []};
+  for (const line of (m.text || "").split("\n")){
+    const h = line.match(/^#{2,4}\s*(.+)$/);
+    if (h){ if (cur.title || cur.lines.length) secs.push(cur); cur = {title: h[1].trim(), lines: []}; }
+    else if (line.trim()) cur.lines.push(line.trim());
+  }
+  if (cur.title || cur.lines.length) secs.push(cur);
+  const bullets = lines => lines.map(mdPlain).filter(Boolean).slice(0, 8)
+    .map(t => ({text: t, options: {bullet: true, breakLine: true}}));
+  const figures = (doc?.imgs || []).slice(0, 20).map(imgUrl).filter(Boolean);
+  let figsPlaced = !figures.length;
+  for (const s of secs){
+    if (/建议追问/.test(s.title)) continue;
+    const slide = deckHeader(pptx, s.title || "概要");
+    if (/结果/.test(s.title) && figures.length){
+      figsPlaced = true;
+      slide.addText(bullets(s.lines), { x: 0.5, y: 1.25, w: 4.2, h: 3.9, fontSize: 12, valign: "top" });
+      figures.forEach((u, i) => slide.addImage({ data: u.replace(/^data:/, ""),
+        x: 4.85 + (i % 2) * 2.3, y: 1.15 + Math.floor(i / 2) * 2.1, w: 2.15, h: 1.95,
+        sizing: {type: "contain", w: 2.15, h: 1.95} }));
+    } else slide.addText(bullets(s.lines), { x: 0.5, y: 1.25, w: 9, h: 3.9, fontSize: 13, valign: "top" });
+  }
+  if (secs.length === 0)
+    pptx.addSlide({masterName: "MAIN"}).addText(mdPlain(m.text || "") || "（空）",
+      { x: 0.5, y: 0.5, w: 9, h: 4.6, fontSize: 12, valign: "top" });
+  if (!figsPlaced){
+    const fs = deckHeader(pptx, "主要图表");
+    figures.forEach((u, i) => fs.addImage({ data: u.replace(/^data:/, ""),
+      x: 0.7 + (i % 2) * 4.5, y: 1.15 + Math.floor(i / 2) * 2.15, w: 4.2, h: 2.0,
+      sizing: {type: "contain", w: 4.2, h: 2.0} }));
+  }
+}
+// md 行 → PPT 纯文本 bullet：去强调/代码标记与列表前缀；表格行丢弃（PPT 里表格另做，YAGNI）
+function mdPlain(s){
+  if (s.startsWith("|")) return "";
+  return s.replace(/\*\*(.+?)\*\*/g, "$1").replace(/`([^`]+)`/g, "$1")
+          .replace(/^\d+[.、)]\s*/, "").replace(/^[-*•]\s+/, "");
+}
+function regen(idx){
+  if (busy || messages[idx]?.role !== "assistant") return;
+  // 报告类会话首条即助手消息：无前置提问可重生成，直接拦截
+  if (!messages.slice(0, idx).some(m => m.role === "user"))
+    return toast("⚠ 该消息没有前置提问，无法重新生成（报告由外部数据生成，非模型对话产物）");
+  messages = messages.slice(0, idx);   // 该条及其后全部丢弃，从上一条用户消息重新生成
+  renderAll(); persist();
+  generate();
+}
+function editMsg(idx){
+  if (busy) return;
+  const m = messages[idx]; if (!m) return;
+  // 编辑重发=截断该条及之后所有消息重新生成：丢弃多条时先确认
+  if (messages.length - idx > 1 &&
+      !confirm(`编辑重发将删除本条及其后的 ${messages.length - idx} 条消息并重新生成，确定？`)) return;
+  input.value = m.text || "";
+  messages = messages.slice(0, idx);
+  renderAll(); persist();
+  input.focus(); input.dispatchEvent(new Event("input"));
+}
+// 从数据重建整条消息（用于加载历史会话）
+function renderMsg(m, idx){
+  const el = document.createElement("div");
+  el.className = "msg " + (m.role==="user"?"user":"bot");
+  const box = document.createElement("input");
+  box.type = "checkbox"; box.className = "pick"; box.checked = m.checked !== false;
+  el.appendChild(box);
+  const b = document.createElement("div"); b.className = "bubble";
+  let html = "";
+  if (m.think) html += `<details class="think-block"><summary>思考过程</summary><div class="tcontent">${esc(m.think)}</div></details>`;
+  html += `<div class="content">`;
+  (m.imgs||[]).forEach(u => html += `<img class="thumb" src="${u}">`);
+  (m.docs||[]).forEach(d => html += `<div style="font-size:12.5px;color:#8b949e;border:1px dashed var(--border);border-radius:8px;padding:4px 10px;margin-bottom:6px">📄 ${esc(d.name)} · ${d.pages}页 · 全文已附</div>`);
+  (m.data||[]).forEach(d => html += `<div style="font-size:12.5px;color:#8b949e;border:1px dashed var(--border);border-radius:8px;padding:4px 10px;margin-bottom:6px">📊 ${esc(d.name)} · ${d.rows}行×${d.cols}列 · 概览已附</div>`);
+  html += mdChat(m.text) + `</div>`;
+  if (m.metrics) html += `<div class="metrics">${m.metrics}</div>`;
+  b.innerHTML = html;
+  b.appendChild(actionRow(m, idx));
+  el.appendChild(b);
+  box.addEventListener("change", e => m.checked = e.target.checked);
+  msgsEl.appendChild(el);
+}
+function renderAll(){
+  msgsEl.innerHTML = "";
+  messages.forEach((m, i) => renderMsg(m, i));
+  $("#welcome").style.display = messages.length || REFSMODE ? "none" : "flex";   // 空会话引导（首条消息后消失；refs 模式不显示）
+  scrollBottom();
+}
+// 粘底滚动：仅当视口贴近底部时跟随；用户上滚阅读时不强拉。
+// 流式期间的散行渲染比最终紧凑渲染更高，结束时内容收缩会把 scrollTop 悬到空白区
+function scrollBottom(force){
+  const c = $("#chat");
+  if (!force && c.scrollHeight - c.scrollTop - c.clientHeight > 150) return;
+  c.scrollTop = c.scrollHeight;
+}
+
+function buildHistory(){
+  const h = [];
+  const sys = [];
+  sys.push(BOUNDARY_RULES);   // 自动注入，无开关：修改走 BOUNDARY_RULES 常量
+  if (memory.length)
+    sys.push("[用户长期记忆——跨对话记住的用户信息，自然使用即可，不必逐条复述]\n"
+      + memory.map(m => "- " + m.text).join("\n"));
+  if (sys.length) h.push({role:"system", content: sys.join("\n\n")});
+  for (const m of messages){
+    if (m.archived) continue;   // 已压缩归档：原文不发送，由下方检索按需回填
+    if (m.role === "user"){
+      // PDF 提取的图表位图：本地多模态（mmproj）随文献一起看图解读；云端无多模态不附
+      // 逐张打标签（文献名+图/表序号）：用户说"文献2的图2"时模型可精确定位到对应图片
+      // 表图（timgs）按需附加：仅当该条提问提到 表N/Table N 才带上——"对比文献1表1 vs 文献2表1"直接可问
+      const q0 = (m.text || "").trim();
+      const wantTables = /表\s*\d|table\s*\d/i.test(q0);
+      const docImgs = [];
+      const docParts = [];
+      if (!usingDeep()) (m.docs||[]).forEach(d => {
+        const push = (u, label) => { const url = imgUrl(u); if (url){ docImgs.push(url); docParts.push({type:"image_url",image_url:{url}}, {type:"text",text:`【${label}】`}); } };
+        (d.imgs || []).forEach((u, i) => push(u, `文献《${d.name.replace(/\.pdf$/i,"")}》提取图${i + 1}`));
+        if (wantTables) (d.timgs || []).forEach((u, i) => push(u, `文献《${d.name.replace(/\.pdf$/i,"")}》提取表${i + 1}`));
+      });
+      const docText = (m.docs||[]).map(d => `[文献《${d.name}》全文开始]\n${d.text}\n[文献全文结束]`).join("\n\n")
+        + (docImgs.length ? `\n（已附 ${docImgs.length} 张从该 PDF 提取的图表图片${wantTables ? "（含提问涉及的表格原图）" : ""}，请在「结果」段结合图表内容描述主要发现）` : "");
+      const dataText = (m.data||[]).map(d => `[数据文件《${d.name}》概览开始]\n${d.summary}\n[数据概览结束]`).join("\n\n")
+        + ((m.data||[]).length ? "\n（用户附了数据文件概览。结合概览直接回答问题、指出值得注意的点；"
+          + "除非用户明确要求，不要主动输出长篇分析/画图代码——本站定位轻量问答与文献数据联动，"
+          + "用户需要深度探索时可建议其使用专门工具如 quelmap）" : "");
+      const q = (m.text || "").trim();
+      const userText = docText
+        ? docText + (dataText ? "\n\n" + dataText : "") + "\n\n" + PAPER_PERSONA + (q || PAPER_DEFAULT_Q)   // 附文献：注入研究员身份；无提问用默认模板
+        : dataText ? dataText + "\n\n" + q
+        : q;
+      if (m.imgs?.length){
+        const c = m.imgs.map(u=>({type:"image_url",image_url:{url:u}}));
+        c.push({type:"text",text:userText || "描述这张图片"});
+        h.push({role:"user",content:c});
+      } else if (docParts.length){
+        const c = [...docParts, {type:"text",text:userText}];
+        h.push({role:"user",content:c});
+      } else h.push({role:"user", content:userText});
+    } else h.push({role:m.role, content:m.text});
+  }
+  // 智能回填：当前提问与已归档原文做 bigram 重叠检索，命中即注入 system（免 embedding，零成本）
+  const lastUser = [...messages].reverse().find(m => m.role === "user" && m.text && !m.archived);
+  const archived = messages.filter(m => m.archived && m.text);
+  if (lastUser && archived.length){
+    const hits = retrieveHistory(lastUser.text, archived);
+    if (hits)
+      h[0].content += "\n\n[早期对话相关片段——原文已被摘要替代，以下按当前提问检索回填]\n" + hits;
+  }
+  return h;
+}
+// 中文按字符二元组、英文按整词建索引；重叠 ≥3 个才认为相关，取 top2、单条截 1500 字
+function retrieveHistory(q, pool){
+  const bigrams = s => {
+    const out = new Set();
+    for (const w of (s.toLowerCase().match(/[\u4e00-\u9fff]+/g) || []))
+      for (let i = 0; i < w.length - 1; i++) out.add(w.slice(i, i+2));
+    for (const w of (s.toLowerCase().match(/[a-z0-9_]{2,}/g) || [])) out.add(w);
+    return out;
+  };
+  const qb = bigrams(q);
+  return pool.map(m => ({m, s: [...bigrams(m.text)].filter(b => qb.has(b)).length}))
+    .filter(x => x.s >= 3).sort((a,b) => b.s - a.s).slice(0, 2)
+    .map(x => `${x.m.role === "user" ? "用户" : "助手"}: ${x.m.text.slice(0, 1500)}`)
+    .join("\n") || null;
+}
+
+// ---------- 发送 / 停止 / 排队（steering：生成中输入自动排队，借鉴 dsh queue-actions） ----------
+let queue = null;
+async function send(payload){
+  let text, imgs, docs;
+  if (payload && typeof payload === "object"){ text = payload.text || ""; imgs = payload.imgs || []; docs = payload.docs || []; }
+  else { text = (payload ?? input.value).trim(); imgs = [...pendingImages]; docs = [...pendingDocs]; }
+  // 引文校验模式首次发送：纯文本即视为粘贴的引文列表，直接进校验而非普通对话
+  if (REFSMODE && !refsDone && text && !imgs.length && !docs.length && !pendingData.length){
+    refAudit(text); return;
+  }
+  // 文献检索前缀（任意会话可用）：「找文献 关键词」→ PubMed + OpenAlex 双源检索
+  if (text.startsWith("找文献") && text.replace(/^找文献[\s:：]*/, "").trim().length >= 2 && !imgs.length && !docs.length){
+    litSearch(text.replace(/^找文献[\s:：]*/, "").trim()); return;
+  }
+  if (!text && !imgs.length && !docs.length && !pendingData.length) return;
+  if (usingDeep() && imgs.length)
+    return toast("☁️ DeepSeek API 不支持图片：请先在设置切回本地 Qwen，或去掉图片（PDF 不受影响，本地提取为文本）");
+  // 粘贴的表格文本也属于数据出本机，云端模式发送前确认
+  if (usingDeep() && !imgs.length && !docs.length && !pendingData.length &&
+      /\t/.test(text) && /,/.test(text) &&
+      !confirm("⚠️ 消息中含表格样文本，将发送到 DeepSeek 云端（离开本机）。继续？")) return;
+  if (busy){
+    queue = {text, imgs, docs, data: pendingData};
+    sysCard("⏭ 已排队，当前回答结束后自动发送：" + (text || "（附件）"));
+    input.value=""; input.style.height="auto"; pendingImages=[]; pendingDocs=[]; pendingData=[]; imgsEl.innerHTML="";
+    input.placeholder = INPUT_PLACEHOLDER;   // 排队路径同样要清"已附文献"占位提示
+    return;
+  }
+  busy = true;   // 先占位防重入；按钮切换交由 generate() 统一处理
+  memCtrl?.abort();   // 释放 GPU 给新消息，提取下次再补
+
+  const um = {role:"user", text, imgs, docs, data: pendingData, checked:true, ts: Date.now()};
+  messages.push(um);
+  $("#welcome").style.display = "none";   // send() 手工插 DOM 不走 renderAll，引导层在此单独隐藏
+  const ub = addMsgEl("user");
+  ub.innerHTML = `<div class="content"></div>`;
+  const ucontent = ub.querySelector(".content");
+  um.imgs.forEach(u=> ucontent.insertAdjacentHTML("beforeend",`<img class="thumb" src="${u}">`));
+  (um.docs||[]).forEach(d => ucontent.insertAdjacentHTML("beforeend",
+    `<div style="font-size:12.5px;color:#8b949e;border:1px dashed var(--border);border-radius:8px;padding:4px 10px;margin-bottom:6px">📄 ${esc(d.name)} · ${d.pages}页 · 全文已附</div>`));
+  (um.data||[]).forEach(d => ucontent.insertAdjacentHTML("beforeend",
+    `<div style="font-size:12.5px;color:#8b949e;border:1px dashed var(--border);border-radius:8px;padding:4px 10px;margin-bottom:6px">📊 ${esc(d.name)} · ${d.rows}行×${d.cols}列 · 概览已附</div>`));
+  ucontent.insertAdjacentHTML("beforeend", esc(text||"（附件）"));
+  bindPick(ub, um);
+
+  input.value=""; input.style.height="auto"; pendingImages=[]; pendingDocs=[]; pendingData=[]; imgsEl.innerHTML="";
+  input.placeholder = INPUT_PLACEHOLDER;
+  scrollBottom(); persist();
+
+  await generate();
+}
+
+// 从当前 messages 末尾生成一条助手回复（send / 重新生成 / 自动重试共用入口；
+// 忙态与按钮切换在此统一管理——regen 直接调用时同样进入停止态）
+async function generate(noThink, noRetry, forceThink){
+  // regen/编辑重发不经过 send() 的图片拦截，这里兜底（云端 API 纯文本）
+  if (usingDeep() && [...messages].reverse().find(m => m.role === "user")?.imgs?.length)
+    return toast("☁️ DeepSeek API 不支持图片：本轮对话含图片，请切回本地 Qwen 再重新生成");
+  busy = true;
+  $("#send").style.display="none"; $("#stopbtn").style.display="inline-block";
+  const bb = addMsgEl("assistant");
+  bb.innerHTML = `<details class="think-block" hidden><summary>思考过程</summary><div class="tcontent"></div></details>
+                  <div class="outline" hidden></div>
+                  <div class="content typing"></div><div class="metrics" hidden></div>`;
+  const contentEl = bb.querySelector(".content"), thinkEl = bb.querySelector(".tcontent"),
+        thinkBox = bb.querySelector(".think-block"), metricsEl = bb.querySelector(".metrics"),
+        outlineEl = bb.querySelector(".outline");
+  // 长输出节流渲染：每 150ms 重渲一次并刷新大纲 chips（每 token 全量重渲在长文下会卡）
+  let lastPaint = 0;
+  const paintStream = () => {
+    contentEl.innerHTML = mdChat(answer);
+    const heads = [...answer.matchAll(/^#{1,4} (.+)$/gm)].map(m => m[1].trim());
+    if (heads.length >= 2){
+      outlineEl.hidden = false;
+      outlineEl.innerHTML = heads.map(h => `<span>${esc(h)}</span>`).join("");
+    }
+  };
+  const am = {role:"assistant", text:"", checked:true, ts: Date.now()};
+  messages.push(am);
+  bindPick(bb, am);
+
+  const t0 = performance.now();
+  let ttft = null, genTokens = 0, answer = "", thinking = "", inThink = false, usage = null;
+  ctrl = new AbortController();
+
+  // 生效模式：手动档直接用；智能档按最后一条用户消息（含是否带图）自动分类
+  const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
+  // 带文献走精确档（temp 0 直给结论，省掉思考 token；预填充代价与档位无关）；
+  // 带图诊断类走思考档；追问时 prompt 缓存使预填充近乎免费，想深挖再手动开思考
+  const curMode = S.mode === "auto"
+    ? (lastUserMsg?.docs?.length || lastUserMsg?.data?.length ? "exact" : autoMode(lastUserMsg?.text || "", !!lastUserMsg?.imgs?.length))
+    : S.mode;
+  const cfg = MODES[curMode];
+  const useThink = !noThink && (forceThink || cfg.thinking);
+  if (S.mode === "auto") toast("⚡ 已自动选择：" + MODE_LABEL[curMode]);
+
+  const body = {
+    messages: buildHistory(),
+    stream: true,
+    stream_options: {include_usage: true},
+    chat_template_kwargs: {enable_thinking: useThink},
+  };
+  if (useThink) body.reasoning_effort = S.effort;
+  if (cfg.temp !== null) body.temperature = cfg.temp;
+
+  try {
+    const res = await apiPost(body, ctrl.signal);
+    if (!res.ok){
+      // 常见错误码给可操作的中文提示，非 2xx 时尽量带上后端返回的具体原因
+      const t = await res.text().catch(() => "");
+      let detail = "";
+      try { const j = JSON.parse(t); detail = j.error?.message || (typeof j.error === "string" ? j.error : ""); } catch {}
+      const map = {
+        401: "API Key 无效或未填（⚙️ 设置里检查）",
+        402: "账户余额不足，请到 API 平台充值",
+        403: "Key 无权限或已被禁用",
+        404: "接口不存在——本地服务可能未完全启动，等状态点变绿再试",
+        429: "请求过于频繁被限流，稍等再试",
+        500: "后端内部错误（模型加载失败或内存不足？看 LocalLLMServer 日志）",
+        503: "服务正在加载或过载，稍候再试",
+      };
+      throw new Error((map[res.status] || "HTTP " + res.status) + (detail ? "：" + detail : ""));
+    }
+
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    while (true){
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream:true});
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const line of lines){
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6);
+        if (data === "[DONE]") continue;
+        let j; try { j = JSON.parse(data); } catch { continue; }
+        // llama.cpp 的流内错误也走 data: 事件（HTTP 200），不抛会呈现为"空响应"
+        if (j.error) throw new Error(typeof j.error === "string" ? j.error : (j.error.message || JSON.stringify(j.error)));
+        if (j.usage) usage = j.usage;
+        const delta = j.choices?.[0]?.delta; if (!delta) continue;
+        // llama.cpp 思考档：思考内容走 reasoning_content 字段而非 content 里的 <think> 标签
+        const rtok = delta.reasoning_content ?? delta.reasoning;
+        if (rtok){
+          if (ttft === null) ttft = (performance.now()-t0)/1000;
+          genTokens++;
+          thinking += rtok;
+          thinkBox.hidden = false; thinkBox.open = true;
+          // 非思考模式下模型自发开 <think> 时标注出来
+          if (!useThink) thinkBox.querySelector("summary").textContent = "思考过程（模型自发开启）";
+          thinkEl.textContent = thinking;
+          scrollBottom();
+        }
+        let tok = delta.content;
+        if (!tok) continue;
+        if (ttft === null) ttft = (performance.now()-t0)/1000;
+        genTokens++;
+        // 按 <think></think> 标签分段处理
+        for (const s of tok.split(/(<\/?think>)/i)){
+          if (/^<think>$/i.test(s)){ inThink = true; thinkBox.hidden = false; thinkBox.open = true;
+            if (!useThink) thinkBox.querySelector("summary").textContent = "思考过程（模型自发开启）";
+            continue; }
+          if (/^<\/think>$/i.test(s)){ inThink = false; continue; }
+          if (inThink){ thinking += s; thinkEl.textContent = thinking; }
+          else if (s){ answer += s;
+            if (performance.now() - lastPaint > 150){ lastPaint = performance.now(); paintStream(); } }
+        }
+        scrollBottom();
+      }
+    }
+    am.text = answer || thinking || "（空响应）";
+    // 答案困在思考通道时思考已充当正文，不入 think 字段（防重渲双显）
+    am.think = answer ? (thinking || undefined) : undefined;
+    // 空响应：翻转思考策略重试（原样重发会以相同采样复发）
+    if (!answer && !thinking && !noRetry){
+      sysCard(useThink ? "⚠ 模型未返回内容，已关闭思考重试…" : "⚠ 模型未返回内容，已开启思考重试（较慢，请耐心）…");
+      messages.splice(messages.indexOf(am), 1);
+      bb.parentElement.remove();
+      return generate(useThink, true, !useThink);
+    }
+    // 思考内容兜底渲染为正文（答案困底时不空屏）；真正的空响应才提示重试
+    contentEl.innerHTML = mdChat(answer || thinking) ||
+      `<p style="color:#d29922">⚠ 模型未返回内容，可点"↻ 重新生成"重试</p>`;
+    thinkBox.open = false;                  // 回答出来后收起思考
+    outlineEl.hidden = true;                // 全文已出，大纲预览退场
+    contentEl.classList.remove("typing");
+    scrollBottom(true);                     // 最终渲染后校正滚动，防收缩悬空
+
+    const total = (performance.now()-t0)/1000;
+    if (usage){ ctxUsed = (usage.prompt_tokens||0) + (usage.completion_tokens||0); updateCtxBar(); }
+    const genTok = usage?.completion_tokens ?? genTokens;
+    am.metrics = `首字 ${ttft?.toFixed(2)??"-"}s · ${genTok} tok · ${(genTok/Math.max(total-ttft,0.01)).toFixed(1)} tok/s · 总 ${total.toFixed(1)}s`;
+    metricsEl.hidden = false;
+    metricsEl.innerHTML = `<span>首字延迟 <b>${ttft?.toFixed(2)?? "-"}</b>s</span>
+      <span>生成 <b>${genTok}</b> tok</span>
+      <span>速度 <b>${(genTok/Math.max(total-ttft,0.01)).toFixed(1)}</b> tok/s</span>
+      <span>总耗时 <b>${total.toFixed(2)}</b>s</span>
+      <span>输入 <b>${usage?.prompt_tokens ?? "?"}</b> tok</span>`;
+  } catch (e) {
+    contentEl.classList.remove("typing");
+    if (e.name === "AbortError"){
+      am.text = answer || thinking || "（已中断）";
+      am.think = thinking || undefined;
+      outlineEl.hidden = true;
+      if (answer) contentEl.innerHTML = mdChat(answer);
+        contentEl.insertAdjacentHTML("beforeend", `<p style="color:#d29922">⏹ 已手动停止</p>`);
+    } else {
+      messages.splice(messages.indexOf(am),1);
+      bb.parentElement.remove();
+      let msg = e.message || String(e);
+      if (/fetch|network|load failed|timeout/i.test(msg))
+        msg = usingDeep() ? "无法连接 DeepSeek API——检查网络或代理设置"
+                          : "无法连接本地服务（" + BASE + "）——ollama serve 是否在运行？";
+      sysCard("请求失败：" + msg);
+    }
+  }
+  bb.appendChild(actionRow(am, messages.indexOf(am)));
+  busy = false; ctrl = null;
+  $("#send").style.display="inline-block"; $("#stopbtn").style.display="none";
+  persist();
+  // 自动压缩须在 busy=false 后触发；有排队消息时下一轮再压
+  // 云端模式 ctxTotal 恒为 null，按 DeepSeek 128K 窗口取保守值
+  const ctxCap = ctxTotal || (usingDeep() ? 100000 : 0);
+  if (S.autozip && ctxCap && ctxUsed > ctxCap*0.85 && !queue) compress(true);
+  if (queue){ const q = queue; queue = null; scrollBottom(); send(q); }
+  else extractMemory();
+}
+
+$("#send").onclick = () => send();
+$("#stopbtn").onclick = ()=> ctrl?.abort();
+// 代码块复制按钮 + 建议追问链接（事件委托，流式重渲不丢监听）
+document.addEventListener("click", e => {
+  const b = e.target.closest(".ccopy");
+  if (b) copyText(b.parentElement.querySelector("code")?.innerText ?? "", b);
+  const a = e.target.closest(".askq");
+  if (a){
+    e.preventDefault();
+    send(a.textContent.trim());
+  }
+});
+
+// ---------- 压缩 ----------
+async function compress(auto=false){
+  // 保留最近 KEEP 条原文，其余压成摘要；原始消息标记 archived（UI 与存档保留全文，追问旧细节由 buildHistory 检索回填）
+  const KEEP = 4;
+  if (busy || messages.length <= KEEP + 1) return;
+  busy = true;
+  sysCard(auto ? "⚙ 剩余上下文不足，自动压缩早期对话（原文保留，仅摘要参与后续）…" : "🗜 正在压缩早期对话…");
+  scrollBottom();
+  try {
+    const oldMsgs = messages.slice(0, -KEEP), recent = messages.slice(-KEEP);
+    const convo = oldMsgs.map(m=>`${m.role==="user"?"用户":"助手"}: ${m.text}`).join("\n\n");
+    const r = await apiPost({
+        messages: [
+          {role:"system", content:"你是对话压缩器。将下面的对话总结为简洁摘要，保留：用户意图、关键事实、代码/命令、未完成事项。直接输出摘要正文。"},
+          {role:"user", content: convo}
+        ],
+        max_tokens: 1024,
+        chat_template_kwargs: {enable_thinking: false},
+      });
+    const j = await r.json();
+    const summary = j.choices?.[0]?.message?.content?.trim() || "";
+    if (summary){
+      sysCard("✅ 早期对话已压缩为摘要（上方原文与导出不受影响）。追问早期细节时会自动检索相关原文回填。");
+      messages = [
+        {role:"user", text:"[此前对话摘要，请基于此继续对话]\n"+summary, checked:true, ts: Date.now()},
+        ...oldMsgs.map(m => ({...m, archived:true})),
+        ...recent
+      ];
+      renderAll();
+      ctxUsed = messages.filter(m=>!m.archived)
+        .reduce((n,m)=>n + Math.round((m.text||"").length/2), 0);
+      updateCtxBar();
+    }
+  } catch(e){ sysCard("压缩失败: " + e.message); }
+  busy = false; persist();
+}
+$("#zip") && ($("#zip").onclick = ()=> compress(false));   // 按钮已移除，防御性保留（自动压缩仍走 compress(true)）
+
+// ---------- 导出 Markdown ----------
+$("#save").onclick = ()=>{
+  let out = `# Qwen3.8-27B 本地对话\n\n> 导出时间：${new Date().toLocaleString()}\n\n`;
+  for (const m of messages){
+    out += `## ${m.role==="user"?"我":"Qwen3.8-27B"}\n\n`;
+    if (m.imgs?.length) out += `（${m.imgs.length} 张图片）\n\n`;
+    if (m.docs?.length) out += m.docs.map(d => `（附件文献：${d.name}，${d.pages} 页）`).join(" ") + "\n\n";
+    if (m.data?.length) out += m.data.map(d => `（附件数据：${d.name}，${d.rows} 行 × ${d.cols} 列）\n\n${d.summary}`).join("\n\n") + "\n\n";
+    out += m.text + "\n\n";
+    if (m.metrics) out += `> ${m.metrics}\n\n`;
+  }
+  downloadBlob(new Blob([out],{type:"text/markdown"}), `对话-${Date.now()}.md`);
+};
+function downloadBlob(blob, name){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+}
+
+// ---------- 导出长图 PNG（离屏 DOM 渲染 → html2canvas，md 样式完整保留） ----------
+$("#shot").onclick = async ()=>{
+  const sel = messages.filter(m => m.checked !== false);
+  if (!sel.length) return alert("请先勾选要导出的消息（悬停消息左侧）");
+  if (typeof html2canvas === "undefined") return alert("缺少 html2canvas.min.js（应位于 ~/Qwen38/）");
+
+  const box = document.createElement("div");
+  box.className = "pngexport";
+  box.style.cssText = "position:fixed;left:-99999px;top:0;width:840px;background:#fff;padding:40px 36px;"
+    + "font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif";
+  box.innerHTML = `<div style="font-size:20px;font-weight:700;color:#1a1a2e">Qwen3.8-27B · 本地对话</div>
+    <div style="font-size:12px;color:#888;margin:6px 0 28px">${new Date().toLocaleString()}</div>`;
+  for (const m of sel){
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;gap:12px;margin-bottom:26px";
+    row.innerHTML = `
+      <div style="width:30px;height:30px;border-radius:8px;flex:none;display:flex;align-items:center;
+                  justify-content:center;color:#fff;font-size:12px;font-weight:700;
+                  background:${m.role === "user" ? "#4f8cf7" : "linear-gradient(135deg,#6a5cff,#4f8cf7)"}">
+        ${m.role === "user" ? "我" : "Q"}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:5px">${m.role === "user" ? "我" : "Qwen3.8-27B"}</div>
+        <div class="content" style="color:#222"></div>
+        ${m.metrics ? `<div style="font-size:11.5px;color:#999;margin-top:6px">${esc(m.metrics)}</div>` : ""}
+      </div>`;
+    const c = row.querySelector(".content");
+    for (const u of (m.imgs || [])){
+      const im = document.createElement("img");
+      im.src = u; im.style.cssText = "max-width:240px;border-radius:8px;display:block;margin-bottom:6px";
+      c.appendChild(im);
+    }
+    c.insertAdjacentHTML("beforeend",
+      m.role === "user" ? `<div style="background:#eef2fb;border-radius:12px;padding:10px 14px">${esc(m.text || "（图片）")}</div>` : md(m.text));
+    box.appendChild(row);
+  }
+  document.body.appendChild(box);
+  await Promise.all([...box.querySelectorAll("img")].map(im =>
+    im.complete ? null : new Promise(r => { im.onload = im.onerror = r; })));
+  const cnv = await html2canvas(box, {scale: 2, backgroundColor: "#fff"});
+  box.remove();
+  cnv.toBlob(b => downloadBlob(b, `对话长图-${Date.now()}.png`), "image/png");
+};
+
+// ---------- 输入框 ----------
+input.addEventListener("input", ()=>{ input.style.height="auto"; input.style.height=input.scrollHeight+"px"; });
+// Safari 怪癖：确认输入法组合的回车时 isComposing 已是 false——加 229 键码与组合结束时间窗双保险
+let composeEndAt = 0;
+input.addEventListener("compositionend", () => composeEndAt = Date.now());
+input.addEventListener("keydown", e=>{
+  if (e.key==="Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229
+      && Date.now() - composeEndAt > 100){
+    e.preventDefault();
+    // 菜单开着时 Enter 选中首项而非发送斜杠原文
+    if ($("#slashmenu").classList.contains("open")){
+      const first = $("#slashmenu .sopt");
+      if (first) return first.click();
+    }
+    send();
+  }
+  if (e.key === "Escape") hideSlash();
+});
+
+// ---------- / 快捷指令菜单：隐藏指令（找文献/深读/引文校验/数据体检）的可见入口 ----------
+const SLASH_CMDS = [
+  {cmd: "找文献", desc: "PubMed + OpenAlex 双源检索，后接关键词", fill: "找文献 "},
+  {cmd: "深读", desc: "图表逐张多模态解读，如「深读 图1,3 表2」（本地限定）", fill: "深读 "},
+  {cmd: "引文校验", desc: "新开会话，粘贴参考文献列表逐条核验", href: "chat.html?refs=1"},
+  {cmd: "数据体检", desc: "对当前项目文件夹里的数据表跑一致性检验", audit: true},
+];
+function hideSlash(){ $("#slashmenu").classList.remove("open"); }
+function showSlash(){
+  const q = input.value.slice(1).trim().toLowerCase();
+  const cmds = SLASH_CMDS.filter(c => !q || c.cmd.toLowerCase().includes(q) || c.desc.includes(q));
+  const el = $("#slashmenu");
+  if (!cmds.length) return hideSlash();
+  el.innerHTML = "";
+  for (const c of cmds){
+    const d = document.createElement("div");
+    d.className = "sopt";
+    d.innerHTML = `<b>/${esc(c.cmd)}</b><small>${esc(c.desc)}</small>`;
+    d.onclick = () => {
+      hideSlash();
+      if (c.href) return (location.href = c.href);
+      if (c.audit) return dataAudit();
+      input.value = c.fill;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.dispatchEvent(new Event("input"));   // 触发自适应高度
+    };
+    el.appendChild(d);
+  }
+  el.classList.add("open");
+}
+input.addEventListener("input", () => {
+  if (input.value.startsWith("/")) showSlash(); else hideSlash();
+});
+document.addEventListener("click", e => { if (!$("#inputbox").contains(e.target)) hideSlash(); });
+
+// ---------- 图片 / PDF 上传 ----------
+$("#attach").onclick = ()=> $("#file").click();
+$("#attachpdf").onclick = ()=> $("#pdffile").click();
+$("#wup").onclick = () => $("#pdffile").click();
+// 数据附件上传入口已移除；send/buildHistory 的 m.data 兼容保留（历史会话的数据 chips 仍可正常发送）
+let pendingData = [];
+$("#pdffile").onchange = async e=>{
+  for (const f of e.target.files) await addPdf(f);
+  e.target.value = "";
+};
+// 数据附件 chip：与 PDF 附件同款——附上后在输入框上方可见（名称+规格，✕ 可移除）
+function addDataChip(j){
+  pendingData.push(j);
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#21262d;border-radius:8px;padding:6px 10px;font-size:12.5px">📊 ${esc(j.name)} · ${j.rows}行×${j.cols}列<button style="position:static">✕</button></span>`;
+  chip.querySelector("button").onclick = () => { pendingData = pendingData.filter(d => d !== j); chip.remove(); };
+  imgsEl.appendChild(chip);
+}
+// 项目文件夹落盘：会话目录 = 存档名去 .json；文件名前缀带文献名（同会话多文献不冲突）
+function projDirKey(){
+  return archOK && curConv() ? archiveName(curConv()).replace(/\.json$/, "") : null;
+}
+function saveProjFigs(j, pdfName){
+  const key = projDirKey();
+  if (!key) return;
+  const base = pdfName.replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|]/g, "_").slice(0, 40);
+  const put = (arr, prefix) => (arr || []).forEach((o, i) => {
+    const url = imgUrl(o); if (!url) return;
+    fetch(ARCH + "/projfile/" + key + "/" + encodeURIComponent(`${prefix}${i + 1}.jpg`), {
+      method: "PUT", headers: {"Content-Type": "application/octet-stream"},
+      body: Uint8Array.from(atob(url.split(",")[1]), c => c.charCodeAt(0))
+    }).catch(() => {});
+  });
+  put(j.imgs, `fig-${base}-`); put(j.timgs, `tbl-${base}-`);
+}
+async function addPdf(f){
+  const wait = $("#pdfwait"), waitText = $("#pdfwaittext");
+  waitText.textContent = `📄 正在解析《${f.name}》\n提取全文 + 图表裁剪 + 图内文字 OCR，大文件约 5-20 秒`;
+  waitText.style.whiteSpace = "pre-line";
+  wait.style.display = "flex";
+  try {
+    const r = await fetch(ARCH + "/pdf", {
+      method: "POST", headers: {"Content-Type": "application/octet-stream"},
+      body: await f.arrayBuffer()
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    if (!j.text?.trim()) throw new Error("未提取到文本（可能是扫描件，请截图按图片上传）");
+    // 耗时预估（预填充 ~50 tok/s + 精确档生成 ~2 分钟），用户可取消
+    const refsNote = j.refsStripped > 0 ? `\n已自动剔除参考文献 ${(j.refsStripped).toLocaleString()} 字（对解读无用，省预填充时间）` : "";
+    const estTok = Math.round(j.text.length / 3.5);
+    // 云端 API 预填充远快于本机 50 tok/s，瓶颈只剩生成，统一报 1-2 分钟
+    const estMin = usingDeep() ? 2 : Math.max(2, Math.round((estTok / 50 + 120) / 60));
+    if (!confirm(`📄 ${f.name} · ${j.pages} 页 · 全文 ${j.text.length.toLocaleString()} 字符（约 ${estTok.toLocaleString()} token）${refsNote}\n已提取图表图片 ${j.imgs?.length || 0} 张（随文献一并供多模态解读，PPT/海报会嵌入结果段）。\n\n预计本轮回答约 ${estMin} 分钟（首次需通读全文；后续追问约 2-3 分钟，走缓存）。\n\n附上这篇文献？`)) return;
+    const doc = {name: f.name, pages: j.pages, text: j.text, imgs: j.imgs || [], timgs: j.timgs || []};
+    pendingDocs.push(doc);
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#21262d;border-radius:8px;padding:6px 10px;font-size:12.5px">📄 ${esc(f.name)} · ${j.pages}页 · ${j.text.length.toLocaleString()}字<button style="position:static">✕</button></span>`;
+    chip.querySelector("button").onclick = ()=>{
+      pendingDocs = pendingDocs.filter(d=>d!==doc); chip.remove();
+      if (!pendingDocs.length) input.placeholder = INPUT_PLACEHOLDER;
+    };
+    imgsEl.appendChild(chip);
+    input.placeholder = "已附文献 📄 直接发送＝默认解读（核心发现/实验设计/临床意义/局限性），或输入具体问题";
+    updateChips();
+    saveProjFigs(j, f.name);   // 图表位图落盘项目文件夹（fire-and-forget）
+    // ?ppt=1 引导模式：附上后自动发送默认解读（空文本+附件即默认解读），解读完成（send 的
+    // await generate() 返回）后自动生成 PPT；标题由 persist 按"📄 文献名"自动命名卡片
+    if (pptAuto){
+      pptAuto = false;
+      $("#pptguide").style.display = "none";
+      toast("📊 正在生成默认解读，完成后将自动生成汇报 PPT…", 6000);
+      await send();
+      const last = messages[messages.length - 1];
+      if (last?.role === "assistant") makePPT(last);
+    }
+  } catch(err){
+    alert("PDF 解析失败：" + err.message + (usingDeep()
+      ? "\n\nPDF 提取由本地 LocalLLMServer.app（macOS）完成，云端对话本身不依赖它。\n替代方案：打开 PDF 复制正文，直接粘贴到输入框提问即可。"
+      : "\n（需启动 LocalLLMServer.app；扫描版 PDF 无文字层，请截图上传）"));
+  } finally {
+    wait.style.display = "none";
+  }
+}
+$("#file").onchange = async e=>{
+  for (const f of e.target.files){
+    const r = new FileReader();
+    r.onload = () => addPendingImage(r.result);
+    r.readAsDataURL(f);
+  }
+  e.target.value = "";
+};
+function addPendingImage(dataURL){
+  pendingImages.push(dataURL);
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.innerHTML = `<img src="${dataURL}"><button>✕</button>`;
+  chip.querySelector("button").onclick = ()=>{
+    pendingImages = pendingImages.filter(u=>u!==dataURL); chip.remove();
+  };
+  imgsEl.appendChild(chip);
+}
+// 输入框直接粘贴图片（截图后 ⌘V，免存文件）
+input.addEventListener("paste", e => {
+  for (const it of (e.clipboardData?.items || [])){
+    if (!it.type.startsWith("image/")) continue;
+    const f = it.getAsFile(); if (!f) continue;
+    const r = new FileReader();
+    r.onload = () => addPendingImage(r.result);
+    r.readAsDataURL(f);
+  }
+});
+// 整页拖放：图片 / PDF
+document.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dragging"); });
+document.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dragging"); });
+document.addEventListener("drop", async e => {
+  e.preventDefault(); document.body.classList.remove("dragging");
+  for (const f of e.dataTransfer.files){
+    if (f.type.startsWith("image/")){
+      const r = new FileReader(); r.onload = () => addPendingImage(r.result); r.readAsDataURL(f);
+    } else if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)){
+      await addPdf(f);
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+# 模型权重（体积巨大，不入库）
+*.gguf
+
+# 编译产物
+QwenServer.app/
+LocalLLMServer.app/
+
+# 私人对话存档
+chat_history/
+
+# 系统/临时文件
+.DS_Store
+.cache/
+*.log
+
+# KaTeX 公式渲染资产（2.9MB，npm 发行包解压即可，见 README）
+katex/
+
+# 本地设计笔记（不上传）
+DESIGN-LOCAL.md
+
+# 本地项目备忘（Claude 加载，不上传）
+CLAUDE.md
+
+# 本地参考素材（demo 截图/存档，不对外）
+demo/

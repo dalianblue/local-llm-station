@@ -1,0 +1,24 @@
+{
+ "ts": 1787319478021,
+ "messages": [
+  {
+   "checked": true,
+   "docs": [],
+   "role": "user",
+   "data": [],
+   "imgs": [],
+   "text": "黄河之水天上来下一句是什么？",
+   "ts": 1787318982179
+  },
+  {
+   "checked": true,
+   "ts": 1787318982214,
+   "metrics": "首字 1.94s · 36 tok · 11.7 tok/s · 总 5.0s",
+   "role": "assistant",
+   "text": "奔流到海不复回。\n\n这是李白《将进酒》中的名句，全句为：“君不见黄河之水天上来，奔流到海不复回。”"
+  }
+ ],
+ "title": "示例：李白的艺术创造分析",
+ "id": "demolibai",
+ "ctxUsed": 324
+}

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qwen3.8-27B（Q4_K_XL）本地模型能力评估报告</title>
+<style>
+  :root {
+    --bg: #faf9f7;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --card: #ffffff;
+    --accent: #2b6cb0;
+    --good: #2f855a;
+    --warn: #c05621;
+    --bad: #c53030;
+    --line: #e2e0dc;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--ink);
+    line-height: 1.75; font-size: 16px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 48px 24px 80px; }
+  header { border-bottom: 3px solid var(--ink); padding-bottom: 24px; margin-bottom: 40px; }
+  h1 { font-size: 30px; letter-spacing: -0.5px; margin-bottom: 8px; }
+  .meta { color: var(--muted); font-size: 14px; }
+  h2 { font-size: 22px; margin: 48px 0 16px; padding-left: 12px; border-left: 4px solid var(--accent); }
+  h3 { font-size: 17px; margin: 24px 0 8px; }
+  p { margin-bottom: 12px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 20px 24px; margin: 16px 0;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14.5px; }
+  th { text-align: left; border-bottom: 2px solid var(--ink); padding: 8px 10px; }
+  td { border-bottom: 1px solid var(--line); padding: 8px 10px; vertical-align: top; }
+  .score-good { color: var(--good); font-weight: 600; }
+  .score-mid { color: var(--warn); font-weight: 600; }
+  .tag {
+    display: inline-block; font-size: 12.5px; padding: 1px 10px; border-radius: 999px;
+    margin-right: 6px; font-weight: 500;
+  }
+  .tag-yes { background: #e6f4ea; color: var(--good); }
+  .tag-no { background: #fde8e8; color: var(--bad); }
+  .tag-maybe { background: #fef3e2; color: var(--warn); }
+  ul { padding-left: 22px; margin-bottom: 12px; }
+  li { margin-bottom: 6px; }
+  .verdict {
+    background: var(--ink); color: #fff; border-radius: 8px;
+    padding: 24px 28px; margin: 24px 0; font-size: 17px;
+  }
+  .verdict strong { color: #f6c453; }
+  .footnote { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); margin-top: 56px; padding-top: 16px; }
+  code { background: #eee; border-radius: 4px; padding: 1px 6px; font-size: 13.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Qwen3.8-27B（UD-Q4_K_XL）本地模型能力评估报告</h1>
+  <p class="meta">测试环境：Mac (Apple Silicon, 32GB) · llama.cpp llama-server · 上下文 64K · 完全离线 · 2026-08-16</p>
+  <p class="meta">四套人工评分卷：通用知识 / 医学 / 中英翻译 / 数据分析编程，共 56 题，逐题对照踩分点人工评分</p>
+</header>
+
+<h2>一、总成绩</h2>
+<table>
+  <tr><th>测试卷</th><th>题目数</th><th>设置</th><th>得分</th><th>评级（按各卷标准）</th></tr>
+  <tr><td>通用知识压力测试</td><td>22</td><td>temp 0.1 · 思考关</td><td>86%（18/21+加试）</td><td class="score-mid">良好+</td></tr>
+  <tr><td>医学专项（执业医师级）</td><td>17</td><td>temp 0.2 · 思考开</td><td>91%（14.5/16）</td><td class="score-mid">合格偏上，安全项踩线</td></tr>
+  <tr><td>中英双向翻译</td><td>14</td><td>temp 0.0 · 思考关</td><td>8 全对 + 2 半对，回译零漂移</td><td class="score-mid">良好偏上</td></tr>
+  <tr><td>数据分析编程（实测运行）</td><td>7</td><td>temp 0.0 · 思考关</td><td>100%（7/7 可运行）</td><td class="score-good">卓越</td></tr>
+</table>
+
+<h2>二、能力边界（它擅长什么）</h2>
+<div class="card">
+  <h3>✅ 可靠区</h3>
+  <ul>
+    <li><strong>代码生成</strong>：pandas / matplotlib / scipy 代码 7/7 直接可运行，能避开常见陷阱（dropna 滥用、饼图密度轴、seaborn 误差线），规范写法（<code>__main__</code>、<code>select_dtypes</code>）一个不漏</li>
+    <li><strong>日常中英互译</strong>：成语隐喻意译到位（"此地无银三百两"→"The more you hide, the more you reveal"），中文欧化抑制好，双向回译语义零漂移</li>
+    <li><strong>指令纪律</strong>：temp 0 + 明确指令（"只输出译文/代码"）下完全不多嘴，两套陷阱题均守规矩</li>
+    <li><strong>逻辑推理与陷阱识别</strong>：能识破数学题的矛盾条件并宣告"无解"、识破错误预设（伪名人名言）、拒答未知事件（2025 诺奖）——幻觉抵抗在 27B 里属于优秀</li>
+    <li><strong>高频知识</strong>：TCA 循环、心电图定位、DKA 补液原则等教科书级内容记忆扎实</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>⚠️ 半可靠区（需人工核对）</h3>
+  <ul>
+    <li><strong>长尾事实</strong>：冷门细节会"自信地错"——把《肖申克》藏锄头的圣经卷答成《马太福音》（实为《出埃及记》）；四色定理证明人名编成"肯普和科恩"（实为 Appel & Haken）</li>
+    <li><strong>固定译名</strong>："spooky action at a distance" 译成"幽灵般的超距作用"，科普圈标准译名是"鬼魅般的超距作用"</li>
+    <li><strong>医学教育问答</strong>：基础/药理记忆好，但涉及具体用药切换时出现方向性错误（华法林换 NOAC 的 INR 时机说反、达比加群餐前餐后说反）</li>
+    <li><strong>低频中文搭配</strong>："她<strong>地</strong>跑向终点"这类"的得地"边缘用法会出错</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>❌ 禁用区（不要让它做）</h3>
+  <ul>
+    <li><strong>替代搜索引擎 / 离线百科</strong>：长尾事实幻觉率不可接受，查事实请用 RAG 或搜索</li>
+    <li><strong>临床决策与用药方案</strong>：在毒性剂量问题上最终仍会给出具体数字（">10 ng/mL"），换药方案有方向性错误——只能做学习辅助，不能做诊疗依据</li>
+    <li><strong>时事与新知识</strong>：截止日期之后的一切（新指南、新获奖者）它一无所知，且答案真假难辨</li>
+    <li><strong>对精确性要求极高的专业翻译</strong>：法律、医学文献的固定术语需专业校对</li>
+  </ul>
+</div>
+
+<h2>三、使用场景推荐</h2>
+<table>
+  <tr><th>场景</th><th>推荐度</th><th>推荐配置</th></tr>
+  <tr><td>数据分析 / 画图代码生成</td><td><span class="tag tag-yes">放心用</span></td><td>temp 0.0 · 思考关 · 指令写明"只输出代码"</td></tr>
+  <tr><td>日常中英互译、邮件润色</td><td><span class="tag tag-yes">放心用</span></td><td>temp 0.0 · 思考关</td></tr>
+  <tr><td>写作、头脑风暴、结构化改写</td><td><span class="tag tag-yes">放心用</span></td><td>temp 0.7+ · 思考开</td></tr>
+  <tr><td>数学/逻辑推演、找题目漏洞</td><td><span class="tag tag-yes">放心用</span></td><td>思考开（注意单题可长达 6 分钟）</td></tr>
+  <tr><td>编程学习答疑、概念解释</td><td><span class="tag tag-maybe">可用</span></td><td>涉及具体 API 版本细节时需核对文档</td></tr>
+  <tr><td>医学/专业知识学习</td><td><span class="tag tag-maybe">谨慎用</span></td><td>仅作学习参考，用药/剂量/方案必须查权威来源</td></tr>
+  <tr><td>查证事实、引用出处</td><td><span class="tag tag-no">不要用</span></td><td>换 RAG / 搜索引擎</td></tr>
+  <tr><td>诊疗参考、用药决策</td><td><span class="tag tag-no">不要用</span></td><td>无替代方案，禁用</td></tr>
+</table>
+
+<h2>四、关键工程结论</h2>
+<div class="verdict">
+  <p><strong>最重要的发现：温度与思考模式的组合决定可用性。</strong></p>
+  <p style="margin-top:10px">翻译/代码类任务用 <strong>temp 0.0 + 关闭思考</strong>（<code>chat_template_kwargs: {"enable_thinking": false}</code>）：精度最高、零多嘴、速度快约 20 倍（14 题翻译 1.5 分钟 vs 医学卷 17 题 90 分钟）。思考模式留给需要深度推演的数学/逻辑题。</p>
+</div>
+<ul>
+  <li>速度参考（64K 上下文，本地 27B）：短答案 5-20 秒，长推理 2-6 分钟/题</li>
+  <li>模型曾在"未知事件"上全部正确拒答，说明幻觉主要发生在<strong>长尾事实的中间层</strong>（听过的领域+记不清的细节），而非彻底的编造癖</li>
+  <li>所有测试脚本可复现：<code>benchmark/run_*.py</code>（需本地 llama-server 运行在 8080 端口）</li>
+</ul>
+
+<p class="footnote">
+  测试日期 2026-08-16 · 评卷依据与原始答案见 benchmark/ 目录下各 *_results.md ·
+  评分为人工对照踩分点判定，非自动化基准 ·
+  模型：Qwen3.8-27B-UD-Q4_K_XL + mmproj-F16，量化对长尾记忆的影响未单独评估
+</p>
+
+</div>
+</body>
+</html>

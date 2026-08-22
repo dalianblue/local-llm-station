@@ -1,0 +1,19 @@
+name: Swift typecheck
+
+on:
+  push:
+    paths:
+      - "LocalLLMServer.swift"
+      - "QwenServer.swift"
+      - ".github/workflows/swift.yml"
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Typecheck LocalLLMServer
+        run: xcrun swiftc -typecheck -parse-as-library LocalLLMServer.swift
+      - name: Typecheck QwenServer
+        run: xcrun swiftc -typecheck -parse-as-library QwenServer.swift

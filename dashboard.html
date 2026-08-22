@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📚 知识工作台 · 项目仪表盘</title>
+<style>
+  /* 与 chat.html 同一套深色基调 */
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #2d333b;
+    --text: #e6edf3; --dim: #8b949e; --accent: #4f8cf7;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    font: 15px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 32px 24px 60px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 26px; flex-wrap: wrap; }
+  h1 { font-size: 22px; }
+  header .sub { color: var(--dim); font-size: 13px; }
+  header .spacer { margin-left: auto; }
+  #newbtn, #libbtn, #pptbtn, #refsbtn {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 9px 18px; font-size: 14px; cursor: pointer; font-weight: 500;
+  }
+  #newbtn:hover, #libbtn:hover, #pptbtn:hover, #refsbtn:hover { filter: brightness(1.1); }
+  /* 「➕ 新建」弹出菜单：对话/写作同一个项目的两种开场 */
+  #newwrap { position: relative; }
+  #newmenu {
+    display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 50;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 6px; min-width: 210px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  #newmenu.open { display: block; }
+  /* 文献库管理面板 */
+  .modal { position: fixed; inset: 0; z-index: 60; display: none;
+    align-items: center; justify-content: center; background: rgba(0,0,0,.5); }
+  .modal.open { display: flex; }
+  .mbox { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    width: min(720px, 94vw); max-height: 80vh; display: flex; flex-direction: column;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6); }
+  .mhead { padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .mhead button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 15px; margin-left: auto; }
+  .mtools { padding: 10px 18px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
+  .mtools button { background: var(--bg); color: var(--accent); border: 1px solid var(--border);
+    border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer; }
+  .mtools button:hover { border-color: var(--accent); }
+  .mtools button:disabled { opacity: .5; cursor: default; }
+  #liblist { overflow-y: auto; padding: 8px 12px; min-height: 0; }
+  .lrow { display: flex; align-items: flex-start; gap: 10px; padding: 9px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .lrow:last-child { border-bottom: none; }
+  .lrow .main { flex: 1; min-width: 0; }
+  .lrow .t { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+  .lrow .meta { color: var(--dim); font-size: 12px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lrow .meta a { color: var(--accent); text-decoration: none; }
+  .lrow .del, .lrow .fix { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 13px; flex: none; }
+  .lrow .fix:hover { color: var(--accent); }
+  .lrow .del:hover { color: #f85149; }
+  .nopt { padding: 9px 12px; border-radius: 8px; cursor: pointer; }
+  .nopt:hover { background: var(--bg); }
+  .nopt b { display: block; font-size: 14px; }
+  .nopt small { color: var(--dim); font-size: 12px; }
+  #pptbtn, #refsbtn, #libbtn { background: transparent; color: var(--accent); border: 1px solid var(--accent); margin-right: 8px; }
+
+  /* 全局状态条 */
+  #status {
+    display: flex; gap: 22px; flex-wrap: wrap; align-items: center;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 18px; margin-bottom: 28px; font-size: 13px; color: var(--dim);
+  }
+  #status b { color: var(--text); font-weight: 600; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .on { background: #3fb950; } .off { background: #f85149; }
+  #status .mono { font-family: var(--mono); }
+
+  h2 { font-size: 14px; color: var(--dim); font-weight: 600; margin: 26px 0 12px; letter-spacing: .5px; }
+
+  /* 全局搜索：首次搜索时懒加载全部会话正文，之后纯内存匹配 */
+  #searchbox {
+    display: flex; gap: 8px; margin-bottom: 28px;
+  }
+  #searchinput {
+    flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); font-size: 14px; padding: 10px 14px; outline: none;
+  }
+  #searchinput:focus { border-color: var(--accent); }
+  #searchbox select {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); font-size: 13px; padding: 0 10px; outline: none; cursor: pointer;
+  }
+  #searchhint { font-size: 12px; color: var(--dim); align-self: center; white-space: nowrap; }
+  #searchresults { margin-bottom: 28px; display: none; }
+  .hit {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 8px; cursor: pointer; font-size: 13.5px;
+  }
+  .hit:hover { border-color: var(--accent); }
+  .hit .hname { font-weight: 600; margin-bottom: 2px; }
+  .hit .hmeta { color: var(--dim); font-size: 12px; margin-left: 8px; font-weight: normal; }
+  .hit .hsnip { color: var(--dim); line-height: 1.6; word-break: break-all; }
+  .hit mark { background: rgba(79,140,247,.3); color: var(--text); border-radius: 3px; padding: 0 1px; }
+
+  #projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; cursor: pointer; transition: border-color .15s, transform .15s;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .card .name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .meta { font-size: 12.5px; color: var(--dim); display: flex; gap: 12px; flex-wrap: wrap; }
+  .card .ico { font-size: 20px; }
+  .tag {
+    font-size: 11px; border-radius: 10px; padding: 1px 8px; display: inline-block;
+    margin: 2px 4px 0 0; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  }
+  .card { position: relative; }
+  .cardacts {
+    position: absolute; top: 8px; right: 8px; display: flex; gap: 4px;
+  }
+  .cardacts button {
+    background: none; border: none; cursor: pointer; font-size: 14px; padding: 2px 4px; line-height: 1;
+    opacity: 0; transition: opacity .15s;
+  }
+  .card:hover .cardacts button { opacity: 1; }
+  .cardacts .pin { color: var(--dim); }
+  /* 底部双入口动作带（悬停浮现）：左半对话 | 细线 | 右半写作（蓝色调区分） */
+  .entrybar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: stretch;
+    background: none; border-top: 1px solid var(--border);
+    border-radius: 0 0 12px 12px;
+    opacity: 0; transform: translateY(4px); transition: opacity .12s, transform .12s;
+    pointer-events: none;
+  }
+  .card:hover .entrybar { opacity: 1; transform: none; pointer-events: auto; }
+  .entrybar button {
+    flex: 1; background: none; border: none; color: var(--text);
+    font-size: 13px; padding: 9px 0; cursor: pointer;
+  }
+  .entrybar button { background: rgba(13,17,23,.7); }   /* 30% 透明：透出卡片内容；hover 只变色不变底 */
+  .entrybar .go-chat { color: var(--text); border-radius: 0 0 0 12px; }   /* 圆角随卡片，防盖断左下边框 */
+  .entrybar .go-write { color: var(--text); border-left: 1px solid var(--border); border-radius: 0 0 12px 0; }
+  .entrybar button:hover { color: #7fb0ff; }
+  /* 置顶态：图钉常显、主题蓝、-45° 斜插；垃圾桶仍只随悬停出现 */
+  .card.pinned .cardacts .pin { opacity: 1; color: var(--accent); transform: rotate(-45deg); }
+  .cardacts .del:hover { color: #f85149; }
+  /* 置顶态：顶边悬浮徽标 + 淡蓝渐变底 + 左侧细标，可辨但不压内容 */
+  .card.pinned {
+    border-color: #2c4a75;
+    background: linear-gradient(160deg, rgba(79,140,247,.12), var(--panel) 55%);
+    box-shadow: 0 0 0 1px rgba(79,140,247,.2), 0 4px 14px rgba(0,0,0,.3);
+  }
+  .card.pinned::after {
+    content: "置顶"; position: absolute; top: -9px; left: 12px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 2px; color: var(--accent);
+    background: var(--bg); border: 1px solid #2c4a75; border-radius: 6px; padding: 0 7px; line-height: 1.5;
+  }
+  .card.pinned::before {
+    content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px;
+    border-radius: 2px; background: var(--accent);
+  }
+
+  #empty { color: var(--dim); text-align: center; padding: 60px 0; font-size: 14px; line-height: 2; }
+  #empty a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📚 知识工作台</h1>
+    <span class="sub">本地知识工作区 · 项目总览</span>
+    <span class="spacer"></span>
+    <button id="refsbtn">📚 引文校验</button>
+    <button id="pptbtn">📊 文献转PPT</button>
+    <button id="libbtn">📚 文献库</button>
+    <div id="newwrap">
+      <button id="newbtn">➕ 新建</button>
+      <div id="newmenu">
+        <div class="nopt" id="opt-chat"><b>💬 新对话</b><small>读文献 · 提问 · 日常</small></div>
+        <div class="nopt" id="opt-write"><b>✍️ 新写作</b><small>论文 · 方案 · 分章节写作</small></div>
+      </div>
+    </div>
+  </header>
+
+  <div id="status">
+    <span><span class="dot off" id="llmdot"></span>模型服务 <b id="llmtext">检测中…</b></span>
+    <span>模型 <b id="modeltext">—</b></span>
+    <span>CPU <b id="cputext" class="mono">—</b></span>
+    <span>内存 <b id="memtext" class="mono">—</b></span>
+    <span class="spacer" style="margin-left:auto"></span>
+    <span>工作区 <b id="wstats">—</b></span>
+    <span>存档服务 <b id="archtext">检测中…</b></span>
+  </div>
+
+  <div id="libpanel" class="modal"><div class="mbox">
+    <div class="mhead"><span id="libtitle">📚 文献库</span><button id="libclose">✕</button></div>
+    <div class="mtools">
+      <button id="scanbtn2">🔄 扫描对话入库</button>
+      <button id="metabtn2">🔍 补元数据（Crossref）</button>
+      <button id="bibimp">📥 导入 BibTeX</button>
+      <button id="bibexp">📤 导出 BibTeX</button>
+      <input type="file" id="bibfile" accept=".bib,.txt" hidden>
+    </div>
+    <div id="liblist"></div>
+  </div></div>
+
+  <div id="searchbox">
+    <input id="searchinput" type="search" placeholder="🔍 搜索所有对话内容…（#标签 只搜标签）" autocomplete="off">
+    <select id="ftype" title="搜索范围：对话正文或附件（文献/资料）全文">
+      <option value="">全部内容</option>
+      <option value="chat">💬 对话内容</option>
+      <option value="att">📎 附件内容</option>
+    </select>
+    <select id="ftime" title="按活跃时间过滤">
+      <option value="">不限时间</option>
+      <option value="1">24 小时内</option>
+      <option value="7">7 天内</option>
+      <option value="30">30 天内</option>
+      <option value="365">一年内</option>
+    </select>
+    <span id="searchhint"></span>
+  </div>
+  <div id="searchresults"></div>
+
+  <h2>项目（每条对话即一个项目，按活跃时间排序）</h2>
+  <div id="projects"></div>
+  <div id="empty" style="display:none"></div>
+</div>
+
+<script>
+const ARCH = "http://127.0.0.1:8081";
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+
+// 概念标签彩色 chip：颜色由文本哈希决定——同一概念跨卡片同色，为标签可视化预留一致性
+function tagHtml(tags){
+  return (tags || []).map(t => {
+    let h = 0;
+    for (const ch of t) h = (h * 31 + ch.codePointAt(0)) % 360;
+    return `<span class="tag" title="${esc(t)}" style="background:hsl(${h},45%,18%);color:hsl(${h},80%,75%);border:1px solid hsl(${h},45%,32%)">${esc(t.length > 12 ? t.slice(0, 12) + "…" : t)}</span>`;
+  }).join("");
+}
+function ago(ts){
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return "刚刚";
+  if (s < 3600) return Math.floor(s/60) + " 分钟前";
+  if (s < 86400) return Math.floor(s/3600) + " 小时前";
+  if (s < 86400*30) return Math.floor(s/86400) + " 天前";
+  return new Date(ts).toLocaleDateString("zh-CN");
+}
+
+let projects = [], pinned = new Set(), manualTags = {};   // manualTags: id -> ["标签", ...]
+// 置顶 + 手动标签存档到 dashboard.json（与笔记/卡片同机制，跨浏览器保留）
+async function loadPinned(){
+  try {
+    const r = await fetch(ARCH + "/archive/dashboard.json");
+    if (r.ok){ const j = await r.json(); pinned = new Set(j.pinned || []); manualTags = j.manualTags || {}; }
+  } catch {}
+}
+async function saveMeta(){
+  try { await fetch(ARCH + "/archive/dashboard.json", {
+    method: "PUT", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({pinned: [...pinned], manualTags}) }); } catch {}
+}
+// 展示/搜索用的合并标签：手动在前，自动（知识卡片 concept 抽取）去重合并
+function allTags(c){
+  return [...(manualTags[c.id] || []), ...(c.tags || []).filter(t => !(manualTags[c.id] || []).includes(t))];
+}
+async function loadProjects(){
+  try {
+    const j = await (await fetch(ARCH + "/projects/list")).json();
+    projects = j.convs || [];
+  } catch {
+    $("#projects").style.display = "none";
+    $("#empty").style.display = "";
+    $("#empty").innerHTML = "无法连接存档服务 127.0.0.1:8081<br>请先启动 <a href='#' onclick='location.reload()'>LocalLLMServer.app</a> 后刷新";
+    return;
+  }
+  // 数据无变化不重渲（轮询重建节点会打断悬停/点击）
+  const sig = JSON.stringify(projects) + "|" + [...pinned].join(",") + "|" + JSON.stringify(manualTags);
+  if (sig === loadProjects._sig) return;
+  loadProjects._sig = sig;
+  const el = $("#projects"); el.innerHTML = ""; el.style.display = "";
+  $("#empty").style.display = "none";
+  for (const c of [...projects].sort((a, b) => (pinned.has(b.id) - pinned.has(a.id)) || (b.ts - a.ts))){
+    const d = document.createElement("div");
+    d.className = "card" + (pinned.has(c.id) ? " pinned" : "");
+    const isDoc = c.name.startsWith("📄");
+    d.innerHTML = `<span class="cardacts">
+        <button class="pin" title="${pinned.has(c.id) ? "取消置顶" : "置顶"}">📌</button>
+        <button class="tagbtn" title="编辑标签（逗号或空格分隔）">🏷</button>
+        <button class="del" title="删除项目（连同笔记与卡片）">🗑</button>
+      </span>
+      <span class="ico">${isDoc ? "📄" : "💬"}</span>
+      <span class="name" title="${esc(c.name)}">${esc(c.name)}</span>
+      <span>${tagHtml(allTags(c))}</span>
+      <span class="meta"><span>${c.docs ? c.docs + " 份资料" : c.name.startsWith("✍️") ? "写作项目" : "纯对话"}</span>${c.tables ? "<span>📊 " + c.tables + " 表</span>" : ""}${c.figs ? "<span>🖼 " + c.figs + " 图</span>" : ""}${c.notes ? "<span>📝 笔记</span>" : ""}${c.cards ? "<span>🃏 " + c.cards + " 卡</span>" : ""}<span>活跃于 ${ago(c.ts)}</span></span>
+      <div class="entrybar">
+        <button class="go-chat" title="进入对话：解读、提问、图表深读">💬 对话</button>
+        <button class="go-write" title="进入写作台：分章节写作与版本管理">✍️ 写作</button>
+      </div>`;
+    // 点卡片按项目类型分流：✍️ 写作项目进编辑器，其余进对话——默认去向跟随用户预期
+    d.onclick = () => location.href =
+      (c.name.startsWith("✍️") ? "editor.html" : "chat.html") + "?conv=" + encodeURIComponent(c.id);
+    d.querySelector(".pin").onclick = async e => {
+      e.stopPropagation();
+      pinned.has(c.id) ? pinned.delete(c.id) : pinned.add(c.id);
+      await saveMeta();
+      loadProjects();
+    };
+    d.querySelector(".go-chat").onclick = e => {
+      e.stopPropagation();
+      location.href = "chat.html?conv=" + encodeURIComponent(c.id);
+    };
+    d.querySelector(".go-write").onclick = e => {
+      e.stopPropagation();
+      location.href = "editor.html?conv=" + encodeURIComponent(c.id);
+    };
+    d.querySelector(".tagbtn").onclick = e => {
+      e.stopPropagation();
+      const input = prompt("编辑标签（逗号或空格分隔，留空清除手动标签）：\n自动标签（来自知识卡片，不可在此改）：" + (c.tags || []).join("、"), (manualTags[c.id] || []).join(", "));
+      if (input === null) return;
+      const tags = input.split(/[,，\s]+/).map(t => t.replace(/^#/, "").trim()).filter(Boolean).slice(0, 8);
+      if (tags.length) manualTags[c.id] = tags; else delete manualTags[c.id];
+      saveMeta().then(loadProjects);
+    };
+    d.querySelector(".del").onclick = async e => {
+      e.stopPropagation();
+      if (!confirm(`删除项目「${c.name.replace(/^📄 /, "")}」？\n会话存档、笔记与知识卡片一并删除，不可恢复。\n（已打开的浏览器里 localStorage 副本不受影响）`)) return;
+      const enc = encodeURIComponent;
+      await Promise.allSettled([
+        fetch(`${ARCH}/archive/${enc(c.file)}`, {method: "DELETE"}),
+        fetch(`${ARCH}/archive/${enc(c.id + ".notes.md")}`, {method: "DELETE"}),
+        fetch(`${ARCH}/archive/${enc(c.id + "-cards.json")}`, {method: "DELETE"}),
+      ]);
+      pinned.delete(c.id); delete manualTags[c.id]; await saveMeta();
+      loadProjects();
+    };
+    el.appendChild(d);
+  }
+  // 工作区累计计数（免费的正反馈：项目/笔记/卡片）
+  const nNotes = projects.filter(c => c.notes).length, nCards = projects.reduce((s, c) => s + (c.cards || 0), 0);
+  const nTables = projects.reduce((s, c) => s + (c.tables || 0), 0);
+  $("#wstats").textContent = `${projects.length} 个项目 · ${nNotes} 篇笔记 · ${nCards} 张卡片 · ${nTables} 张数据表`;
+}
+
+async function loadStatus(){
+  try {
+    const j = await (await fetch(ARCH + "/system/status")).json();
+    $("#llmdot").className = "dot " + (j.llm ? "on" : "off");
+    $("#llmtext").textContent = j.llm ? "运行中 · 127.0.0.1:11434" : "已停止";
+    $("#modeltext").textContent = j.model || "—";
+    $("#cputext").textContent = `${(j.cpu / Math.max(j.cores,1)).toFixed(1)}% · ${j.cores} 核`;
+    $("#memtext").textContent = `${j.memUsed} / ${j.memTotal} GB`;
+    $("#archtext").textContent = "已连接 :8081";
+  } catch {
+    $("#archtext").textContent = "未连接";
+  }
+}
+
+// ---------- 全局搜索（客户端全量拉取匹配） ----------
+let corpus = null, corpusQuery = "";
+async function loadCorpus(){
+  $("#searchhint").textContent = "加载会话内容…";
+  const convs = projects.length ? projects : (await (await fetch(ARCH + "/projects/list")).json()).convs;
+  const entries = await Promise.all(convs.map(async c => {
+    try {
+      const j = await (await fetch(ARCH + "/archive/" + encodeURIComponent(c.file))).json();
+      // 按消息建索引：text＝正文，atts＝附件全文（文件名+text），ts 消息级时间戳（旧消息回退会话活跃时间）
+      const msgs = (j.messages || []).map(m => {
+        let atts = "";
+        for (const d of m.docs || []) atts += (d.name || "") + "\n" + (d.text || "") + "\n";
+        return { text: String(m.text || ""), atts, ts: m.ts || c.ts };
+      });
+      return { c, msgs };
+    } catch { return null; }   // 单文件损坏不拖垮整体
+  }));
+  corpus = entries.filter(Boolean);
+}
+function highlight(text, q){
+  const i = text.toLowerCase().indexOf(q);
+  const from = Math.max(0, i - 30), to = Math.min(text.length, i + q.length + 60);
+  return (from > 0 ? "…" : "") + esc(text.slice(from, i)) +
+    "<mark>" + esc(text.slice(i, i + q.length)) + "</mark>" + esc(text.slice(i + q.length, to)) + (to < text.length ? "…" : "");
+}
+async function doSearch(){
+  const raw = $("#searchinput").value.trim();
+  const q = raw.toLowerCase();
+  const isTag = q.startsWith("#"), tag = q.slice(1);
+  const ftype = $("#ftype").value, ftime = +$("#ftime").value;
+  // 类型/时间过滤同样作用于无关键词的浏览（只选过滤条件即按条件列出对话）
+  corpusQuery = q + "|" + ftype + "|" + ftime;
+  const inTime = c => !ftime || Date.now() - c.ts < ftime * 86400000;
+  if (!q && !ftype && !ftime){ $("#searchresults").style.display = "none"; $("#searchhint").textContent = ""; return; }
+  if (!corpus) await loadCorpus();
+  if (corpusQuery !== (q + "|" + ftype + "|" + ftime)) return;   // 加载期间用户已改条件
+  if (!corpus){ $("#searchhint").textContent = "加载失败，请重试"; return; }
+  const hits = [];
+  for (const e of corpus){
+    // 时间过滤到消息级：只留时间窗内的消息（标签/纯浏览仍按会话活跃时间）
+    const winMsgs = ftime ? e.msgs.filter(m => Date.now() - m.ts < ftime * 86400000) : e.msgs;
+    if (ftype === "att" && !e.c.docs) continue;   // 附件范围：只看含资料的会话
+    if (isTag){
+      if (inTime(e.c) && allTags(e.c).some(t => t.toLowerCase().includes(tag))) hits.push({ e, n: 0, src: "" });
+    } else if (q){
+      // ftype 切换搜索源：chat＝对话正文，att＝附件全文（文献/资料 text）
+      let n = 0, src = "";
+      for (const m of winMsgs){
+        const s = ftype === "chat" ? m.text : ftype === "att" ? m.atts : m.text + "\n" + m.atts;
+        const low = s.toLowerCase();
+        let idx = -1;
+        while ((idx = low.indexOf(q, idx + 1)) !== -1) n++;
+        if (s && low.includes(q)) src += s + "\n";
+      }
+      if (n) hits.push({ e, n, src });
+    } else if (winMsgs.length && (!ftype || ftype === "chat" || e.c.docs)) hits.push({ e, n: 0, src: "" });   // 纯过滤浏览
+  }
+  hits.sort((a, b) => (b.n - a.n) || (b.e.c.ts - a.e.c.ts));
+  const box = $("#searchresults");
+  box.style.display = "block";
+  box.innerHTML = `<h2>${isTag ? "标签" : "搜索"}结果：${hits.length} 个对话${q ? `命中「${esc(raw)}」` : ""}</h2>` +
+    (hits.length ? hits.slice(0, 30).map(h => `
+      <div class="hit" data-id="${esc(h.e.c.id)}">
+        <div class="hname">${esc(h.e.c.name.replace(/^📄 /, ""))}<span class="hmeta">${h.n ? h.n + " 处命中 · " : ""}${allTags(h.e.c).map(esc).join(" · ") || "无标签"} · 活跃于 ${ago(h.e.c.ts)}</span></div>
+        ${h.n ? `<div class="hsnip">${highlight(h.src, q)}</div>` : `<div class="hsnip">${tagHtml(allTags(h.e.c)) || ""}</div>`}
+      </div>`).join("") : `<div style="color:var(--dim);padding:20px 0">无结果</div>`) +
+    (hits.length > 30 ? `<div style="color:var(--dim);font-size:12px">仅显示前 30 个对话（共 ${hits.length} 个命中）</div>` : "");
+  box.querySelectorAll(".hit").forEach(el => el.onclick = () => location.href = "chat.html?conv=" + encodeURIComponent(el.dataset.id));
+  $("#searchhint").textContent = `已搜索 ${corpus.length} 个对话`;
+}
+let searchTimer;
+const queueSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(doSearch, 250); };
+$("#searchinput").oninput = queueSearch;
+$("#ftype").onchange = queueSearch;
+$("#ftime").onchange = queueSearch;
+
+// ?new=1：强制新会话并显示返回按钮——裸 chat.html 会按 qwen_cur 恢复上次会话
+
+// 新写作项目：一篇论文/一份方案一个项目——建空存档后直进编辑器，文献与卡片随后往里挂
+$("#newbtn").onclick = e => { e.stopPropagation(); $("#newmenu").classList.toggle("open"); };
+document.addEventListener("click", e => { if (!$("#newwrap").contains(e.target)) $("#newmenu").classList.remove("open"); });
+$("#opt-chat").onclick = () => { $("#newmenu").classList.remove("open"); location.href = "chat.html?new=1"; };
+async function createWriteProject(){
+  const name = prompt("写作项目名称（如：EA 贝叶斯预测模型研究方案）：");
+  if (!name?.trim()) return;
+  const id = "c" + Date.now();
+  const title = "✍️ " + name.trim();
+  const safe = title.replace(/[\\/:*?"<>|\s]/g, "_").slice(0, 20);
+  try {
+    await fetch(`${ARCH}/archive/${encodeURIComponent(`${id}-${safe}.json`)}`, {
+      method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({id, title, ts: Date.now(), ctxUsed: 0, messages: []}),
+    });
+    location.href = "editor.html?conv=" + id;
+  } catch { alert("创建失败：无法连接存档服务 127.0.0.1:8081"); }
+}
+$("#opt-write").onclick = () => { $("#newmenu").classList.remove("open"); createWriteProject(); };
+
+// ---------- 全局文献库（Zotero 式条目数据，JSON 文件实现） ----------
+// 存 chat_history/library/ 子目录：/projfile 端点现成，且 /list、/projects/list 只扫根目录 .json，零污染
+const LIBURL = () => `${ARCH}/projfile/library/library.json`;
+async function loadLibrary(){
+  try {
+    const r = await fetch(LIBURL());
+    if (r.ok){
+      const j = await r.json();
+      if (!Array.isArray(j.items)) j.items = [];   // 异常数据统一规范化，下游 filter/map 不再各自兜底
+      return j;
+    }
+  } catch {}
+  return {schema: 1, updated: 0, items: []};
+}
+// 引用键：文件名哈希（重扫稳定），冲突加序号
+function refKey(name, used){
+  let h = 5381;
+  for (const c of name) h = (h * 33 + c.codePointAt(0)) >>> 0;
+  let k = "r" + h.toString(36), i = 2;
+  while (used.has(k)) k = "r" + h.toString(36) + "-" + i++;
+  used.add(k);
+  return k;
+}
+async function scanLibrary(btn){
+  btn.disabled = true; const old = btn.textContent; btn.textContent = "📚 扫描中…";
+  try {
+    const lib = await loadLibrary();
+    const items = Array.isArray(lib.items) ? lib.items : [];
+    const used = new Set(items.map(i => i.key));
+    const files = await (await fetch(ARCH + "/list")).json();
+    let added = 0;
+    for (const f of files){
+      if (/^(memory|dashboard)\.json$/.test(f)) continue;
+      const convId = f.split("-")[0];
+      let a;
+      try { a = await (await fetch(`${ARCH}/archive/${encodeURIComponent(f)}`)).json(); } catch { continue; }
+      for (const m of (a.messages || [])) for (const d of (m.docs || [])){
+        if (!d?.name) continue;
+        // 首页文本提取 DOI/PMID
+        const head = (d.text || "").slice(0, 3000);
+        // DOI 优先 doi.org 链接 / DOI: 标注形态，裸 10.x 兜底
+        const mDoi = head.match(/doi\.org\/(10\.\d{4,9}\/[^\s"'<>]+)/i)?.[1]
+          || head.match(/(?:^|\s)DOI[:\s]*(10\.\d{4,9}\/[^\s"'<>]+)/i)?.[1]
+          || head.match(/\b(10\.\d{4,9}\/[^\s"'<>]+)/i)?.[1];
+        const mDoiClean = mDoi?.replace(/[.,;)"']+$/, "");
+        const mPmid = head.match(/PMID[:\s]*(\d{3,9})/i)?.[1];
+        // 去重：DOI 优先，否则文件名（比较用 clean 后的值）
+        const dup = items.find(x => (mDoiClean && x.doi === mDoiClean) || x.name === d.name);
+        if (dup){
+          // 新档全文为空时不得清空库里已有全文
+          const nt = (d.text || "").slice(0, 120000);
+          if (nt.length > (dup.text || "").length) dup.text = nt;
+          if (mDoiClean && !dup.doi) dup.doi = mDoiClean;
+          if (mPmid && !dup.pmid) dup.pmid = mPmid;
+          continue;
+        }
+        items.push({
+          key: refKey(mDoiClean || d.name, used), name: d.name,
+          title: d.name.replace(/\.pdf$/i, ""), authors: "", year: "", journal: "",
+          doi: mDoiClean || "", pmid: mPmid || "",
+          pages: d.pages || 0, text: (d.text || "").slice(0, 120000),
+          tags: [], source: convId, ts: Date.now(),
+        });
+        added++;
+      }
+    }
+    await fetch(LIBURL(), {method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({schema: 1, updated: Date.now(), items})});
+    btn.textContent = `📚 文献库 ${items.length} 篇`;
+    toast(`📚 文献库已更新：新增 ${added} 篇，共 ${items.length} 篇${added ? "（编辑器里可附全文/引用）" : ""}`);
+  } catch {
+    toast("扫描失败：无法连接存档服务");
+    btn.textContent = old;
+  }
+  btn.disabled = false;
+}
+function toast(text, ms){
+  const t = document.createElement("div");
+  t.textContent = text;
+  t.style.cssText = "position:fixed;top:60px;right:16px;z-index:90;max-width:340px;background:var(--panel);border:1px solid var(--accent);border-radius:10px;padding:8px 14px;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.5)";
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), ms || 3000);
+}
+// 补元数据：Crossref 按标题查询（仅外发标题文本），填 authors/year/journal/doi
+async function enrichLibrary(btn){
+  const lib = await loadLibrary();
+  let todo = (lib.items || []).filter(i => !i.authors || !i.journal);   // 有 DOI 但缺作者/期刊的也要补
+  if (!todo.length){
+    if (!confirm("元数据已齐全。重新查询全部（覆盖现有元数据）？")) return;
+    todo = lib.items;
+  }
+  if (!confirm(`将向 Crossref 查询 ${todo.length} 篇文献的元数据（只发送论文首页文本，需联网）。继续？`)) return;
+  btn.disabled = true; btn.textContent = "🔍 查询中…";
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff ]/g, " ").split(/\s+/).filter(w => w.length > 2);
+  let ok = 0;
+  for (const it of todo){
+    try {
+      // DOI 在手走精确查询；否则用全文开头做 bibliographic 查询
+      let hit = null, exact = false;
+      if (it.doi){
+        const rd = await fetch(`https://api.crossref.org/works/${encodeURIComponent(it.doi)}`);
+        if (rd.ok){ hit = (await rd.json())?.message; exact = !!hit; }
+      }
+      if (!hit){
+        const qsrc = (it.text || "").replace(/\s+/g, " ").trim().slice(0, 1200) || it.title;
+        const r = await fetch(`https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(qsrc)}&rows=1&select=author,title,container-title,issued,DOI`);
+        hit = (await r.json())?.message?.items?.[0];
+      }
+      if (hit?.title?.[0]){
+        // 标题模糊查询的结果要做相似度校验（DOI 精确命中免检）
+        if (!exact){
+          const hStr = hit.title[0] + " " + (hit.author || []).map(a => (a.family || "") + " " + (a.given || "")).join(" ");
+          const htok = new Set(norm(hStr));
+          const qtok = norm(it.title);
+          if (qtok.length >= 2 && qtok.filter(t => htok.has(t)).length / qtok.length < 0.6) continue;
+          // 中文无空格分不成词：按字重叠校验
+          const qc = (it.title.match(/[\u4e00-\u9fff]/g) || []).join("");
+          const hc = (hStr.match(/[\u4e00-\u9fff]/g) || []).join("");
+          if (qc.length >= 4 && [...qc].filter(ch => hc.includes(ch)).length / qc.length < 0.5) continue;
+        }
+        it.title = hit.title[0];   // 真实论文标题覆盖文件名标题
+        it.authors = (hit.author || []).map(a => (a.family || "") + (a.given ? ", " + a.given : "")).filter(Boolean).join(" and ");
+        it.year = hit.issued?.["date-parts"]?.[0]?.[0] || "";
+        it.journal = hit["container-title"]?.[0] || "";
+        if (hit.DOI) it.doi = hit.DOI;   // 模糊命中可能无 DOI，空值不清掉条目原有 DOI
+        ok++;
+      }
+    } catch {}
+    btn.textContent = `🔍 ${todo.indexOf(it) + 1}/${todo.length}`;
+    await new Promise(r2 => setTimeout(r2, 400));   // Crossref 礼貌限速
+  }
+  await fetch(LIBURL(), {method: "PUT", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({schema: 1, updated: Date.now(), items: lib.items})});
+  btn.disabled = false; btn.textContent = "🔍 补元数据";
+  toast(`🔍 已补全 ${ok}/${todo.length} 篇（未命中的保持原样，导出时以标题引用）`);
+}
+// 文献库管理面板：列表 + 入库/补元数据入口
+function renderLibraryPanel(lib){
+  $("#libtitle").textContent = `📚 文献库（${(lib.items || []).length} 篇）`;
+  const el = $("#liblist"); el.innerHTML = "";
+  if (!lib.items?.length){
+    el.innerHTML = "<div style='color:var(--dim);font-size:13px;padding:16px;text-align:center'>库为空——点「扫描对话入库」聚合所有会话传过的文献</div>";
+    return;
+  }
+  for (const it of lib.items){
+    const d2 = document.createElement("div");
+    d2.className = "lrow";
+    const meta = [
+      esc(it.authors || "（作者待补）"),
+      esc([it.journal, it.year].filter(Boolean).join(", ")),
+      // 字段来自 Crossref/PMC（外部数据），全部转义；doi 校验形态后才拼 href
+      (/^10\.\d{4,9}\//.test(it.doi || "") ? `<a href="https://doi.org/${esc(it.doi)}" target="_blank" rel="noopener">${esc(it.doi)}</a>` : ""),
+      it.pmid ? "PMID:" + esc(String(it.pmid)) : "",
+      it.text ? ((it.text.length / 1000).toFixed(0) + "K 字") : "无全文",
+    ].filter(Boolean).join(" · ");
+    d2.innerHTML = `<div class="main"><div class="t" title="${esc(it.title)}">${esc(it.title)}</div>
+      <div class="meta">${meta}</div></div>
+      <button class="fix" title="手动补录：输入 DOI / PMID / 完整标题">✎</button>
+      <button class="del" title="从库中移除">✕</button>`;
+    d2.querySelector(".del").onclick = async () => {
+      lib.items = lib.items.filter(x => x !== it);
+      await fetch(LIBURL(), {method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({schema: 1, updated: Date.now(), items: lib.items})});
+      renderLibraryPanel(lib);
+      loadProjects();
+    };
+    d2.querySelector(".fix").onclick = () => manualEnrich(it, lib);
+    el.appendChild(d2);
+  }
+}
+// 手动补录：输入 DOI（Crossref 精确）/ PMID（Europe PMC）/ 完整标题（Crossref 模糊）
+async function manualEnrich(it, lib){
+  const q = prompt(`手动补录《${it.title.slice(0, 30)}…》\n输入 DOI（10.…）、PMID（纯数字）或完整论文标题：`, "");
+  if (!q?.trim()) return;
+  const s = q.trim();
+  // 直接粘贴 doi.org/https 链接时自动抽出 DOI
+  const m = s.match(/(10\.\d{4,9}\/[^\s"'<>]+)/i);
+  const doi = m ? m[1].replace(/[.,;)"']+$/, "") : null;
+  let hit = null;
+  try {
+    if (doi){
+      const r = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}`);
+      if (r.ok) hit = (await r.json()).message;
+    } else if (/^10\.\d{4,9}\//.test(s)){
+      const r = await fetch(`https://api.crossref.org/works/${encodeURIComponent(s)}`);
+      if (r.ok) hit = (await r.json()).message;
+    } else if (/^\d{4,9}$/.test(s)){
+      const r = await fetch(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:${s}&format=json&resultType=core`);
+      const rec = (await r.json())?.resultList?.result?.[0];
+      if (rec){
+        hit = {
+          title: [rec.title].flat()[0],
+          author: (rec.authorList?.author || []).map(a => ({family: a.collectiveName || a.surname || "", given: a.firstName || ""})),
+          issued: {"date-parts": [[+(rec.pubYear || 0) || ""]]},
+          "container-title": [rec.journalInfo?.journal?.title || ""],
+          DOI: rec.doi || "",
+        };
+        if (!hit.DOI) hit.pmid = s;
+      }
+    } else {
+      const r = await fetch(`https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(s)}&rows=1&select=author,title,container-title,issued,DOI`);
+      hit = (await r.json())?.message?.items?.[0];
+    }
+  } catch {}
+  if (!hit?.title?.[0]) return toast("未查到——确认编号/标题是否准确（中文文献试 PMID）");
+  it.title = hit.title[0];
+  it.authors = (hit.author || []).map(a => [a.family, a.given].filter(Boolean).join(", ")).filter(Boolean).join(" and ");
+  it.year = hit.issued?.["date-parts"]?.[0]?.[0] || "";
+  it.journal = hit["container-title"]?.[0] || "";
+  if (hit.DOI) it.doi = hit.DOI;
+  if (hit.pmid) it.pmid = hit.pmid;
+  await fetch(LIBURL(), {method: "PUT", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({schema: 1, updated: Date.now(), items: lib.items})});
+  renderLibraryPanel(lib);
+  toast(`✓ 已补录《${it.title.slice(0, 24)}…》`);
+}
+async function openLibrary(){
+  const lib = await loadLibrary();
+  renderLibraryPanel(lib);
+  $("#libpanel").classList.add("open");
+}
+$("#libbtn").onclick = openLibrary;
+$("#libclose").onclick = () => $("#libpanel").classList.remove("open");
+$("#libpanel").onclick = e => { if (e.target === $("#libpanel")) $("#libpanel").classList.remove("open"); };
+$("#scanbtn2").onclick = async e => { await scanLibrary(e.target); openLibrary(); };
+$("#metabtn2").onclick = e => enrichLibrary(e.target).then(() => openLibrary());
+// ---------- BibTeX 导入/导出（Zotero 等文献管理器握手） ----------
+// 解析器只认 @type{key, field={…}} 基本形态（一层花括号嵌套）
+function parseBibTeX(txt){
+  const clean = v => v.replace(/^[{"]|["}]$/g, "").replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
+  const out = [];
+  for (const chunk of txt.split(/(?=@\w+\s*\{)/)){
+    const head = chunk.match(/^@(\w+)\s*\{\s*([^,\s]+)\s*,/);
+    if (!head || /^(preamble|string|comment)$/i.test(head[1])) continue;
+    const f = {};
+    for (const m of chunk.matchAll(/(\w+)\s*=\s*(?:"(?:[^"\\]|\\.)*"|\{(?:[^{}]|\{[^{}]*\})*\})/g))
+      f[m[1].toLowerCase()] = clean(m[0].replace(/^\w+\s*=\s*/, ""));
+    if (f.title) out.push({bibkey: head[2], type: head[1].toLowerCase(), ...f});
+  }
+  return out;
+}
+async function saveLibrary(items){
+  await fetch(LIBURL(), {method: "PUT", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({schema: 1, updated: Date.now(), items})});
+}
+$("#bibimp").onclick = () => $("#bibfile").click();
+$("#bibfile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try {
+    const entries = parseBibTeX(await f.text());
+    if (!entries.length) return toast("未解析到条目——确认是 BibTeX 格式（.bib）");
+    const lib = await loadLibrary();
+    const used = new Set(lib.items.map(i => i.key));
+    let added = 0;
+    for (const en of entries){
+      // 去重锚点与扫描入库一致：DOI 优先，否则标题
+      if (lib.items.some(x => (en.doi && x.doi === en.doi) || x.title?.toLowerCase() === en.title.toLowerCase())) continue;
+      lib.items.push({
+        key: refKey(en.doi || en.title, used), name: en.title, title: en.title,
+        authors: en.author || "", year: en.year || "", journal: en.journal || "",
+        doi: en.doi || "", pmid: "", pages: 0, text: "",   // 导入条目无全文：可引用可校验，附全文需另传 PDF
+        tags: ["导入"], source: "bibtex", ts: Date.now(),
+      });
+      added++;
+    }
+    await saveLibrary(lib.items);
+    $("#libbtn").textContent = `📚 文献库 ${lib.items.length} 篇`;
+    toast(`📥 导入 ${added} 条（重复 ${entries.length - added} 条跳过），共 ${lib.items.length} 篇`);
+    openLibrary();
+  } catch { toast("导入失败：文件读取异常"); }
+};
+$("#bibexp").onclick = async () => {
+  const lib = await loadLibrary();
+  if (!lib.items.length) return toast("文献库为空");
+  const bib = lib.items.map(it => {
+    const fields = [
+      ["author", it.authors], ["title", it.title], ["journal", it.journal],
+      ["year", it.year], ["doi", it.doi], ["pmid", it.pmid],
+    ].filter(([, v]) => v);
+    return `@article{${it.key},\n` + fields.map(([k, v]) => `  ${k} = {${String(v).replace(/[{}]/g, "")}}`).join(",\n") + `\n}\n`;
+  }).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([bib], {type: "text/plain"}));
+  a.download = "library.bib";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(`📤 已导出 ${lib.items.length} 条为 library.bib`);
+};
+loadLibrary().then(lib => { if (lib.items?.length) $("#libbtn").textContent = `📚 文献库 ${lib.items.length} 篇`; });
+// 文献转 PPT：新会话 + 引导上传，上传后自动生成（工作流在 chat.html ?ppt=1 模式内）
+$("#pptbtn").onclick = () => location.href = "chat.html?ppt=1";
+// 引文校验：新会话 + 粘贴引文列表（工作流在 chat.html ?refs=1 模式内）
+$("#refsbtn").onclick = () => location.href = "chat.html?refs=1";
+loadPinned().then(loadProjects);
+loadStatus();
+setInterval(loadStatus, 5000);
+setInterval(loadProjects, 20000);
+
+// ---------- 版本标识（git SHA，零手工维护）+ 上游更新提示 ----------
+(async () => {
+  const el = document.createElement("div");
+  el.style.cssText = "position:fixed;right:12px;bottom:8px;font-size:11px;color:var(--dim);z-index:60";
+  document.body.appendChild(el);
+  try {
+    const v = await (await fetch("http://127.0.0.1:8081/version")).json();
+    if (!v.sha){ el.textContent = "源码版（非 git 目录）"; return; }
+    el.textContent = `v${v.sha} · ${v.date}`;
+    // 与 GitHub 上游比对（未认证 60 次/小时，仅页面加载查一次）
+    try {
+      const r = await fetch("https://api.github.com/repos/dalianblue/local-llm-station/commits/main?per_page=1");
+      if (r.ok){
+        const sha = (await r.json()).sha?.slice(0, 7);
+        if (sha && sha !== v.sha){
+          el.innerHTML = `v${v.sha} · ${v.date} · <a href="https://github.com/dalianblue/local-llm-station" target="_blank" style="color:var(--accent)">⬆ 上游有更新（${sha}）</a>`;
+        }
+      }
+    } catch {}   // 离线时静默
+  } catch { el.textContent = ""; }
+})();
+</script>
+</body>
+</html>

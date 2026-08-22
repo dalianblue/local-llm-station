@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>开启新项目</title>
+<!-- 托盘入口跳板：macOS 打开 file:// URL 会丢弃 ?query，需在页面内跳转
+     （location.replace 不留历史）；chat 分支维持原跳板行为 -->
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#2d333b; --text:#e6edf3; --dim:#8b949e; --accent:#4f8cf7; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    font: 15px/1.7 -apple-system, "PingFang SC", sans-serif; }
+  .wrap { width: min(560px, 92vw); }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 22px; }
+  .opt {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 22px; margin-bottom: 12px; cursor: pointer;
+  }
+  .opt:hover { border-color: var(--accent); }
+  .opt b { font-size: 16px; display: block; }
+  .opt small { color: var(--dim); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>开启新项目</h1>
+  <div class="sub">读文献与写作是同一个项目的两种开场，之后可随时互跳</div>
+  <div class="opt" onclick="location.replace('chat.html?new=1')">
+    <b>💬 新对话</b><small>读文献 · 提问 · 日常</small>
+  </div>
+  <div class="opt" onclick="newWrite()">
+    <b>✍️ 新写作</b><small>论文 · 方案 · 分章节写作与版本管理</small>
+  </div>
+</div>
+<script>
+const ARCH = "http://127.0.0.1:8081";
+async function newWrite(){
+  const name = prompt("写作项目名称：");
+  if (!name?.trim()) return;
+  const id = "c" + Date.now();
+  const title = "✍️ " + name.trim();
+  const safe = title.replace(/[\\/:*?"<>|\s]/g, "_").slice(0, 20);
+  try {
+    await fetch(`${ARCH}/archive/${encodeURIComponent(`${id}-${safe}.json`)}`, {
+      method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({id, title, ts: Date.now(), ctxUsed: 0, messages: []}),
+    });
+    location.replace("editor.html?conv=" + id);
+  } catch { alert("创建失败：无法连接存档服务 127.0.0.1:8081"); }
+}
+</script>
+</body>
+</html>

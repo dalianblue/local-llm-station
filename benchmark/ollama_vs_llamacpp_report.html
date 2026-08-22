@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ollama (MLX) vs llama.cpp · Qwen3.8-27B 对照测试报告</title>
+<style>
+  :root {
+    --ink: oklch(20% 0.02 260);
+    --paper: oklch(97% 0.005 260);
+    --card: #fff;
+    --lc: oklch(52% 0.13 155);
+    --ol: oklch(55% 0.15 40);
+    --line: oklch(88% 0.01 260);
+    --muted: oklch(45% 0.02 260 / .8);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: "Songti SC", "Noto Serif SC", Georgia, serif;
+    background: var(--paper); color: var(--ink);
+    max-width: 860px; margin: 0 auto; padding: 48px 24px 96px;
+    line-height: 1.75;
+  }
+  header { border-bottom: 3px double var(--ink); padding-bottom: 24px; margin-bottom: 36px; }
+  h1 { font-size: clamp(26px, 4vw, 38px); letter-spacing: .02em; }
+  .meta { color: var(--muted); font-size: 14px; margin-top: 12px; font-family: "SF Mono", Menlo, monospace; }
+  h2 { font-size: 20px; margin: 40px 0 8px; border-left: 4px solid var(--ink); padding-left: 10px; }
+  .desc { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); font-size: 14px;
+          font-family: "SF Mono", Menlo, monospace; box-shadow: 0 1px 3px oklch(0% 0 0 / .08); }
+  th, td { padding: 7px 12px; border-bottom: 1px solid var(--line); text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { background: var(--ink); color: var(--paper); font-weight: 600; }
+  tbody tr:hover { background: oklch(95% 0.02 260); }
+  td.lc { color: var(--lc); font-weight: 700; }
+  td.ol { color: var(--ol); font-weight: 700; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0; }
+  .card { background: var(--card); padding: 16px; border-top: 3px solid var(--ink); box-shadow: 0 1px 3px oklch(0% 0 0 / .08); }
+  .card .num { font-size: 26px; font-weight: 700; font-family: "SF Mono", Menlo, monospace; }
+  .card .lab { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .verdict { background: var(--card); padding: 20px 24px; margin: 16px 0; border-left: 4px solid var(--ink); }
+  ul { padding-left: 22px; } li { margin: 6px 0; }
+  .win-lc { color: var(--lc); font-weight: 700; }
+  .win-ol { color: var(--ol); font-weight: 700; }
+  footer { margin-top: 60px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ollama（MLX · NVFP4）vs llama.cpp（GGUF Q4）</h1>
+  <p style="font-size:16px;margin-top:6px;">Qwen3.8-27B 同题对照 · 本机四套件基准</p>
+  <p class="meta">2026-08-21 · Apple M1 Pro / 64GB · Ollama 0.32.15（qwen3.8:27b-mlx, NVFP4, 262K ctx）vs llama-server（Q4_K_M + mmproj, 64K ctx）· 温度等参数与各套件基线一致</p>
+</header>
+
+<h2>总览</h2>
+<div class="cards">
+  <div class="card"><div class="num">57 题</div><div class="lab">四套件总题量（22+17+7+11）</div></div>
+  <div class="card"><div class="num">6343s</div><div class="lab">llama.cpp 总耗时</div></div>
+  <div class="card"><div class="num">4659s</div><div class="lab">Ollama MLX 总耗时</div></div>
+  <div class="card"><div class="num">7/7</div><div class="lab">编程卷双方全通过（实际运行验证）</div></div>
+</div>
+<table>
+  <thead><tr><th>套件</th><th>题数</th><th>llama.cpp (s)</th><th>Ollama MLX (s)</th><th>llama/ollama</th></tr></thead>
+  <tbody><tr><td>常识卷</td><td>22</td><td>777</td><td>1046</td><td class="lc">0.74x</td></tr>
+<tr><td>医学卷</td><td>17</td><td>5211</td><td>2805</td><td class="ol">1.86x</td></tr>
+<tr><td>编程卷</td><td>7</td><td>296</td><td>376</td><td class="lc">0.79x</td></tr>
+<tr><td>翻译卷</td><td>11</td><td>59</td><td>433</td><td class="lc">0.14x</td></tr></tbody>
+</table>
+
+<div class="verdict">
+  <p><b>速度结论：</b>短问答与翻译 <span class="win-lc">llama.cpp 明显更快</span>（1.5–5x，答案更简洁是部分原因）；
+  长思考的医学卷 <span class="win-ol">Ollama 快约 1.86x</span>——思考链更收敛（626–2250 字/题 vs 基线动辄数千 token，
+  X3 单题 1531.9s → 276.6s）。</p>
+</div>
+
+<h2>质量对比要点</h2>
+<div class="verdict">
+<ul>
+  <li><b>F4（水浒天罡地煞）</b>：llama.cpp 输出错乱（“天罡星最后一位是地煞星第一位是地魁星宋江”）；<span class="win-ol">Ollama 正确</span>（燕青 / 朱武）。</li>
+  <li><b>S4（肖申克圣经卷）</b>：llama.cpp 自信编造《马太福音》（且属新约，题问旧约）；Ollama 承认影片留白未定论。正解《出埃及记》——双方均未答对，但一个装确定一个不装。</li>
+  <li><b>H2（克苏鲁陷阱题）</b>：双方均识破“物理学家命名”的错误前提，但所报小说名均不确切。</li>
+  <li><b>R1（无解数学陷阱）</b>：<span class="win-lc">llama.cpp 胜</span>——368s 推导出“三条件无整数解”的正确结论；Ollama 195.8s 返回空白（关思考档下难题静默失败，前端已有空响应自动重试兜底）。</li>
+  <li><b>医学卷</b>：Ollama 抽查（TCA 酶学 / STEMI 再灌注 / DKA 补液 / NOAC 换药）全部准确，X1/X2 边界题拒答得当，能力边界规范行为与基线一致。</li>
+  <li><b>编程卷</b>：双方 7/7 运行成功。</li>
+  <li><b>翻译卷</b>：译文质量持平；Ollama 明显啰嗦（字数约束遵守差），耗时为基线 5 倍左右。</li>
+</ul>
+</div>
+
+<h2>多模态与缓存专项验证（Ollama MLX）</h2>
+<div class="verdict">
+<ul>
+  <li><b>视觉真实性</b>：✅ 已知图对照测试——图内埋入无法猜到的数值（N=87、p=0.0037）全部逐字读出，曲线终点估值准确，未标注数值明确拒读。<b>无静默幻觉</b>（此前 Ollama MLX vision 曾有图片被忽略+编造的已知问题，issue #17065；图像输入支持于 2026-08-09 合入 runner，PR #17600）。</li>
+  <li><b>文本 prompt 缓存</b>：✅ 30K 字长文首问 289.3s → 复问 5.2s，<b>55.7x</b>。</li>
+  <li><b>图片前缀缓存</b>：❌ 同图同问两次 TTFT 12.7s / 14.6s，图片每次重新预填充——连续追问同一张图的场景有约 12s 额外开销。</li>
+  <li><b>流式</b>：✅ OpenAI 兼容端点 delta.content 正常；thinking 走原生 /api/chat 的 message.thinking 字段（需 think:true）。</li>
+  <li><b>速度画像</b>：预填充 ~70–90 tok/s（基线 ~50），解码 ~9.8 tok/s（与基线持平）。官方 MLX 性能数据（1851 tok/s prefill）为 M5 Max 量级，M1 Pro 上带宽（200GB/s）是物理瓶颈。</li>
+</ul>
+</div>
+
+<h2>结论</h2>
+<div class="verdict">
+<p>1. <b>质量：NVFP4 MLX 与 GGUF Q4 同水平</b>，长尾事实题略好，无量化质量损失；多模态视觉通路真实可用。</p>
+<p>2. <b>速度画像分化</b>：短任务 llama.cpp 快；长思考任务（文献解读 / PPT 等本项目主力场景）Ollama 快约 2x，切换反而受益。</p>
+<p>3. <b>遗留缺口</b>：图片前缀缓存不生效、关思考档偶发空响应（前端已兜底）。适合“文本走 Ollama、多模态追问走 llama.cpp”的双后端策略。</p>
+</div>
+
+
+<section>
+  <h2>常识卷 · 22 题 · temp 0.1 · 思考关</h2>
+  <p class="desc">长尾事实 / 逻辑 / 语言 / 陷阱题 · llama.cpp 合计 777s vs Ollama 合计 1046s（0.74x）</p>
+  <table>
+    <thead><tr><th>题号</th><th>llama.cpp (s)</th><th>Ollama MLX (s)</th><th>llama/ollama</th></tr></thead>
+    <tbody><tr><td>F1</td><td>20.8</td><td>31.7</td><td class="lc">0.66</td></tr>
+<tr><td>F2</td><td>9.4</td><td>15.2</td><td class="lc">0.62</td></tr>
+<tr><td>F3</td><td>7.4</td><td>15.5</td><td class="lc">0.48</td></tr>
+<tr><td>F4</td><td>4.5</td><td>19.7</td><td class="lc">0.23</td></tr>
+<tr><td>F5</td><td>5.7</td><td>30.3</td><td class="lc">0.19</td></tr>
+<tr><td>H1</td><td>29.3</td><td>42.3</td><td class="lc">0.69</td></tr>
+<tr><td>H2</td><td>17.3</td><td>46.4</td><td class="lc">0.37</td></tr>
+<tr><td>H3</td><td>7.2</td><td>38.8</td><td class="lc">0.19</td></tr>
+<tr><td>L1</td><td>4.0</td><td>45.7</td><td class="lc">0.09</td></tr>
+<tr><td>L2</td><td>43.4</td><td>54.7</td><td class="lc">0.79</td></tr>
+<tr><td>L3</td><td>29.7</td><td>84.5</td><td class="lc">0.35</td></tr>
+<tr><td>L4</td><td>6.3</td><td>29.9</td><td class="lc">0.21</td></tr>
+<tr><td>R1</td><td>368.1</td><td>195.8</td><td class="ol">1.88</td></tr>
+<tr><td>R2</td><td>21.4</td><td>23.3</td><td class="lc">0.92</td></tr>
+<tr><td>R3</td><td>19.5</td><td>28.7</td><td class="lc">0.68</td></tr>
+<tr><td>R4</td><td>12.0</td><td>29.4</td><td class="lc">0.41</td></tr>
+<tr><td>S1</td><td>11.1</td><td>24.1</td><td class="lc">0.46</td></tr>
+<tr><td>S2</td><td>13.8</td><td>21.5</td><td class="lc">0.64</td></tr>
+<tr><td>S3</td><td>26.1</td><td>26.4</td><td class="lc">0.99</td></tr>
+<tr><td>S4</td><td>11.3</td><td>91.3</td><td class="lc">0.12</td></tr>
+<tr><td>S5</td><td>4.2</td><td>20.3</td><td class="lc">0.21</td></tr>
+<tr><td>X1</td><td>104.2</td><td>130.1</td><td class="lc">0.80</td></tr></tbody>
+  </table>
+</section>
+<section>
+  <h2>医学卷 · 17 题 · temp 0.2 · 思考开</h2>
+  <p class="desc">基础医学 / 临床 / 药理 / 统计 / 边界题 · llama.cpp 合计 5211s vs Ollama 合计 2805s（1.86x）</p>
+  <table>
+    <thead><tr><th>题号</th><th>llama.cpp (s)</th><th>Ollama MLX (s)</th><th>llama/ollama</th></tr></thead>
+    <tbody><tr><td>C1</td><td>254.6</td><td>215.9</td><td class="ol">1.18</td></tr>
+<tr><td>C2</td><td>193.8</td><td>155.2</td><td class="ol">1.25</td></tr>
+<tr><td>C3</td><td>246.5</td><td>189.4</td><td class="ol">1.30</td></tr>
+<tr><td>C4</td><td>139.0</td><td>148.0</td><td class="lc">0.94</td></tr>
+<tr><td>M1</td><td>445.0</td><td>153.0</td><td class="ol">2.91</td></tr>
+<tr><td>M2</td><td>191.9</td><td>119.0</td><td class="ol">1.61</td></tr>
+<tr><td>M3</td><td>129.2</td><td>103.3</td><td class="ol">1.25</td></tr>
+<tr><td>M4</td><td>114.6</td><td>133.7</td><td class="lc">0.86</td></tr>
+<tr><td>P1</td><td>126.5</td><td>135.9</td><td class="lc">0.93</td></tr>
+<tr><td>P2</td><td>149.8</td><td>140.5</td><td class="ol">1.07</td></tr>
+<tr><td>P3</td><td>144.3</td><td>186.7</td><td class="lc">0.77</td></tr>
+<tr><td>S1</td><td>217.8</td><td>153.8</td><td class="ol">1.42</td></tr>
+<tr><td>S2</td><td>98.2</td><td>148.6</td><td class="lc">0.66</td></tr>
+<tr><td>X1</td><td>149.7</td><td>110.2</td><td class="ol">1.36</td></tr>
+<tr><td>X2</td><td>728.9</td><td>207.8</td><td class="ol">3.51</td></tr>
+<tr><td>X3</td><td>1531.9</td><td>276.6</td><td class="ol">5.54</td></tr>
+<tr><td>X4</td><td>349.6</td><td>227.1</td><td class="ol">1.54</td></tr></tbody>
+  </table>
+</section>
+<section>
+  <h2>编程卷 · 7 题 · temp 0.0 · 思考关 · 实际运行验证</h2>
+  <p class="desc">pandas / numpy / matplotlib 代码生成 · llama.cpp 合计 296s vs Ollama 合计 376s（0.79x）</p>
+  <table>
+    <thead><tr><th>题号</th><th>llama.cpp (s)</th><th>Ollama MLX (s)</th><th>llama/ollama</th></tr></thead>
+    <tbody><tr><td>P1</td><td>32.7</td><td>74.5</td><td class="lc">0.44</td></tr>
+<tr><td>P2</td><td>58.8</td><td>147.9</td><td class="lc">0.40</td></tr>
+<tr><td>P3</td><td>42.3</td><td>41.9</td><td class="ol">1.01</td></tr>
+<tr><td>P4</td><td>42.5</td><td>28.7</td><td class="ol">1.48</td></tr>
+<tr><td>P5</td><td>37.8</td><td>29.9</td><td class="ol">1.26</td></tr>
+<tr><td>P6</td><td>59.6</td><td>37.9</td><td class="ol">1.57</td></tr>
+<tr><td>P7</td><td>21.8</td><td>15.1</td><td class="ol">1.44</td></tr></tbody>
+  </table>
+</section>
+<section>
+  <h2>翻译卷 · 11 题 · temp 0.0 · 思考关</h2>
+  <p class="desc">中英互译 · 俗语 / 专业长句 · llama.cpp 合计 59s vs Ollama 合计 433s（0.14x）</p>
+  <table>
+    <thead><tr><th>题号</th><th>llama.cpp (s)</th><th>Ollama MLX (s)</th><th>llama/ollama</th></tr></thead>
+    <tbody><tr><td>T1</td><td>11.2</td><td>40.2</td><td class="lc">0.28</td></tr>
+<tr><td>T2</td><td>4.4</td><td>56.3</td><td class="lc">0.08</td></tr>
+<tr><td>T3</td><td>7.0</td><td>50.0</td><td class="lc">0.14</td></tr>
+<tr><td>T4</td><td>4.8</td><td>55.7</td><td class="lc">0.09</td></tr>
+<tr><td>T5</td><td>5.4</td><td>37.9</td><td class="lc">0.14</td></tr>
+<tr><td>T6</td><td>5.2</td><td>26.7</td><td class="lc">0.19</td></tr>
+<tr><td>T7</td><td>6.2</td><td>34.6</td><td class="lc">0.18</td></tr>
+<tr><td>T8</td><td>3.8</td><td>37.1</td><td class="lc">0.10</td></tr>
+<tr><td>T9</td><td>6.4</td><td>48.0</td><td class="lc">0.13</td></tr>
+<tr><td>T10</td><td>2.4</td><td>34.6</td><td class="lc">0.07</td></tr>
+<tr><td>X-T</td><td>2.5</td><td>11.9</td><td class="lc">0.21</td></tr></tbody>
+  </table>
+</section>
+
+<h2>明细数据</h2>
+<p class="desc">Ollama 完整逐题回答见同目录 <code>ollama_mlx_test_results.md</code>；llama.cpp 基线见 <code>test_results.md</code> / <code>mdtest_results.md</code> / <code>program_test_results.md</code> / <code>trans_test_results.md</code>。</p>
+
+<footer>测试环境：Apple M1 Pro（10 核 GPU / 64GB 统一内存）· macOS · 室温离线。计时含网络往返，不含模型加载（首次加载约 30–40s）。</footer>
+</body>
+</html>
