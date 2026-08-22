@@ -195,6 +195,7 @@
     <span class="spacer" style="margin-left:auto"></span>
     <span>工作区 <b id="wstats">—</b></span>
     <span>存档服务 <b id="archtext">检测中…</b></span>
+    <span id="usagetext"></span>
   </div>
 
   <div id="libpanel" class="modal"><div class="mbox">
@@ -349,6 +350,19 @@ async function loadProjects(){
   $("#wstats").textContent = `${projects.length} 个项目 · ${nNotes} 篇笔记 · ${nCards} 张卡片 · ${nTables} 张数据表`;
 }
 
+// 今日专注时长（chat/editor 心跳累计于 localStorage.usage_log；挂机>3 分钟不计）
+function loadUsage(){
+  try {
+    const log = JSON.parse(localStorage.getItem("usage_log") || "{}");
+    const s = log[new Date().toLocaleDateString("sv")] || 0;
+    if (!s) return;
+    const days = Object.values(log).filter(v => v > 600).length;
+    const fmt = v => v < 3600 ? Math.round(v / 60) + " 分钟" : Math.floor(v / 3600) + " 小时 " + Math.round(v % 3600 / 60) + " 分";
+    $("#usagetext").innerHTML = `⏱ 今日已专注 <b>${fmt(s)}</b>${days > 1 ? ` · 已坚持 <b>${days}</b> 天` : ""}`;
+  } catch {}
+}
+loadUsage();
+setInterval(loadUsage, 60000);
 async function loadStatus(){
   try {
     const j = await (await fetch(ARCH + "/system/status")).json();

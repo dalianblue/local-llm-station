@@ -2183,6 +2183,24 @@ $("#setsave").onclick = () => {
 };
 // 关页/刷新前尽力落盘（localStorage 写同步可靠，journal 兜底）
 window.addEventListener("beforeunload", () => { journalWrite(); flushSave(); persistEditor(); });
+// ---------- 使用时长统计（dashboard「今日已专注」数据源：页面可见且 3 分钟内有操作才计）----------
+(function(){
+  let lastAct = Date.now();
+  for (const ev of ["click", "keydown", "pointermove"])
+    addEventListener(ev, () => lastAct = Date.now(), {passive: true});
+  const dayKey = () => new Date().toLocaleDateString("sv");
+  setInterval(() => {
+    if (document.visibilityState !== "visible" || Date.now() - lastAct > 180000) return;
+    try {
+      const log = JSON.parse(localStorage.getItem("usage_log") || "{}");
+      const d = dayKey();
+      log[d] = (log[d] || 0) + 30;
+      const cutoff = new Date(Date.now() - 14 * 864e5).toLocaleDateString("sv");
+      for (const k of Object.keys(log)) if (k < cutoff) delete log[k];
+      localStorage.setItem("usage_log", JSON.stringify(log));
+    } catch {}
+  }, 30000);
+})();
 
 // ---------- 启动 ----------
 applyLayout();
