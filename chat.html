@@ -1202,6 +1202,7 @@ async function saveCards(){
     method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cards) }); } catch {}
 }
 function renderCards(){
+  $("#gencards").textContent = cards.length ? "🔄 重新生成" : "✨ 从本对话生成知识卡片";
   const el = $("#cardlist"); el.innerHTML = "";
   if (!cards.length){
     el.innerHTML = "<div style='color:var(--dim);font-size:12.5px;padding:14px 0;text-align:center'>尚无卡片——点上方按钮从对话提取</div>";
@@ -1246,15 +1247,22 @@ async function genCards(){
     const txt = j.choices?.[0]?.message?.content || "";
     const m = txt.match(/\[[\s\S]*\]/);
     if (!m) throw new Error("未解析到卡片 JSON");
-    const got = JSON.parse(m[0]).filter(c => c?.concept && c?.definition);
+    const got = JSON.parse(m[0]).filter(c => c?.concept && c?.definition).slice(0, 6);   // 硬上限 6 张
     if (!got.length) throw new Error("卡片为空");
-    cards.push(...got.map(c => ({...c, ts: Date.now()})));
+    // 概念名去重：反复点生成按钮不堆积重复卡片
+    const fresh = [], dup = [];
+    for (const c of got.map(c => ({...c, ts: Date.now()}))){
+      (cards.some(x => x.concept.trim() === c.concept.trim()) ? dup : fresh).push(c);
+    }
+    cards.push(...fresh);
     await saveCards(); renderCards();
-    toast(`🃏 已生成 ${got.length} 张知识卡片（点击翻面复习）`);
+    toast(fresh.length
+      ? `🃏 新增 ${fresh.length} 张知识卡片${dup.length ? `（${dup.length} 张与已有概念重复，已跳过）` : "（点击翻面复习）"}`
+      : "本轮没有新卡片——提取到的概念都已存在，想扩充卡片请先继续对话");
   } catch (e) {
     toast("卡片生成失败：" + e.message);
   } finally {
-    cardsBusy = false; btn.disabled = false; btn.textContent = "✨ 从本对话生成知识卡片";
+    cardsBusy = false; btn.disabled = false; btn.textContent = cards.length ? "🔄 重新生成" : "✨ 从本对话生成知识卡片";
   }
 }
 $("#gencards").onclick = genCards;
