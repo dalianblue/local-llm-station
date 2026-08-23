@@ -1749,6 +1749,7 @@ function ensureDraft(){
 }
 // 🧭 跨章节一致性检查：自动附全文草稿，按结果—讨论呼应/一致性问题/术语数据三节输出报告
 $("#chkbtn").onclick = async () => {
+  if (busy) return toast("AI 正在回复，稍候再试");   // send 在 busy 时静默返回，不带守卫会把上一轮回复误存成报告
   if (ED.sections.filter(s => wc(s.md) > 20).length < 2)
     return toast("至少两个章节有内容才能做跨章节检查");
   ensureDraft();
@@ -1786,6 +1787,7 @@ document.addEventListener("click", e => { if (!$("#revwrap").contains(e.target))
 $("#revmenu").addEventListener("click", async e => {
   const o = e.target.closest(".nopt"); if (!o) return;
   $("#revmenu").classList.remove("open");
+  if (busy) return toast("AI 正在回复，稍候再试");
   if (ED.sections.filter(s => wc(s.md) > 20).length < 2)
     return toast("至少两个章节有内容才能模拟审稿");
   ensureDraft();
@@ -2251,6 +2253,7 @@ selbar.addEventListener("click", e => {
   if (!sel){ selbar.hidden = true; return; }
   selbar.hidden = true;   // 选区保留——AI 回复「插入到光标处」时替换选区
   if (op === "查证据"){
+    if (busy) { toast("AI 正在回复，稍候再试"); return; }
     if (!ED.attDocs.length) return toast("先点 📎 附上文献全文再查证据（选区会保留）");
     send("请从已附的文献全文中查找支持或反驳下面论断的证据，按 Markdown 逐条列出："
       + "每条注明出自哪篇文献（标题）、判定（直接支持/间接相关/相矛盾）、原文关键数据或结论；"

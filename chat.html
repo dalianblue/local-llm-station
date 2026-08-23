@@ -2517,13 +2517,14 @@ async function send(payload){
       /\t/.test(text) && /,/.test(text) &&
       !confirm("⚠️ 消息中含表格样文本，将发送到 DeepSeek 云端（离开本机）。继续？")) return;
   if (busy){
-    queue = {text, imgs, docs, data: pendingData};
+    queue = {text, imgs, docs, data: pendingData, noteLabel: payload?.noteLabel};
     sysCard("⏭ 已排队，当前回答结束后自动发送：" + (text || "（附件）"));
     input.value=""; input.style.height="auto"; pendingImages=[]; pendingDocs=[]; pendingData=[]; imgsEl.innerHTML="";
     input.placeholder = INPUT_PLACEHOLDER;   // 排队路径同样要清"已附文献"占位提示
     return;
   }
   busy = true;   // 先占位防重入；按钮切换交由 generate() 统一处理
+  if (payload?.noteLabel) notePending = payload.noteLabel;   // 派发时才挂标记（含排队后真正发出的那轮）
   memCtrl?.abort();   // 释放 GPU 给新消息，提取下次再补
 
   const um = {role:"user", text, imgs, docs, data: pendingData, checked:true, ts: Date.now()};
@@ -2882,8 +2883,9 @@ function showSlash(){
       if (c.audit) return dataAudit();
       if (c.paper){
         // 待发 PDF 直接随消息附上；已解读过的文献全文已在上下文里
-        if (pendingDocs.length){ notePending = c.label; return send({text: c.paper, docs: [...pendingDocs]}); }
-        if (messages.some(m => m.docs?.length)){ notePending = c.label; return send(c.paper); }
+        // noteLabel 随 payload 走、send 派发时才挂 notePending——排队时不提前挂，防误存上一轮回复
+        if (pendingDocs.length) return send({text: c.paper, docs: [...pendingDocs], noteLabel: c.label});
+        if (messages.some(m => m.docs?.length)) return send({text: c.paper, noteLabel: c.label});
         return toast("先上传文献 PDF，或在本会话已附文献后使用");
       }
       input.value = c.fill;
