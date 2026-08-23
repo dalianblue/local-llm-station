@@ -499,6 +499,7 @@
       <textarea id="p" rows="1" placeholder="问当前章节的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
       <div id="bar">
         <button id="genbtn" title="按本章节大纲生成初稿（依据：附文献/全文草稿/引文键清单）">✨ <span class="lbl">初稿</span></button>
+        <button id="chkbtn" title="跨章节逻辑一致性检查：结果—讨论呼应、术语与数据一致（自动附全文草稿）">🧭 <span class="lbl">检查</span></button>
         <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
         <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
         <span class="hint">AI 回答可一键插入正文</span>
@@ -514,6 +515,7 @@
   <button data-op="润色">✨ 润色</button>
   <button data-op="扩写">✍️ 扩写</button>
   <button data-op="缩写">📋 缩写</button>
+  <button data-op="查证据">🔍 证据</button>
 </div>
 
 <div id="atmenu" hidden></div>
@@ -1597,6 +1599,26 @@ $("#genbtn").onclick = () => {
     toast("提示：其他章节均空——先写好其他章节或点「📄 全文」可获得更好的初稿连贯性");
   send(buildDraftPrompt());
 };
+// 🧭 跨章节一致性检查：自动附全文草稿，按结果—讨论呼应/一致性问题/术语数据三节输出报告
+$("#chkbtn").onclick = () => {
+  if (ED.sections.filter(s => wc(s.md) > 20).length < 2)
+    return toast("至少两个章节有内容才能做跨章节检查");
+  if (!ED.attachDraft){
+    ED.attachDraft = true;
+    try {
+      const all = JSON.parse(localStorage.getItem("editor_drafts") || "{}");
+      all[ED.convId] = true;
+      localStorage.setItem("editor_drafts", JSON.stringify(all));
+    } catch {}
+    updateDraftBtn();
+    toast("已自动附全文草稿进行检查");
+  }
+  send("请通读全文草稿做跨章节逻辑一致性检查，输出 Markdown 报告。只列真实问题不凑数，"
+    + "未发现问题的方面明确写「未发现」。逐条注明所在章节，给最小修改建议（不要重写整段）。\n"
+    + "## 结果—讨论呼应\n结果部分的每项发现是否都在讨论中得到回应？列出未回应项与讨论补充方向。\n"
+    + "## 跨章节一致性问题\n结论超出结果、方法与结果描述矛盾、章节间论证断裂等。\n"
+    + "## 术语与数据一致\n分组名、变量名、缩写、样本量、效应方向在章节间是否一致。");
+};
 // 云端知情同意切换：本地离线时按钮才出现；点击后仍需确认"数据出本机"
 $("#cloudbtn").onclick = () => {
   if (!S.dskey){ $("#settings").classList.add("open"); toast("先在设置里填写 DeepSeek API Key"); return; }
@@ -2052,6 +2074,13 @@ selbar.addEventListener("click", e => {
   const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd).trim();
   if (!sel){ selbar.hidden = true; return; }
   selbar.hidden = true;   // 选区保留——AI 回复「插入到光标处」时替换选区
+  if (op === "查证据"){
+    if (!ED.attDocs.length) return toast("先点 📎 附上文献全文再查证据（选区会保留）");
+    send("请从已附的文献全文中查找支持或反驳下面论断的证据，按 Markdown 逐条列出："
+      + "每条注明出自哪篇文献（标题）、判定（直接支持/间接相关/相矛盾）、原文关键数据或结论；"
+      + "找不到的直接说明，禁止编造文献内容。\n\n论断：「" + sel + "」");
+    return;
+  }
   send(`请${op}以下选中的文字，直接输出可以整段替换原文的成段中文（Markdown），不要引导语、不要解释、不要重复未改动的部分：\n\n${sel}`);
 });
 // 点工具条与编辑区以外任意处收起（mouseup→click 顺序：编辑区自己的显隐交给 mouseup 处理）
