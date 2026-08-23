@@ -24,3 +24,6 @@ CLAUDE.md
 
 # 本地参考素材（demo 截图/存档，不对外）
 demo/
+
+# 本地知识库与规则（Claude 加载，不上传）
+.claude/
