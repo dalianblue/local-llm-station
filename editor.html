@@ -869,7 +869,7 @@ const ED = {
   cur: 0,
   cards: [], notes: "", projMeta: null,
   attachDraft: false,
-  lib: [], attDocs: [],   // lib: 全局文献库条目；attDocs: 已选注入项
+  lib: [], attDocs: [], attCol: "",   // lib: 全局文献库条目；attDocs: 已选注入项；attCol: 分类过滤
   chat: [],
 };
 const pf = name => `${ARCH}/projfile/${encodeURIComponent(ED.convDir)}/${encodeURIComponent(name)}`;
@@ -1663,8 +1663,19 @@ function renderAttPanel(){
     ED.projDocs.forEach(it => addRow(it, true));
   }
   if (ED.lib.length){
-    el.insertAdjacentHTML("beforeend", `<div class="rhead" style="padding:6px 8px 2px">全局文献库</div>`);
-    ED.lib.forEach(it => addRow(it, false));
+    // 分类下拉：dashboard 扫描入库按来源项目自动归类，这里按分类过滤全局库
+    const cols = [...new Set(ED.lib.flatMap(i => i.collections || []))];
+    let head = `<div class="rhead" style="padding:6px 8px 2px">全局文献库`;
+    if (cols.length) head += ` <select id="attcol" style="font-size:12px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:1px 4px;max-width:150px">
+      <option value="">全部分类</option>${cols.map(c => `<option ${ED.attCol === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
+    head += `</div>`;
+    el.insertAdjacentHTML("beforeend", head);
+    const sel = $("#attcol");
+    if (sel) sel.onchange = () => { ED.attCol = sel.value; renderAttPanel(); };
+    const shown = ED.lib.filter(it => !ED.attCol || (it.collections || []).includes(ED.attCol));
+    if (!shown.length){
+      el.insertAdjacentHTML("beforeend", "<div style='color:var(--dim);font-size:12px;padding:6px 10px'>该分类暂无文献</div>");
+    } else shown.forEach(it => addRow(it, false));
   }
   syncAttSum(picked);
 }
