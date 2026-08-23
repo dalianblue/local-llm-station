@@ -27,3 +27,6 @@ demo/
 
 # 本地知识库与规则（Claude 加载，不上传）
 .claude/
+
+# PDF 回归语料（用户真实文献，版权/隐私原因不上传）
+pdf_corpus/

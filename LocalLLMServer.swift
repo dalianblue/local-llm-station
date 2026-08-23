@@ -774,15 +774,19 @@ enum PDFImages {
     // ---------- 矢量图兜底：图注锚定 + 无正文文本带探测，整页渲染后裁剪 ----------
     // 版面规律：图注在图正下方；矢量图区域没有成段正文（轴刻度/标签是短文本行）。
     // 从图注上沿向上找最近一条"长正文行"作为图域上界，按图注横向范围裁剪。
+    // 图注形态：带号 "Fig. 3 Effect…" / 竖线分隔 "Fig. 1 | Markers…"（Nature 系）、无号单图 "Figure. Flow chart."、中文 "图 3"；
+    // 补充材料 "Fig. S1" / 前缀 "Supplementary|Extended Data" / 面板号 "Fig. 1A"（行中面板引用 "4C)" 数字后紧跟字母无分隔符，天然被拒）
+    // tables=true 时锚 Table N / 表 N 标题行（表格图裁剪，供本地多模态逐表深读）
+    static let figCaptionPattern = #"^\s{0,4}(?:(?:Supplementary|Extended\s+Data)\s+)?(?i:Fig(?:ure)?s?)\.?\s*S?\d+[A-Z]?(?:\s*[\.:|]\s*|\s+)[A-Z(]|(?i:Fig(?:ure)?s?)\.\s+[A-Z]|图\s*S?\d+"#
+    static let tabCaptionPattern = #"^\s{0,4}(?:Supplementary\s+)?(?i:Table)\s*S?\d+(?:\s*[\.:|]\s*|\s+)[A-Z(]|表\s*S?\d+"#
+    static let captionRe = try? NSRegularExpression(pattern: figCaptionPattern)
+
     static func vectorFigures(_ doc: PDFDocument, limit: Int, tables: Bool = false) -> [[String: Any]] {
         guard limit > 0 else { return [] }
         var out: [[String: Any]] = []
-        // 图注形态：带号 "Fig. 3 Effect…" / 竖线分隔 "Fig. 1 | Markers…"（Nature 系）、无号单图 "Figure. Flow chart."、中文 "图 3"；
-        // 补充材料 "Fig. S1" / 前缀 "Supplementary|Extended Data" / 面板号 "Fig. 1A"（行中面板引用 "4C)" 数字后紧跟字母无分隔符，天然被拒）
-        // tables=true 时锚 Table N / 表 N 标题行（表格图裁剪，供本地多模态逐表深读）
-        let captionRe = try? NSRegularExpression(pattern: tables
-            ? #"^\s{0,4}(?:Supplementary\s+)?(?i:Table)\s*S?\d+(?:\s*[\.:|]\s*|\s+)[A-Z(]|表\s*S?\d+"#
-            : #"^\s{0,4}(?:(?:Supplementary|Extended\s+Data)\s+)?(?i:Fig(?:ure)?s?)\.?\s*S?\d+[A-Z]?(?:\s*[\.:|]\s*|\s+)[A-Z(]|(?i:Fig(?:ure)?s?)\.\s+[A-Z]|图\s*S?\d+"#)
+        let captionRe = tables
+            ? try? NSRegularExpression(pattern: tabCaptionPattern)
+            : PDFImages.captionRe
         var pages: [(page: PDFPage, lines: [(rect: CGRect, text: String)])] = []
         var manuscript = false
         for pi in 0..<doc.pageCount {
