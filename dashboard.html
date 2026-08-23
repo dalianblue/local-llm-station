@@ -57,9 +57,19 @@
   .lrow .t { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
   .lrow .meta { color: var(--dim); font-size: 12px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lrow .meta a { color: var(--accent); text-decoration: none; }
-  .lrow .del, .lrow .fix { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 13px; flex: none; }
-  .lrow .fix:hover { color: var(--accent); }
+  .lrow .del, .lrow .fix, .lrow .edt { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 13px; flex: none; }
+  .lrow .fix:hover, .lrow .edt:hover { color: var(--accent); }
   .lrow .del:hover { color: #f85149; }
+  /* 条目编辑表单 */
+  #editform { padding: 12px 18px; display: grid; gap: 8px; overflow-y: auto; }
+  #editform label { display: grid; gap: 3px; font-size: 12px; color: var(--dim); }
+  #editform input {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 9px; font-size: 13px;
+  }
+  #editform input:focus { outline: none; border-color: var(--accent); }
+  #ef-save { background: var(--bg); color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 8px; padding: 7px; font-size: 13px; cursor: pointer; }
   .nopt { padding: 9px 12px; border-radius: 8px; cursor: pointer; }
   .nopt:hover { background: var(--bg); }
   .nopt b { display: block; font-size: 14px; }
@@ -203,6 +213,7 @@
     <div class="mtools">
       <button id="scanbtn2">🔄 扫描对话入库</button>
       <button id="metabtn2">🔍 补元数据（Crossref）</button>
+      <button id="addbtn2">➕ 手动添加</button>
       <button id="bibimp">📥 导入 BibTeX/RIS</button>
       <button id="bibexp">📤 导出 BibTeX</button>
       <button id="risexp">📤 导出 RIS</button>
@@ -211,8 +222,21 @@
     <div id="liblist"></div>
   </div></div>
 
+  <div id="editpanel" class="modal"><div class="mbox">
+    <div class="mhead"><span id="edittitle">✏️ 编辑文献条目</span><button id="editclose">✕</button></div>
+    <div id="editform">
+      <label>标题 *<input id="ef-title" placeholder="论文标题（必填）"></label>
+      <label>作者（多作者用 and 分隔，格式：姓, 名）<input id="ef-authors" placeholder="Zhang, Yu and Chai, Xin"></label>
+      <label>年份<input id="ef-year" placeholder="2024"></label>
+      <label>期刊<input id="ef-journal"></label>
+      <label>DOI<input id="ef-doi" placeholder="10.xxxx/xxxxx"></label>
+      <label>标签（逗号分隔）<input id="ef-tags" placeholder="综述, 手动"></label>
+      <button id="ef-save">💾 保存</button>
+    </div>
+  </div></div>
+
   <div id="searchbox">
-    <input id="searchinput" type="search" placeholder="🔍 搜索所有对话内容…（#标签 只搜标签）" autocomplete="off">
+    <input id="searchinput" type="search" placeholder="🔍 搜索对话、笔记、卡片…（#标签 只搜标签）" autocomplete="off">
     <select id="ftype" title="搜索范围：对话正文或附件（文献/资料）全文">
       <option value="">全部内容</option>
       <option value="chat">💬 对话内容</option>
@@ -392,7 +416,15 @@ async function loadCorpus(){
         for (const d of m.docs || []) atts += (d.name || "") + "\n" + (d.text || "") + "\n";
         return { text: String(m.text || ""), atts, ts: m.ts || c.ts };
       });
-      return { c, msgs };
+      // 项目笔记 + 知识卡片（文件缺失则空；时间无独立戳，回退会话活跃时间）
+      let notes = "", cards = "";
+      try { const r = await fetch(ARCH + "/archive/" + encodeURIComponent(c.id + ".notes.md")); if (r.ok) notes = await r.text(); } catch {}
+      try {
+        const r = await fetch(ARCH + "/archive/" + encodeURIComponent(c.id + "-cards.json"));
+        if (r.ok){ const arr = await r.json();
+          if (Array.isArray(arr)) cards = arr.map(x => `🃏 ${x.concept}：${x.definition || ""}${x.example ? " 例：" + x.example : ""}`).join("\n"); }
+      } catch {}
+      return { c, msgs, notes, cards };
     } catch { return null; }   // 单文件损坏不拖垮整体
   }));
   corpus = entries.filter(Boolean);
@@ -431,6 +463,14 @@ async function doSearch(){
         let idx = -1;
         while ((idx = low.indexOf(q, idx + 1)) !== -1) n++;
         if (s && low.includes(q)) src += s + "\n";
+      }
+      // 「全部内容」档位额外搜项目笔记与知识卡片（chat/att 范围不含）
+      if (!ftype && (e.notes || e.cards)){
+        const s = (e.notes ? "📝 项目笔记\n" + e.notes + "\n" : "") + e.cards;
+        const low = s.toLowerCase();
+        let idx = -1;
+        while ((idx = low.indexOf(q, idx + 1)) !== -1) n++;
+        if (low.includes(q)) src += s + "\n";
       }
       if (n) hits.push({ e, n, src });
     } else if (winMsgs.length && (!ftype || ftype === "chat" || e.c.docs)) hits.push({ e, n: 0, src: "" });   // 纯过滤浏览
@@ -633,6 +673,7 @@ function renderLibraryPanel(lib){
     ].filter(Boolean).join(" · ");
     d2.innerHTML = `<div class="main"><div class="t" title="${esc(it.title)}">${esc(it.title)}</div>
       <div class="meta">${meta}</div></div>
+      <button class="edt" title="编辑字段（不走外部查询）">✏️</button>
       <button class="fix" title="手动补录：输入 DOI / PMID / 完整标题">✎</button>
       <button class="del" title="从库中移除">✕</button>`;
     d2.querySelector(".del").onclick = async () => {
@@ -643,9 +684,52 @@ function renderLibraryPanel(lib){
       loadProjects();
     };
     d2.querySelector(".fix").onclick = () => manualEnrich(it, lib);
+    d2.querySelector(".edt").onclick = () => openEdit(lib, it, false);
     el.appendChild(d2);
   }
 }
+// 条目字段编辑 / 手动添加（不走外部 API——中文文献、书籍、在研工作等查不到的条目）
+let editLib = null, editItem = null;
+function openEdit(lib, it, isNew){
+  editLib = lib; editItem = it;
+  $("#edittitle").textContent = isNew ? "➕ 手动添加文献" : "✏️ 编辑文献条目";
+  $("#ef-title").value = it.title || "";
+  $("#ef-authors").value = it.authors || "";
+  $("#ef-year").value = it.year || "";
+  $("#ef-journal").value = it.journal || "";
+  $("#ef-doi").value = it.doi || "";
+  $("#ef-tags").value = (it.tags || []).join(", ");
+  $("#editpanel").classList.add("open");
+  $("#ef-title").focus();
+}
+$("#editclose").onclick = () => $("#editpanel").classList.remove("open");
+$("#editpanel").onclick = e => { if (e.target === $("#editpanel")) $("#editpanel").classList.remove("open"); };
+$("#addbtn2").onclick = async () => openEdit(await loadLibrary(), {title: "", tags: ["手动"]}, true);
+$("#ef-save").onclick = async () => {
+  const t = $("#ef-title").value.trim();
+  if (!t) return toast("标题必填");
+  // 同锚去重：DOI 或标题与已有条目撞车时拒绝（新增路径）
+  const doi = $("#ef-doi").value.trim();
+  if (!editItem.key && editLib.items.some(x => (doi && x.doi === doi) || x.title?.toLowerCase() === t.toLowerCase()))
+    return toast("库中已有同 DOI/同标题条目，未重复添加");
+  Object.assign(editItem, {
+    title: t, name: t,
+    authors: $("#ef-authors").value.trim(), year: $("#ef-year").value.trim(),
+    journal: $("#ef-journal").value.trim(), doi,
+    tags: $("#ef-tags").value.split(/[,，]/).map(x => x.trim()).filter(Boolean),
+  });
+  if (!editItem.key){
+    const used = new Set(editLib.items.map(i => i.key));
+    editItem.key = refKey(doi || t, used);
+    editItem.ts = Date.now();
+    editItem.source = "manual";
+    editLib.items.push(editItem);
+  }
+  await saveLibrary(editLib.items);
+  $("#editpanel").classList.remove("open");
+  openLibrary();
+  toast("💾 已保存");
+};
 // 手动补录：输入 DOI（Crossref 精确）/ PMID（Europe PMC）/ 完整标题（Crossref 模糊）
 async function manualEnrich(it, lib){
   const q = prompt(`手动补录《${it.title.slice(0, 30)}…》\n输入 DOI（10.…）、PMID（纯数字）或完整论文标题：`, "");
