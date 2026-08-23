@@ -15,7 +15,7 @@
 - [文献解读下面的「建议追问」是怎么用的？](#文献解读下面的建议追问是怎么用的)
 - [全局状态里的 CPU 百分比是什么口径？](#全局状态里的-cpu-百分比是什么口径)
 - [chat.html 还有哪些细节功能？](#chathtml-还有哪些细节功能)
-- [不启动 QwenServer.app 时哪些功能不可用？](#不启动-qwenserverapp-时哪些功能不可用)
+- [不启动 LocalLLMServer.app 时哪些功能不可用？](#不启动-localllmserverapp-时哪些功能不可用)
 - [为什么不直接提供编译好的 app，而要自己编译？](#为什么不直接提供编译好的-app而要自己编译)
 
 ---
@@ -160,7 +160,7 @@ pandoc + citeproc 渲染；中文模板 宋体-简/黑体-简/1.5 倍行距 + Ti
 
 README 功能清单为控制篇幅只列主干，这里补全（自 README 迁入）：
 
-- **消息级时间戳落盘**（`messages[].ts`，供 dashboard 时间过滤；旧存档自动回退会话活跃时间）
+- **消息级时间戳落盘**（`messages[].ts`，语义与回退规则见[全局搜索](#我的桌面全局搜索能搜到什么)）
 - **导出**：Markdown / 长图 PNG / 海报；自动存档磁盘（换浏览器可恢复，图表被存储上限剥离时自动取回）
 - **URL 直达参数**：`?conv=` 直达会话、`?new=1` 新会话、`?ppt=1` 文献转 PPT 引导
 - **空会话居中引导页**（首条消息后消失）
@@ -169,7 +169,7 @@ README 功能清单为控制篇幅只列主干，这里补全（自 README 迁�
 - **能力边界规范自动注入**：benchmark 实测结论反推的行为约束（长尾事实不编造、用药只做方向性说明等），修改走 chat.html 内 `BOUNDARY_RULES` 常量
 - **上下文自动压缩的检索回填**：压缩只摘录早期对话、原文保留在界面与存档，追问旧细节按关键词 bigram 检索自动回填相关原文（免 embedding 模型）
 
-## 不启动 QwenServer.app 时哪些功能不可用？
+## 不启动 LocalLLMServer.app 时哪些功能不可用？
 
 - **我的桌面（dashboard.html）**：完全依赖 :8081 的 `/projects/list` 与 `/system/status`，连不上时页面会给启动引导
 - chat.html 的**自动存档**与**磁盘恢复**（对话本身不受影响，localStorage 里仍有最近 50 条）
@@ -188,10 +188,10 @@ README 功能清单为控制篇幅只列主干，这里补全（自 README 迁�
 **不难，一条命令，且不需要完整 Xcode**：
 
 ```bash
-./build.sh    # swiftc -O 单文件编译，约 10-30 秒
+./build_local.sh    # swiftc -O 单文件编译，约 10-30 秒（默认路线；旧路线 ./build.sh 同理）
 ```
 
 - 只依赖 **Xcode Command Line Tools**（约 1-2GB，含 swiftc 和 SDK）：终端执行 `xcode-select --install` 弹窗安装即可
 - **不需要**完整 Xcode（10GB+，本项目的 SwiftUI 单文件用 `swiftc -parse-as-library` 直接编译，无工程文件）
-- build.sh 顺手做了剩余一切：生成 Info.plist、从 assets/logo.png 造 .icns 图标、同步到 /Applications（如有副本）
+- 构建脚本顺手做了剩余一切：生成 Info.plist、从 assets/logo.png 造 .icns 图标、同步到 /Applications（如有副本）
 - 改了 chat.html / dashboard.html 则连编译都不用，浏览器刷新即可
