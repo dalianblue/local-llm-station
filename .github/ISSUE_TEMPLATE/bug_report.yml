@@ -1,0 +1,75 @@
+name: 🐛 Bug 报告
+description: 功能不工作、崩溃、数据丢失、行为与文档不符
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！以下信息能大幅加快定位，**带 \* 的为必填**。
+        提交前请先搜索已有 issue，避免重复。
+  - type: dropdown
+    id: backend
+    attributes:
+      label: 推理后端*
+      options:
+        - Ollama（MLX，默认路线）
+        - llama.cpp（QwenServer.app 旧路线）
+        - DeepSeek 云端 API（无本地模型）
+        - 其他 OpenAI 兼容后端
+        - 与推理无关
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: 出问题的页面/组件*
+      options:
+        - chat.html（对话）
+        - editor.html（写作台）
+        - dashboard.html（我的桌面）
+        - LocalLLMServer.app（宿主控制台）
+        - 安装/编译
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么*
+      description: 具体症状。若与文献相关请说明 PDF 来源（期刊/扫描版/手稿），不同版式的提取行为差异很大
+      placeholder: 例如：上传扫描版 PDF 后解读里只剩参考文献…
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤*
+      placeholder: |
+        1. 打开 …
+        2. 点击 …
+        3. 出现 …
+    validations:
+      required: true
+  - type: textarea
+    id: expect
+    attributes:
+      label: 期望行为*
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本标识
+      description: dashboard 右下角的 git SHA（用于确认你跑的是哪个提交）
+      placeholder: 如 aec0b2d
+  - type: textarea
+    id: env
+    attributes:
+      label: 环境信息
+      description: 机型与内存 / macOS 版本 / 模型名（如 qwen3.8:27b-mlx）
+      placeholder: M1 Pro 32GB · macOS 15.5 · qwen3.8:27b-mlx
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志或截图
+      description: 控制台日志、浏览器 console 报错、截图——有就贴，没有也行

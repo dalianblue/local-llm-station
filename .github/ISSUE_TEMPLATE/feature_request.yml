@@ -1,0 +1,50 @@
+name: 💡 功能建议
+description: 提出新功能或改进方向
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先讲**你要解决什么问题、在什么场景下**，再讲你设想的方案——真实场景比具体方案更有价值。
+        项目两条硬约束（详见 [CONTRIBUTING.md](https://github.com/dalianblue/local-llm-station/blob/main/CONTRIBUTING.md)）：
+        **用户数据不出本机**；**零重运行时依赖**（单 Swift 文件 + 单 HTML 前端）。与这两条冲突的建议不会采纳。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的问题 / 使用场景*
+      description: 你在做什么、卡在哪、现在怎么凑合的
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的解决方式*
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 主要受益环节
+      options:
+        - 读文献（PDF 提取 / 解读 / 图表深读）
+        - 讲文献（海报 / PPT / 导出）
+        - 写作（editor / 引文 / 审稿）
+        - 文献库与检索
+        - 对话与模型能力
+        - 安装与跨平台
+        - 其他
+    validations:
+      required: true
+  - type: dropdown
+    id: pr
+    attributes:
+      label: 是否愿意自己提交 PR？
+      options:
+        - 愿意（讨论清楚后我来实现）
+        - 看情况
+        - 不方便，只提需求
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过的替代方案
+      description: 用别的工具 / 别的做法凑合过的经验，也能帮我们判断需求真伪
