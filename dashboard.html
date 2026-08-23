@@ -203,9 +203,10 @@
     <div class="mtools">
       <button id="scanbtn2">🔄 扫描对话入库</button>
       <button id="metabtn2">🔍 补元数据（Crossref）</button>
-      <button id="bibimp">📥 导入 BibTeX</button>
+      <button id="bibimp">📥 导入 BibTeX/RIS</button>
       <button id="bibexp">📤 导出 BibTeX</button>
-      <input type="file" id="bibfile" accept=".bib,.txt" hidden>
+      <button id="risexp">📤 导出 RIS</button>
+      <input type="file" id="bibfile" accept=".bib,.ris,.txt" hidden>
     </div>
     <div id="liblist"></div>
   </div></div>
@@ -701,8 +702,8 @@ $("#libclose").onclick = () => $("#libpanel").classList.remove("open");
 $("#libpanel").onclick = e => { if (e.target === $("#libpanel")) $("#libpanel").classList.remove("open"); };
 $("#scanbtn2").onclick = async e => { await scanLibrary(e.target); openLibrary(); };
 $("#metabtn2").onclick = e => enrichLibrary(e.target).then(() => openLibrary());
-// ---------- BibTeX 导入/导出（Zotero 等文献管理器握手） ----------
-// 解析器只认 @type{key, field={…}} 基本形态（一层花括号嵌套）
+// ---------- BibTeX / RIS 导入导出（Zotero 等文献管理器握手） ----------
+// BibTeX 解析器只认 @type{key, field={…}} 基本形态（一层花括号嵌套）
 function parseBibTeX(txt){
   const clean = v => v.replace(/^[{"]|["}]$/g, "").replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
   const out = [];
@@ -716,6 +717,25 @@ function parseBibTeX(txt){
   }
   return out;
 }
+// RIS 解析：TY 行起、ER 行止，输出与 BibTeX 同构 {title, author, year, journal, doi}
+function parseRIS(txt){
+  const out = [];
+  for (const rec of txt.split(/(?=TY\s{1,2}-)/)){
+    if (!/^TY\s{1,2}-/.test(rec)) continue;
+    const f = {}, authors = [];
+    for (const m of rec.matchAll(/^([A-Z][A-Z0-9])\s{1,2}-(.*)$/gm)){
+      const tag = m[1], val = m[2].trim();
+      if ((tag === "AU" || tag === "A1") && val) authors.push(val);
+      else if (!f[tag]) f[tag] = val;
+    }
+    const title = f.TI || f.T1 || f.T3;
+    if (title) out.push({
+      title, author: authors.join(" and "),
+      year: (f.PY || f.DA || "").slice(0, 4), journal: f.JO || f.JF || f.T2 || f.TA || "", doi: f.DO || "",
+    });
+  }
+  return out;
+}
 async function saveLibrary(items){
   await fetch(LIBURL(), {method: "PUT", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({schema: 1, updated: Date.now(), items})});
@@ -725,8 +745,10 @@ $("#bibfile").onchange = async e => {
   const f = e.target.files[0]; e.target.value = "";
   if (!f) return;
   try {
-    const entries = parseBibTeX(await f.text());
-    if (!entries.length) return toast("未解析到条目——确认是 BibTeX 格式（.bib）");
+    const txt = await f.text();
+    const isRis = /TY\s{1,2}-/.test(txt);
+    const entries = isRis ? parseRIS(txt) : parseBibTeX(txt);
+    if (!entries.length) return toast(`未解析到条目——确认是 ${isRis ? "RIS（.ris）" : "BibTeX（.bib）"} 格式`);
     const lib = await loadLibrary();
     const used = new Set(lib.items.map(i => i.key));
     let added = 0;
@@ -737,7 +759,7 @@ $("#bibfile").onchange = async e => {
         key: refKey(en.doi || en.title, used), name: en.title, title: en.title,
         authors: en.author || "", year: en.year || "", journal: en.journal || "",
         doi: en.doi || "", pmid: "", pages: 0, text: "",   // 导入条目无全文：可引用可校验，附全文需另传 PDF
-        tags: ["导入"], source: "bibtex", ts: Date.now(),
+        tags: ["导入"], source: isRis ? "ris" : "bibtex", ts: Date.now(),
       });
       added++;
     }
@@ -763,6 +785,27 @@ $("#bibexp").onclick = async () => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   toast(`📤 已导出 ${lib.items.length} 条为 library.bib`);
+};
+// RIS 导出：TY/ID/AU(逐作者)/TI/JO/PY/DO/ER
+$("#risexp").onclick = async () => {
+  const lib = await loadLibrary();
+  if (!lib.items.length) return toast("文献库为空");
+  const ris = lib.items.map(it => {
+    const lines = ["TY  - JOUR", "ID  - " + it.key];
+    (it.authors || "").split(" and ").filter(Boolean).forEach(a => lines.push("AU  - " + a));
+    if (it.title) lines.push("TI  - " + it.title);
+    if (it.journal) lines.push("JO  - " + it.journal);
+    if (it.year) lines.push("PY  - " + it.year);
+    if (it.doi) lines.push("DO  - " + it.doi);
+    lines.push("ER  - ");
+    return lines.join("\n");
+  }).join("\n\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([ris], {type: "text/plain"}));
+  a.download = "library.ris";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(`📤 已导出 ${lib.items.length} 条为 library.ris`);
 };
 loadLibrary().then(lib => { if (lib.items?.length) $("#libbtn").textContent = `📚 文献库 ${lib.items.length} 篇`; });
 // 文献转 PPT：新会话 + 引导上传，上传后自动生成（工作流在 chat.html ?ppt=1 模式内）
