@@ -192,17 +192,19 @@
     font-size: 12px; padding: 2px 10px; cursor: pointer;
   }
   #statusbar button:hover { color: var(--text); border-color: var(--dim); }
-  /* 导出菜单（statusbar 内，样式比照 dashboard 的 newmenu） */
-  #expmenu {
-    display: none; position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 50;
+  /* 导出菜单（statusbar 内，样式比照 dashboard 的 newmenu）；审稿视角菜单同款 */
+  #expmenu, #revmenu {
+    display: none; position: absolute; bottom: calc(100% + 6px); z-index: 50;
     background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
     padding: 6px; min-width: 220px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
   }
-  #expmenu.open { display: block; }
-  #expmenu .nopt { padding: 9px 12px; border-radius: 8px; cursor: pointer; }
-  #expmenu .nopt:hover { background: var(--bg); }
-  #expmenu .nopt b { display: block; font-size: 13.5px; }
-  #expmenu .nopt small { color: var(--dim); font-size: 11.5px; }
+  #expmenu { right: 0; }
+  #revmenu { left: 0; }
+  #expmenu.open, #revmenu.open { display: block; }
+  #expmenu .nopt, #revmenu .nopt { padding: 9px 12px; border-radius: 8px; cursor: pointer; }
+  #expmenu .nopt:hover, #revmenu .nopt:hover { background: var(--bg); }
+  #expmenu .nopt b, #revmenu .nopt b { display: block; font-size: 13.5px; }
+  #expmenu .nopt small, #revmenu .nopt small { color: var(--dim); font-size: 11.5px; }
   #snapcount { cursor: pointer; }
   #snapcount:hover { color: var(--accent); }
 
@@ -500,6 +502,15 @@
       <div id="bar">
         <button id="genbtn" title="按本章节大纲生成初稿（依据：附文献/全文草稿/引文键清单）">✨ <span class="lbl">初稿</span></button>
         <button id="chkbtn" title="跨章节逻辑一致性检查：结果—讨论呼应、术语与数据一致（自动附全文草稿）">🧭 <span class="lbl">检查</span></button>
+        <div id="revwrap" style="position:relative">
+          <button id="revbtn" title="模拟期刊审稿：选择审稿人视角通读全文，输出 Major/Minor 意见供逐条讨论">🕵️ <span class="lbl">审稿</span></button>
+          <div id="revmenu">
+            <div class="nopt" data-rev="general"><b>🧑‍⚖️ 综合审稿人</b><small>新颖性 · 设计 · 可靠性 · 写作全维度</small></div>
+            <div class="nopt" data-rev="method"><b>🔬 方法学审稿人</b><small>设计 · 偏倚 · 混杂 · 盲法 · 终点</small></div>
+            <div class="nopt" data-rev="stat"><b>📊 统计审稿人</b><small>方法选择 · 样本量 · 多重比较 · 数据自洽</small></div>
+            <div class="nopt" data-rev="clin"><b>🩺 临床审稿人</b><small>临床意义 · 外推性 · 患者安全</small></div>
+          </div>
+        </div>
         <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
         <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
         <span class="hint">AI 回答可一键插入正文</span>
@@ -1599,26 +1610,49 @@ $("#genbtn").onclick = () => {
     toast("提示：其他章节均空——先写好其他章节或点「📄 全文」可获得更好的初稿连贯性");
   send(buildDraftPrompt());
 };
+// 自动附全文草稿（🧭 检查与 🕵️ 审稿共用）
+function ensureDraft(){
+  if (ED.attachDraft) return;
+  ED.attachDraft = true;
+  try {
+    const all = JSON.parse(localStorage.getItem("editor_drafts") || "{}");
+    all[ED.convId] = true;
+    localStorage.setItem("editor_drafts", JSON.stringify(all));
+  } catch {}
+  updateDraftBtn();
+  toast("已自动附全文草稿");
+}
 // 🧭 跨章节一致性检查：自动附全文草稿，按结果—讨论呼应/一致性问题/术语数据三节输出报告
 $("#chkbtn").onclick = () => {
   if (ED.sections.filter(s => wc(s.md) > 20).length < 2)
     return toast("至少两个章节有内容才能做跨章节检查");
-  if (!ED.attachDraft){
-    ED.attachDraft = true;
-    try {
-      const all = JSON.parse(localStorage.getItem("editor_drafts") || "{}");
-      all[ED.convId] = true;
-      localStorage.setItem("editor_drafts", JSON.stringify(all));
-    } catch {}
-    updateDraftBtn();
-    toast("已自动附全文草稿进行检查");
-  }
+  ensureDraft();
   send("请通读全文草稿做跨章节逻辑一致性检查，输出 Markdown 报告。只列真实问题不凑数，"
     + "未发现问题的方面明确写「未发现」。逐条注明所在章节，给最小修改建议（不要重写整段）。\n"
     + "## 结果—讨论呼应\n结果部分的每项发现是否都在讨论中得到回应？列出未回应项与讨论补充方向。\n"
     + "## 跨章节一致性问题\n结论超出结果、方法与结果描述矛盾、章节间论证断裂等。\n"
     + "## 术语与数据一致\n分组名、变量名、缩写、样本量、效应方向在章节间是否一致。");
 };
+// 🕵️ 模拟审稿：选视角通读全文输出 Major/Minor 意见，落入对话供逐条讨论
+const REVIEWS = {
+  general: "综合审稿人：从新颖性、研究设计、结果可靠性、论证逻辑与写作规范全维度审",
+  method: "方法学家审稿人：聚焦研究设计——偏倚来源、混杂控制、盲法与分配隐藏、随访完整性、终点定义与测量",
+  stat: "统计审稿人：聚焦统计方法是否匹配设计与数据类型、样本量与功效说明、多重比较处理、效应量与置信区间报告、图表数据自洽",
+  clin: "临床审稿人：聚焦临床意义与价值、结果外推性（人群与场景）、患者安全性与不良反应、与现行临床实践的衔接",
+};
+$("#revbtn").onclick = e => { e.stopPropagation(); $("#revmenu").classList.toggle("open"); };
+document.addEventListener("click", e => { if (!$("#revwrap").contains(e.target)) $("#revmenu").classList.remove("open"); });
+$("#revmenu").addEventListener("click", e => {
+  const o = e.target.closest(".nopt"); if (!o) return;
+  $("#revmenu").classList.remove("open");
+  if (ED.sections.filter(s => wc(s.md) > 20).length < 2)
+    return toast("至少两个章节有内容才能模拟审稿");
+  ensureDraft();
+  send(`请以${REVIEWS[o.dataset.rev]}的视角，模拟目标期刊的审稿流程通读全文草稿，输出 Markdown 审稿意见：\n`
+    + "## Major（必须解决）\n## Minor（建议修改）\n"
+    + "每条注明所在章节与最小修改建议（不重写整段）；真实判断不和稀泥，没有问题的维度明确写「未发现」；"
+    + "结尾给出总体评价（接受 / 小修 / 大修 / 拒稿倾向）与理由。");
+});
 // 云端知情同意切换：本地离线时按钮才出现；点击后仍需确认"数据出本机"
 $("#cloudbtn").onclick = () => {
   if (!S.dskey){ $("#settings").classList.add("open"); toast("先在设置里填写 DeepSeek API Key"); return; }
