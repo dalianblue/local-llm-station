@@ -257,9 +257,12 @@ curl http://127.0.0.1:11434/v1/chat/completions \
 
 | Want to know | Where |
 |--------------|-------|
-| Product positioning, micro-autobiography & common questions | [FAQ.md](FAQ.md) (in Chinese) |
+| Product positioning & common questions | [FAQ.md](FAQ.md) (in Chinese) |
+| Why the author built this (micro-autobiography) | [docs/story.md](docs/story.md) (in Chinese) |
 | Benchmark reports, test papers, reproducible scripts | [benchmark/](benchmark/) |
+| Roadmap: short/mid-term plans & PR-friendly areas | [docs/roadmap.md](docs/roadmap.md) (in Chinese) |
 | API protocol spec for porting to Windows/Linux | [PORTING.md](PORTING.md) (in Chinese) |
+| How to contribute (accepted PR types & conventions) | [CONTRIBUTING.md](CONTRIBUTING.md) (in Chinese) |
 
 ## Acknowledgements
 
