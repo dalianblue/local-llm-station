@@ -930,6 +930,7 @@ async function loadProject(){
   ED.notes = notes || "";
   if (vlist?.list) versions = vlist;
   ED.dataFiles = Array.isArray(plist) ? plist.filter(f => /\.csv$/i.test(f)) : [];
+  ED.reports = Array.isArray(plist) ? plist.filter(f => /^(审稿|检查)-.+\.md$/.test(f)).sort() : [];
   // 本项目文献：从存档消息里取 docs（按文件名去重）——附给 AI 不依赖全局文献库扫描
   ED.projDocs = [];
   if (arch?.messages){
@@ -1213,6 +1214,30 @@ function renderResources(){
     nsec.appendChild(nrow);
   } else nsec.insertAdjacentHTML("beforeend", "<div style='color:var(--dim);font-size:12px;padding:2px 6px'>暂无</div>");
   el.appendChild(nsec);
+  // 审稿/检查报告：💬 对照逐条检查（报告全文注入上下文 + 自动附全文草稿）
+  if (ED.reports?.length){
+    const rsec = document.createElement("div");
+    rsec.className = "rsec";
+    rsec.innerHTML = `<div class="rhead">审稿/检查报告（${ED.reports.length}）</div>`;
+    ED.reports.forEach(f => {
+      const row = document.createElement("div");
+      row.className = "ritem";
+      row.innerHTML = `<span class="t" title="${esc(f)}">${esc(f.replace(/\.md$/, ""))}</span>
+        <button class="r-rev" title="对照此报告逐条检查全文，给最小修改方案">💬</button>`;
+      row.querySelector(".r-rev").onclick = async () => {
+        let text = "";
+        try { const r = await fetch(pf(f)); if (!r.ok) throw 0; text = await r.text(); }
+        catch { return toast("读取报告失败（存档服务未连接？）"); }
+        ensureDraft();
+        input.value = `【${f.replace(/\.md$/, "")}】\n${text}\n\n`
+          + `请对照以上意见逐条检查全文：每条标注「已满足 / 部分满足 / 未满足」及理由；`
+          + `未满足的给最小修改方案（不直接重写整段）；意见针对其他章节的注明章节名。`;
+        input.focus(); fitInputH();
+      };
+      rsec.appendChild(row);
+    });
+    el.appendChild(rsec);
+  }
   // 数据文件：⤵ 取 CSV 转 Markdown 表格插入（超 30 行截断，防大数据集灌爆章节）
   if (ED.dataFiles?.length){
     const fsec = document.createElement("div");
@@ -1623,15 +1648,16 @@ function ensureDraft(){
   toast("已自动附全文草稿");
 }
 // 🧭 跨章节一致性检查：自动附全文草稿，按结果—讨论呼应/一致性问题/术语数据三节输出报告
-$("#chkbtn").onclick = () => {
+$("#chkbtn").onclick = async () => {
   if (ED.sections.filter(s => wc(s.md) > 20).length < 2)
     return toast("至少两个章节有内容才能做跨章节检查");
   ensureDraft();
-  send("请通读全文草稿做跨章节逻辑一致性检查，输出 Markdown 报告。只列真实问题不凑数，"
+  await send("请通读全文草稿做跨章节逻辑一致性检查，输出 Markdown 报告。只列真实问题不凑数，"
     + "未发现问题的方面明确写「未发现」。逐条注明所在章节，给最小修改建议（不要重写整段）。\n"
     + "## 结果—讨论呼应\n结果部分的每项发现是否都在讨论中得到回应？列出未回应项与讨论补充方向。\n"
     + "## 跨章节一致性问题\n结论超出结果、方法与结果描述矛盾、章节间论证断裂等。\n"
     + "## 术语与数据一致\n分组名、变量名、缩写、样本量、效应方向在章节间是否一致。");
+  saveReport(`检查-${dateTag()}.md`);
 };
 // 🕵️ 模拟审稿：选视角通读全文输出 Major/Minor 意见，落入对话供逐条讨论
 const REVIEWS = {
@@ -1640,18 +1666,34 @@ const REVIEWS = {
   stat: "统计审稿人：聚焦统计方法是否匹配设计与数据类型、样本量与功效说明、多重比较处理、效应量与置信区间报告、图表数据自洽",
   clin: "临床审稿人：聚焦临床意义与价值、结果外推性（人群与场景）、患者安全性与不良反应、与现行临床实践的衔接",
 };
+const REV_NAMES = {general: "综合", method: "方法学", stat: "统计", clin: "临床"};
+const dateTag = () => new Date().toLocaleDateString("sv").slice(5).replace("-", "");
+// 报告落盘：审稿/检查回复完成后存项目目录，左栏可对照（同日同视角重跑覆盖）
+async function saveReport(name){
+  const rep = ED.chat[ED.chat.length - 1];
+  if (rep?.role !== "assistant" || wc(rep.text) < 30) return;
+  try {
+    const r = await fetch(pf(name), {method: "PUT", body: rep.text});
+    if (!r.ok) throw 0;
+    if (!ED.reports.includes(name)) ED.reports.push(name);
+    ED.reports.sort();
+    renderResources();
+    toast(`报告已保存：${name}（左栏可对照修改）`);
+  } catch { toast("报告保存失败（存档服务未连接？）"); }
+}
 $("#revbtn").onclick = e => { e.stopPropagation(); $("#revmenu").classList.toggle("open"); };
 document.addEventListener("click", e => { if (!$("#revwrap").contains(e.target)) $("#revmenu").classList.remove("open"); });
-$("#revmenu").addEventListener("click", e => {
+$("#revmenu").addEventListener("click", async e => {
   const o = e.target.closest(".nopt"); if (!o) return;
   $("#revmenu").classList.remove("open");
   if (ED.sections.filter(s => wc(s.md) > 20).length < 2)
     return toast("至少两个章节有内容才能模拟审稿");
   ensureDraft();
-  send(`请以${REVIEWS[o.dataset.rev]}的视角，模拟目标期刊的审稿流程通读全文草稿，输出 Markdown 审稿意见：\n`
+  await send(`请以${REVIEWS[o.dataset.rev]}的视角，模拟目标期刊的审稿流程通读全文草稿，输出 Markdown 审稿意见：\n`
     + "## Major（必须解决）\n## Minor（建议修改）\n"
     + "每条注明所在章节与最小修改建议（不重写整段）；真实判断不和稀泥，没有问题的维度明确写「未发现」；"
     + "结尾给出总体评价（接受 / 小修 / 大修 / 拒稿倾向）与理由。");
+  saveReport(`审稿-${REV_NAMES[o.dataset.rev]}-${dateTag()}.md`);
 });
 // 云端知情同意切换：本地离线时按钮才出现；点击后仍需确认"数据出本机"
 $("#cloudbtn").onclick = () => {
