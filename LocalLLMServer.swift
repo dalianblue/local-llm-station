@@ -5,6 +5,7 @@ import Carbon.HIToolbox
 import CryptoKit
 import CoreGraphics
 import Vision
+import Compression
 import ServiceManagement
 import UserNotifications
 
@@ -310,7 +311,8 @@ final class ArchiveServer {
                     }
                 }
                 let jpegImgs = PDFImages.extract(req.body, limit: 20)
-                var imgs = jpegImgs
+                let flateImgs = PDFImages.extractFlate(req.body, limit: 20 - jpegImgs.count)
+                var imgs = jpegImgs + flateImgs
                 var timgs: [[String: Any]] = []
                 if scanPages >= 3 {
                     // 扫描版 PDF：整页 Vision OCR；长文页并入全文、低密度页按图表收
@@ -319,17 +321,21 @@ final class ArchiveServer {
                     if text.count > 120_000 { text = String(text.prefix(120_000)) + "\n…（过长已截断）" }
                     imgs += scanFigs
                 } else {
-                    if jpegImgs.count < 4 { imgs += PDFImages.vectorFigures(doc, limit: 20 - jpegImgs.count) }
+                    if imgs.count < 4 { imgs += PDFImages.vectorFigures(doc, limit: 20 - imgs.count) }
                     timgs = PDFImages.vectorFigures(doc, limit: 8, tables: true)
                 }
-                // 图表 OCR：图内文字回填（每组最多 12 张）
+                // 图表 OCR：图内文字回填（每组最多 12 张，并行）
                 func withOcr(_ arr: [[String: Any]]) -> [[String: Any]] {
-                    arr.enumerated().map { idx, img in
+                    var out = arr
+                    let lock = NSLock()
+                    DispatchQueue.concurrentPerform(iterations: min(arr.count, 12)) { idx in
                         // 已带 ocr 的（scannedFallback/figureRegions 已回填）不重跑不覆盖
-                        guard idx < 12, img["ocr"] == nil,
-                              let t = (img["url"] as? String).flatMap({ PDFImages.ocrText($0) }) else { return img }
-                        var i = img; i["ocr"] = t; return i
+                        guard arr[idx]["ocr"] == nil,
+                              let t = (arr[idx]["url"] as? String).flatMap({ PDFImages.ocrText($0) }) else { return }
+                        var i = arr[idx]; i["ocr"] = t
+                        lock.lock(); out[idx] = i; lock.unlock()
                     }
+                    return out
                 }
                 imgs = withOcr(imgs)
                 let timgs2 = withOcr(timgs)
@@ -481,13 +487,166 @@ enum PDFImages {
         return out
     }
 
+    // FlateDecode / JPXDecode 内嵌位图（JACC 系整刊用 Flate 存位图，JPEG 字节扫描天然抓不到）
+    static func extractFlate(_ data: Data, limit: Int) -> [[String: Any]] {
+        guard limit > 0 else { return [] }
+        let b = [UInt8](data)
+        var out: [[String: Any]] = [], seen = Set<String>(), pos = 0
+        let imgKw = Array("/Image".utf8), dct = Array("/DCTDecode".utf8), flateKw = Array("/FlateDecode".utf8), jpxKw = Array("/JPXDecode".utf8)
+        while out.count < limit, let i = find(b, imgKw, pos) {
+            pos = i + imgKw.count
+            guard let dictStart = findRev(b, [0x3C, 0x3C], i),
+                  let dictEnd = find(b, [0x3E, 0x3E], i),
+                  let sIdx = find(b, Array("stream".utf8), i),
+                  let eIdx = find(b, Array("endstream".utf8), sIdx) else { continue }
+            let dict = Array(b[dictStart..<dictEnd])
+            let isFlate = find(dict, flateKw, 0) != nil, isJpx = find(dict, jpxKw, 0) != nil
+            guard find(dict, Array("/Subtype".utf8), 0) != nil, find(dict, dct, 0) == nil,
+                  isFlate || isJpx,
+                  let w = intAfter(dict, "/Width"), let h = intAfter(dict, "/Height"),
+                  w >= 120, h >= 120, max(w, h) / max(min(w, h), 1) <= 8 else { continue }   // 滤小图标/装饰条（与 DCT 同门槛）
+            var js = sIdx + 6
+            if js < b.count, b[js] == 0x0D { js += 1 }
+            if js < b.count, b[js] == 0x0A { js += 1 }
+            var raw = Array(b[js..<eIdx])
+            while let last = raw.last, last == 0x0A || last == 0x0D { raw.removeLast() }
+            guard raw.count > 2_000,
+                  let cg = imageFromStream(Data(raw), w: w, h: h, bpc: intAfter(dict, "/BitsPerComponent") ?? 8, flate: isFlate, dict: dict, file: b) else { continue }
+            let key = SHA256.hash(data: Data(raw)).compactMap { String(format: "%02x", $0) }.joined()
+            guard !seen.contains(key), let jpg = jpegData(cg), let small = shrink(jpg) else { continue }
+            seen.insert(key)
+            out.append(["w": w, "h": h, "url": "data:image/jpeg;base64," + small.base64EncodedString()])
+        }
+        return out
+    }
+    // 压缩流 → CGImage：JPX 交给 ImageIO（macOS 原生 jp2）；Flate 解压（含 PNG predictor 反滤波）后按数据长度反推通道数构位图
+    private static func imageFromStream(_ raw: Data, w: Int, h: Int, bpc: Int, flate: Bool, dict: [UInt8], file b: [UInt8]) -> CGImage? {
+        if !flate {
+            guard let src = CGImageSourceCreateWithData(raw as CFData, nil),
+                  let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+            return img
+        }
+        guard let inf = inflateZlib(raw, expect: max(1, w * h * max(bpc, 1) / 8) * 5) else { return nil }
+        let unit = max(1, w * h * max(bpc, 1) / 8)
+        var px: [UInt8]
+        // /DecodeParms 预测器：PNG（≥10，行首 filter 字节）或 TIFF（=2，水平差分无行首字节）
+        if let dp = decodeParms(b, dict), dp.bpc == 8, dp.cols > 0, dp.colors > 0, dp.pred >= 10 {
+            let rowLen = dp.cols * dp.colors
+            guard inf.count % (rowLen + 1) == 0, inf.count / (rowLen + 1) == h,
+                  let unf = pngUnfilter([UInt8](inf), colors: dp.colors, cols: dp.cols, rows: h) else { return nil }
+            px = unf
+        } else if let dp = decodeParms(b, dict), dp.bpc == 8, dp.cols > 0, dp.colors > 0, dp.pred == 2 {
+            px = [UInt8](inf)
+            for r in 0..<h {   // TIFF 水平差分：行内 sample[i] += sample[i-colors]
+                let row = r * dp.cols * dp.colors
+                for i in dp.colors..<(dp.cols * dp.colors) { px[row + i] = px[row + i] &+ px[row + i - dp.colors] }
+            }
+        } else {
+            px = [UInt8](inf)
+        }
+        let k = px.count / unit
+        guard px.count == unit * k, k == 1 || k == 3 || k == 4 else { return nil }   // 1=灰度 3=RGB 4=CMYK
+        if k == 1, find(dict, Array("/Decode".utf8), 0) != nil, find(dict, Array("1 0".utf8), 0) != nil {
+            for i in 0..<px.count { px[i] = 255 - px[i] }   // 灰度反相（扫描位图常见 Decode [1 0]）
+        }
+        if k == 4 {   // CMYK：先构 CMYK 位图再画到白底 RGB
+            let img = px.withUnsafeMutableBytes { p in
+                CGContext(data: p.baseAddress, width: w, height: h, bitsPerComponent: bpc, bytesPerRow: w * 4,
+                          space: CGColorSpace(name: CGColorSpace.genericCMYK) ?? CGColorSpaceCreateDeviceCMYK(),
+                          bitmapInfo: CGImageAlphaInfo.none.rawValue)?.makeImage()
+            }
+            guard let img, let rgb = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                  space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            rgb.setFillColor(CGColor(gray: 1, alpha: 1)); rgb.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            rgb.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return rgb.makeImage()
+        }
+        if k == 3 {   // Quartz 不支持 24bpp：RGB 展开为 RGBX（noneSkipLast）
+            var q = [UInt8](repeating: 255, count: w * h * 4)
+            for i in 0..<w * h { q[i * 4] = px[i * 3]; q[i * 4 + 1] = px[i * 3 + 1]; q[i * 4 + 2] = px[i * 3 + 2] }
+            px = q
+            return px.withUnsafeMutableBytes { p in
+                CGContext(data: p.baseAddress, width: w, height: h, bitsPerComponent: bpc, bytesPerRow: w * 4,
+                          space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)?.makeImage()
+            }
+        }
+        return px.withUnsafeMutableBytes { p in
+            CGContext(data: p.baseAddress, width: w, height: h, bitsPerComponent: bpc, bytesPerRow: w * k,
+                      space: k == 1 ? CGColorSpaceCreateDeviceGray() : CGColorSpaceCreateDeviceCMYK(),
+                      bitmapInfo: CGImageAlphaInfo.none.rawValue)?.makeImage()
+        }
+    }
+    // 解析 /DecodeParms（间接引用 "N 0 R" 或内联字典）里的 PNG predictor 参数
+    private static func decodeParms(_ b: [UInt8], _ dict: [UInt8]) -> (pred: Int, colors: Int, cols: Int, bpc: Int)? {
+        guard find(dict, Array("/DecodeParms".utf8), 0) != nil else { return nil }
+        var pd = dict
+        if let n = intAfter(dict, "/DecodeParms"), n > 0 {
+            guard let oi = find(b, Array("\(n) 0 obj".utf8), 0),
+                  let oe = find(b, [0x3E, 0x3E], oi) else { return nil }
+            pd = Array(b[oi..<oe])
+        }
+        return (intAfter(pd, "/Predictor") ?? 0, intAfter(pd, "/Colors") ?? 1,
+                intAfter(pd, "/Columns") ?? 0, intAfter(pd, "/BitsPerComponent") ?? 8)
+    }
+    // PNG 反滤波（行首 filter 字节 0-4：None/Sub/Up/Average/Paeth），bpc=8
+    private static func pngUnfilter(_ d: [UInt8], colors: Int, cols: Int, rows: Int) -> [UInt8]? {
+        let bpp = colors, len = cols * colors
+        guard len > 0 else { return nil }
+        var out = [UInt8](repeating: 0, count: len * rows)
+        var p = 0
+        for r in 0..<rows {
+            guard p + 1 + len <= d.count else { return nil }
+            let tag = d[p]; p += 1
+            let orow = r * len, prev = r > 0 ? orow - len : -1
+            for i in 0..<len {
+                let x = Int(d[p + i])
+                let a = i >= bpp ? Int(out[orow + i - bpp]) : 0
+                let bb = prev >= 0 ? Int(out[prev + i]) : 0
+                let c = (i >= bpp && prev >= 0) ? Int(out[prev + i - bpp]) : 0
+                let v: Int
+                switch tag {
+                case 0: v = x
+                case 1: v = x + a
+                case 2: v = x + bb
+                case 3: v = x + (a + bb) / 2
+                case 4:
+                    let pa = abs(bb - c), pb = abs(a - c), pc = abs(a + bb - 2 * c)
+                    v = x + ((pa <= pb && pa <= pc) ? a : (pb <= pc ? bb : c))
+                default: return nil
+                }
+                out[orow + i] = UInt8(v & 0xFF)
+            }
+            p += len
+        }
+        return out
+    }
+    // zlib 解压（PDF FlateDecode 带 2 字节头；COMPRESSION_ZLIB 是裸 deflate，先去头）
+    private static func inflateZlib(_ d: Data, expect: Int) -> Data? {
+        guard d.count > 6, d[d.startIndex] == 0x78 else { return nil }
+        let src = [UInt8](d.dropFirst(2))
+        var cap = max(expect, 1 << 16)
+        while cap <= 1 << 28 {
+            var dst = [UInt8](repeating: 0, count: cap)
+            let n = src.withUnsafeBufferPointer { sp in
+                dst.withUnsafeMutableBufferPointer { dp in
+                    compression_decode_buffer(dp.baseAddress!, dp.count, sp.baseAddress!, sp.count, nil, COMPRESSION_ZLIB)
+                }
+            }
+            if n > 0, n < cap { return Data(dst.prefix(n)) }
+            if n == cap { cap *= 2; continue }   // 输出装满 = 可能截断，翻倍重试
+            return nil
+        }
+        return nil
+    }
     // Vision OCR：图内嵌文字（轴标签/CONSORT 框图文字等）回填给模型
     static func ocrText(_ dataURL: String, maxLen: Int = 1500) -> String? {
         guard let b64 = Data(base64Encoded: String(dataURL.dropFirst("data:image/jpeg;base64,".count))),
               let src = CGImageSourceCreateWithData(b64 as CFData, nil),
               let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
         let req = VNRecognizeTextRequest()
-        req.recognitionLevel = .accurate
+        req.recognitionLevel = .fast   // 印刷体轴标签/图例够用，比 accurate 快数倍
         req.recognitionLanguages = ["en-US", "zh-Hans"]
         try? VNImageRequestHandler(cgImage: cg).perform([req])
         let s = (req.results ?? []).compactMap { $0.topCandidates(1).first }
@@ -618,11 +777,12 @@ enum PDFImages {
     static func vectorFigures(_ doc: PDFDocument, limit: Int, tables: Bool = false) -> [[String: Any]] {
         guard limit > 0 else { return [] }
         var out: [[String: Any]] = []
-        // 图注形态：带号 "Fig. 3 Effect…" / 竖线分隔 "Fig. 1 | Markers…"（Nature 系）、无号单图 "Figure. Flow chart."、中文 "图 3"
+        // 图注形态：带号 "Fig. 3 Effect…" / 竖线分隔 "Fig. 1 | Markers…"（Nature 系）、无号单图 "Figure. Flow chart."、中文 "图 3"；
+        // 补充材料 "Fig. S1" / 前缀 "Supplementary|Extended Data" / 面板号 "Fig. 1A"（行中面板引用 "4C)" 数字后紧跟字母无分隔符，天然被拒）
         // tables=true 时锚 Table N / 表 N 标题行（表格图裁剪，供本地多模态逐表深读）
         let captionRe = try? NSRegularExpression(pattern: tables
-            ? #"^\s{0,4}(?:(?i:Table)\s*\d+(?:\s*[\.:|]\s*|\s+)[A-Z(]|表\s*\d+)"#
-            : #"^\s{0,4}(?:(?i:Fig(?:ure)?s?)\.?\s*\d+(?:\s*[\.:|]\s*|\s+)[A-Z(]|(?i:Fig(?:ure)?s?)\.\s+[A-Z]|图\s*\d+)"#)
+            ? #"^\s{0,4}(?:Supplementary\s+)?(?i:Table)\s*S?\d+(?:\s*[\.:|]\s*|\s+)[A-Z(]|表\s*S?\d+"#
+            : #"^\s{0,4}(?:(?:Supplementary|Extended\s+Data)\s+)?(?i:Fig(?:ure)?s?)\.?\s*S?\d+[A-Z]?(?:\s*[\.:|]\s*|\s+)[A-Z(]|(?i:Fig(?:ure)?s?)\.\s+[A-Z]|图\s*S?\d+"#)
         var pages: [(page: PDFPage, lines: [(rect: CGRect, text: String)])] = []
         var manuscript = false
         for pi in 0..<doc.pageCount {
@@ -661,7 +821,7 @@ enum PDFImages {
                     growing = false
                     for j in lines.indices where !block.contains(j) {
                         let o = lines[j]
-                        if blockBottom - o.rect.maxY < 6, o.rect.maxY <= blockBottom + 1,
+                        if blockBottom - o.rect.maxY < 6, o.rect.maxY <= blockBottom + 6,
                            o.rect.maxX > line.rect.minX, o.rect.minX < line.rect.maxX {
                             block.insert(j); blockBottom = min(blockBottom, o.rect.minY); growing = true
                         }
@@ -705,8 +865,11 @@ enum PDFImages {
                 // —— 图域定界（列宽起算）——
                 // 下界延伸：图注块下方若为无文本带且确有视觉内容，扩到最近下方文本行（gap 与探针按全宽判）
                 var yBot = blockBottom - 2
-                if let bb = lines.indices.filter({ !block.contains($0) && lines[$0].rect.maxY < blockBottom - 2
-                    && lines[$0].rect.maxX > x0 && lines[$0].rect.minX < x1 }).map({ lines[$0].rect.maxY }).max(),
+                let belowAll = lines.indices.filter { !block.contains($0) && lines[$0].rect.maxY < blockBottom - 2 }
+                // 下界锚点先取与图注横向重叠的行；没有则取下方任意最近行（标题式图注窄居一栏、图通栏在下方时，下方常无同行文本）
+                let belowOvl = belowAll.filter { lines[$0].rect.maxX > x0 && lines[$0].rect.minX < x1 }
+                var extended = false
+                if let bb = (belowOvl.isEmpty ? belowAll : belowOvl).map({ lines[$0].rect.maxY }).max(),
                    blockBottom - bb > 30, blockBottom - bb < 500 {
                     let gapText = (0..<lines.count).contains { j in !block.contains(j)
                         && lines[j].rect.minY < blockBottom - 2 && lines[j].rect.maxY > bb + 2
@@ -717,8 +880,11 @@ enum PDFImages {
                             width: box.width * 0.88, height: blockBottom - bb - 4)),
                        let pf = contentFrac(Data(base64Encoded: String(probe.dropFirst("data:image/jpeg;base64,".count)))!),
                        pf.w > 0.2, pf.h > 0.2 {
-                        yBot = bb + 2
+                        yBot = bb + 2; extended = true
                     }
+                    // 标题式图注（图在图注下方）：上方近处无图域时收紧到图注顶，避免吃进正文尾行
+                    let blockTop = block.map { lines[$0].rect.maxY }.max() ?? line.rect.maxY
+                    if extended && top - blockTop < 60 { top = blockTop + 4 }
                 }
                 let h = top - yBot
                 guard h >= 100, h <= box.height - 30 else { continue }   // 下限滤装饰；上限放开到近整页（整页大图合法）
