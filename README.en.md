@@ -4,14 +4,14 @@
 
 **English** | **[中文](README.md)**
 
-<!-- TODO: replace with an architecture GIF or UI screenshot (wide crop, under docs/), so visitors get it in 10 seconds -->
+**🔬 A local-first research literature workbench inside your Mac — read a paper, explain it well, then write your own**
 
-**🔬 A 27B-class research assistant inside your Mac — a local-first research literature workbench**
+<img src="assets/architecture-overview.jpg" alt="Architecture overview: dashboard / chat.html / editor.html / host app" width="760">
 
-Read a paper → explain it well: local PDF parsing, multimodal chart reading, four-section summaries, one-image posters, one-click report PPT.
+Read a paper → explain it well → write your own: local PDF parsing (with scanned-PDF OCR and figure-region detection), multimodal chart reading, four-section summaries, one-image posters, five-section critical-appraisal report PPT, then a chaptered writing desk with snapshots, citations, mock peer review and Word export.
 Works offline · Data never leaves your machine · OpenAI-compatible API.
 
-[Quick Start](#quick-start) · [Features](#features) · [Too weak for a local model? Use the cloud](#no-local-model-use-the-deepseek-cloud-api) · [FAQ](FAQ.md) · [Deep docs](#deep-docs)
+[Quick Start](#quick-start) · [Features](#features) · [Too weak for a local model? Use the cloud](#no-local-model-use-the-deepseek-cloud-api) · [FAQ](FAQ.md) (in Chinese) · [Deep docs](#deep-docs)
 
 </div>
 
@@ -21,145 +21,169 @@ Works offline · Data never leaves your machine · OpenAI-compatible API.
 
 ---
 
-**One native console app (QwenServer) + one web chat UI (chat.html)**, running any GGUF model via llama.cpp. Developed and validated on an M1 Pro 32GB with Qwen3.8-27B (a vision-language model) as the default.
+**One native console app (LocalLLMServer, formerly QwenServer) + web pages (chat.html / editor.html / dashboard.html)**; dual inference backends: **Ollama (MLX)** is the default (`qwen3.8:27b-mlx`, native vision + thinking, ~2× faster on long-thinking tasks), the **llama.cpp** route is retained (QwenServer.app via `build.sh`, runs any GGUF). The frontend auto-detects the backend dialect from the service address. Developed and validated on an M1 Pro 32GB.
+
+## The Workflow: Read → Explain → Write
+
+| Stage | What happens | Where |
+|-------|--------------|-------|
+| Read in | 📄 Upload a PDF: local full-text extraction (references auto-stripped, saving 20-40% prefill), embedded figure bitmaps, Vision OCR of in-figure text; scanned PDFs get automatic full-page OCR | **Local** host app — PDFs never leave your machine |
+| Understand | Default four-section summary (background / methods / results / discussion); local multimodal model reads the charts too; follow-ups ride the prompt cache | Local (fully offline) or DeepSeek cloud |
+| Take away | 🎨 One-image summary poster PNG; 📊 Five-section critical-appraisal report PPT (editable .pptx with action titles and speaker notes) | Poster local; PPT cloud-only (~2-3 min) |
+| Discuss deep | 📖 Deep extraction commands (`/证据提取` PICOS+bias for RCT/Meta, `/观点提取` 7 dimensions for papers) with anti-fabrication constraints, results auto-saved to project notes; 🔍 data audit (GRIM / percentage-closure / n-additivity deterministic checks) | Local |
+| Write | ✍️ Writing desk: chaptered markdown, version snapshots, AI draft generation, evidence lookup, cross-section consistency check, four-perspective mock peer review, `[@key]` citations, Word/HTML export | Local or cloud |
+
+**Design stance — "data stays local, compute may leave"**: all file operations (PDF extraction, archives, exports) run in the local host process; the browser has zero file permissions. Privacy-sensitive daily reading defaults to the fully-offline local model; heavy generation (report PPT) explicitly opts into the cloud — never silently.
 
 ## Minimum Requirements & Speed Reference
 
 | Config | Notes |
 |--------|-------|
-| **Minimum** | Apple Silicon (M1 or later) + 24GB RAM + ~20GB disk (default Qwen3.8-27B Q4 quant) |
+| **Minimum** | Apple Silicon (M1 or later) + 24GB RAM + ~20GB disk (default Qwen3.8-27B quant) |
 | **Recommended** | 32GB RAM (64K context, comfortable multimodal) |
 | **16GB machines** | Use a ≤14B quantized model; everything else works unchanged |
 
-**Measured on M1 Pro 32GB / Qwen3.8-27B UD-Q4_K_XL / 64K context:**
-
-| Metric | Value |
-|--------|-------|
-| Model load | ~30 s |
-| Generation | 5-8 tok/s (deep thinking off) |
-| First-token latency | 1-2 s (short prompts) |
-| Text chat fluency | usable; long answers need patience |
-| OCR / image understanding | 1-2K tokens per image, results in seconds |
+**Measured on M1 Pro 32GB / 64K context:** model load ~30 s · generation 5-10 tok/s (thinking off) · first-token 1-2 s · single-image understanding in seconds.
 
 ## Features
 
-**QwenServer.app** (single-file SwiftUI, no Xcode project)
+> Implementation details and boundaries for each feature live in [FAQ.md](FAQ.md) (in Chinese); this list keeps to the essentials.
 
-- Menu-bar resident (no Dock icon) + ⌥Space global hotkey; the ✨ icon leads to My Desktop / New Chat
-- One-click start/stop of llama-server; two-tier context picker computed from RAM + model size; optional login item and auto-start on launch
-- Built-in :8081 micro host service (loopback-only, CORS + path-traversal protection), starts with the app, model-independent: conversation archive CRUD, `/pdf` paper text & chart extraction, `/file` data overview, `/projects/list` + `/system/status` (dashboard data sources)
-- `~/Qwen38/config.json` external config for model paths/context — switch models without recompiling
+**LocalLLMServer.app** (single-file SwiftUI, no Xcode project)
+
+- Menu-bar resident (no Dock icon) + ⌥Space global hotkey; menu leads to My Desktop / New Chat
+- One-click start/stop of **ollama serve** (default); the llama.cpp route (QwenServer.app, `build.sh`) is retained
+- Built-in :8081 micro host service (loopback-only, CORS + path protection): conversation archives, `/pdf` paper extraction, project folders, Word export — model-independent
+- `~/Qwen38/config.json` external config for model tag / context — switch models without recompiling
 
 **chat.html** (single file, zero dependencies, any browser incl. Safari)
 
-- Streaming output, interruptible, collapsible reasoning (both `reasoning_content` and `<think>` formats); live outline preview for long outputs
-- Smart mode picks the preset per message + three manual presets (deep reasoning / exact / casual), grounded in benchmark results
-- 📄 PDF paper upload: local full-text + chart extraction, default four-section summary (background/methods/results/discussion), follow-ups ride the prompt cache
-- 🔍 local multimodal chart deep-read (range-selectable); 📊 one-click five-section critical-appraisal report PPT (cloud-only, ~2-3 min); 🎨 one-image summary poster PNG
-- Cross-conversation long-term memory (🧠 panel); capability-boundary rules auto-injected
-- Context usage bar + auto compression (originals preserved, old details recalled via keyword retrieval)
-- ☁️ DeepSeek cloud mode: works with no model and no Mac; one-click switch from local
-- Multi-conversation sidebar, search, queued input, edit-and-resend; Markdown/tables/KaTeX rendering
-- Multimodal image upload; export to Markdown / long-image PNG / poster; auto-archived to disk (survives browser switches); `?conv=` deep link
-- 🔍 Literature search: type `找文献 <keyword>` (find papers) in any chat → 8 latest from PubMed + 8 relevant from OpenAlex (with open-access full-text PDF links) land in the conversation for follow-up questions
-- Per-message timestamps persisted (`messages[].ts`, feeds dashboard time filtering; legacy archives fall back to conversation activity time)
+- 📄 PDF upload: local full-text + figure extraction, four-section summary, cached follow-ups
+- 📖 Deep extraction (`/证据提取`, `/观点提取`): two frameworks with anti-fabrication constraints ("not stated in the paper" instead of invented P values); results auto-saved to project notes with `[[quotable-in-intro/discussion/methods]]` tags
+- 🔍 Local multimodal chart deep-read · 📊 five-section critical-appraisal PPT (cloud) · 🎨 one-image poster
+- 🔍 Literature search: `找文献 <keyword>` → 8 latest from PubMed + 8 relevant from OpenAlex, results land in the chat for follow-ups
+- 🗂 Project panel: 📝 notes / 📄 attachments (CSV attach-back for statistics discussion + 🔍 data audit) / 🃏 knowledge cards
+- Smart mode auto-picks presets; cross-conversation memory; context auto-compression (originals preserved); ☁️ DeepSeek cloud mode with one-click switch
 
-**dashboard.html (My Desktop)**: the portal you see before opening a chat — the control center of the whole workspace
+**dashboard.html (My Desktop)**: portal and control center
 
-- Project overview: one card per archived conversation (📄 papers / 💬 chats) with attachment/table/chart/note/card counts and activity time; click to jump straight in; 📌 pin, 🏷 manual tags (stored in dashboard.json, merged with auto tags extracted from knowledge cards)
-- 🔍 Global search: full-text search across all conversations (lazy in-memory index, click a hit to jump); scope switch between 💬 chat text / 📎 attachment full text (paper PDF text, filenames searchable); `#tag` aggregation; time filter precise to per-message timestamps
-- 📚 Citation verification: paste a reference list; each entry checked against Crossref → OpenAlex, with PubMed cross-validation for uncertain ones; three-level verdict report lands in the chat
-- Global status: model service / model name / CPU / memory (5s polling); pure static single file, fed by :8081
+- Project cards (attachment/table/chart/note/card counts, activity time); 📌 pin, 🏷 tags
+- 🔍 Global search across chat text, attachment full text, project notes and knowledge cards; `#tag` aggregation; per-message timestamp filtering
+- 📊 Paper-to-PPT · 📚 Citation verification (Crossref → OpenAlex → PubMed cross-checks) · 📚 Global library
+- Global status bar + ⏱ today's focus time (counts only when the page is visible and active — honest numbers)
 
-Product positioning and common questions live in [FAQ.md](FAQ.md) (in Chinese).
+**editor.html (✍️ Writing desk)**: one paper, one project — a three-pane workbench
+
+- Three panes: outline + resources / chapter tabs + preview / AI assistant (answers insert at the cursor, ⌘Z undoable)
+- 🛡️ Three-layer crash safety (atomic server writes + browser draft mirroring + restart recovery prompt)
+- Version snapshots with line-level diff before restoring — **click any diff line to jump to that spot in the editor**
+- ✨ Draft generation (writes "(to add: …)" placeholders instead of inventing data) · 🔍 selected-claim evidence lookup · 🧭 cross-section consistency check · 🕵️ four-perspective mock peer review (reports auto-archived, one-click item-by-item re-check)
+- `[@key]` citation system (auto-numbered references in preview/export) · 🃏 `@` autocomplete inserts knowledge-card references (`[[concept]]`)
+- 📎 Attach library papers or this project's PDFs to the AI context
+
+**📚 Global library**: Zotero-style entries, JSON-backed
+
+- Scan conversations into the library (DOI auto-captured, globally deduplicated) · Crossref metadata enrichment · ✏️ field editing + ➕ manual entry
+- 📥📤 BibTeX / RIS import & export (Zotero/EndNote handshake)
+
+**📤 Manuscript export** (editor status bar)
+
+- HTML: self-contained single file (formulas inlined), print to PDF
+- Word: pandoc + citeproc, selectable citation styles (AMA / Vancouver / APA / GB/T 7714 built in)
 
 ## Ecosystem pairing: use quelmap for data exploration
 
-This station is positioned for **lightweight Q&A and literature-data linkage** (the 📊 attachment injects only a column overview for "answer with my data in mind" questions), not deep data exploration. For interactive analysis, automatic charting, and iterative exploration, we recommend the open-source local tool [quelmap](https://github.com/quelmap-inc/quelmap): its dedicated Lightning-4b model (4B, GRPO-trained, GGUF) bakes the "code + placeholder report" habit into the weights, runs smoothly on a 16GB MacBook per official tests, and shares our privacy stance. Pause this station's 27B service from the tray during heavy analysis sessions to avoid unified-memory contention.
+This station is positioned for **lightweight Q&A and literature-data linkage**, not deep data exploration. For interactive analysis, automatic charting, and iterative exploration, we recommend the open-source local tool [quelmap](https://github.com/quelmap-inc/quelmap): its dedicated Lightning-4b model (4B, GRPO-trained, GGUF) runs smoothly on a 16GB MacBook and shares our privacy stance. Pause this station's 27B service from the tray during heavy analysis sessions.
 
-When your message mentions a plot, a hint bar above the input suggests the best-matching [FigureYa](https://github.com/ying-ge/FigureYa) template (pure frontend keyword matching, zero tokens); click through to the module's GitHub page and grab the paper-grade R script yourself — this station deliberately does no template injection or code generation. Each tool does its own job.
+When your message mentions a plot, a hint bar above the input suggests the best-matching [FigureYa](https://github.com/ying-ge/FigureYa) template (pure frontend keyword matching, zero tokens) — this station deliberately does no template injection. Each tool does its own job.
 
 ## Measured Model Capabilities (benchmark)
 
-Four manually graded test suites for the default Qwen3.8-27B, 56 questions total, scored point by point:
+Four manually graded suites for the default Qwen3.8-27B, 56 questions, scored point by point:
 
 | Suite | Questions | Result |
 |-------|-----------|--------|
 | General-knowledge stress test | 22 | 86% · Good+ |
-| Medical specialty (board level) | 17 | 91% · medication-safety items borderline |
-| CN↔EN translation (incl. back-translation) | 14 | 8 exact + 2 half, zero back-translation drift |
+| Medical specialty (board level) | 17 | 91% · medication-safety borderline |
+| CN↔EN translation (incl. back-translation) | 14 | 8 exact + 2 half, zero drift |
 | Data-analysis coding (actually executed) | 7 | **100% · Excellent** |
 
-Bottom line: **code generation, everyday translation, and writing are safe to use; long-tail facts and medication details need human verification; fact-checking and clinical decisions are off-limits.**
+Bottom line: **code, everyday translation and writing are safe; long-tail facts and medication details need verification; fact-checking and clinical decisions are off-limits.** Full reports: [benchmark/report.html](benchmark/report.html) and the Ollama-vs-llama.cpp comparison [benchmark/ollama_vs_llamacpp_report.html](benchmark/ollama_vs_llamacpp_report.html) (quality on par, Ollama ~1.86× faster on long-thinking tasks — the basis for the dual-backend default).
 
-- Full report (capability boundaries, use-case recommendations, config advice): [benchmark/report.html](benchmark/report.html)
-- Reproducible scripts and raw answers: the [benchmark/](benchmark/) directory
-
-Key engineering conclusion: **temp 0.0 + thinking off** gives the highest precision and ~20× speed on translation/code tasks — the mode selector at the bottom of chat.html ships with these presets.
+Key engineering conclusion: **temp 0.0 + thinking off** gives the highest precision and ~20× speed on translation/code — shipped as the "exact" preset in chat.html.
 
 ## Architecture
 
 ```
 dashboard.html (My Desktop: project overview + global status, the portal)
-   │  click a card → chat.html?conv=<id> jumps into that conversation
+   │  card hover → 💬 chat | ✍️ write; click routes by project type
    ▼
-chat.html (any browser, pure UI + localStorage cache)
-   │  :8080/v1  chat API (llama.cpp, launched by QwenServer)
-   │  :8081     archive API (micro HTTP service inside QwenServer)
+chat.html / editor.html (any browser, pure UI + localStorage cache)
+   │  :11434/v1  chat API (Ollama MLX, managed by LocalLLMServer; legacy :8080/v1 llama.cpp)
+   │  :8081      archive API (micro HTTP service inside the host app)
    ▼
-QwenServer.app (host process)
-   ├── start/stop llama-server, context picker, uptime/logs
-   └── reads/writes ~/local-llm-station/chat_history/*.json
+LocalLLMServer.app (host process)
+   ├── start/stop ollama serve / llama-server, context config, logs
+   └── reads/writes ~/Qwen38/chat_history/*.json + project folders
 ```
 
-All file operations are performed by the local host process; the browser has zero file permissions — the core design of this project, borrowed from deepseek-harness's "local host + browser as pure UI" layering.
+All file operations are performed by the local host process; the browser has zero file permissions — the core design, borrowed from deepseek-harness's "local host + browser as pure UI" layering.
 
 ## Quick Start
 
-**One-click install** (auto-installs Homebrew/llama.cpp, clones sources to `~/Qwen38`, downloads the 27B model and KaTeX, builds and launches; in China run `export HF_ENDPOINT=https://hf-mirror.com` first):
+**One-click install** (auto-installs Homebrew, clones sources to `~/Qwen38`, downloads the model and KaTeX, builds and launches; in China run `export HF_ENDPOINT=https://hf-mirror.com` first):
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dalianblue/local-llm-station/main/install.sh)
 ```
 
-Less than 24GB RAM or skip the model download: run with `SKIP_MODEL=1`. Manual step-by-step below:
+Less than 24GB RAM or skip the model: run with `SKIP_MODEL=1`. Manual steps (default Ollama route):
 
 ```bash
-# 1. Install llama.cpp
-brew install llama.cpp
+# 1. Install Ollama and pull the default model (NVFP4 quant, ~18GB)
+brew install ollama
+ollama pull qwen3.8:27b-mlx
 
-# 2. Download any GGUF model (unsloth quant in this example)
-hf download unsloth/Qwen3.8-27B-GGUF Qwen3.8-27B-UD-Q4_K_XL.gguf --local-dir .
-
-# 3. Optional: KaTeX assets (2.9MB, not in the repo; formulas degrade
-#    to plain text if missing, nothing else breaks)
+# 2. Optional: KaTeX assets (2.9MB; formulas degrade to plain text if missing)
 mkdir -p ~/Qwen38/katex && curl -sL https://registry.npmjs.org/katex/-/katex-0.16.11.tgz -o /tmp/katex.tgz \
   && tar xzf /tmp/katex.tgz -C ~/Qwen38/katex --strip-components=2 package/dist
 
-# 4. Build and launch the console
-./build.sh && open QwenServer.app
-
-# 5. Pick a context tier → start the service → start chatting
+# 3. Build and launch the console → start the service → start chatting
+./build_local.sh && open LocalLLMServer.app
 ```
+
+llama.cpp route (any GGUF, QwenServer.app via `build.sh`): `brew install llama.cpp` → download a GGUF → `./build.sh && open QwenServer.app`, model paths go into `~/Qwen38/config.json` (see [Switching Models](#switching-models)).
 
 ## No local model? Use the DeepSeek cloud API
 
 Can't run a 27B model (<24GB RAM, old Intel Mac, thin Windows laptop)? **No installation needed — a browser + a DeepSeek API Key unlocks all chat features:**
 
 1. **Get an API Key**: sign up at [platform.deepseek.com](https://platform.deepseek.com), top up, create a key (starts with `sk-`)
-2. **Download `chat.html`**: the single file is all you need (optionally grab the `katex/` directory for formula rendering; missing it degrades formulas to plain text)
-3. **Configure**: open chat.html in a browser → ⚙️ Settings → set **API Service** to **☁️ DeepSeek API** → paste the key. It's stored only in your browser's localStorage
+2. **Download `chat.html`**: the single file is all you need (optionally grab `katex/` for formula rendering)
+3. **Configure**: open chat.html → ⚙️ Settings → set **API Service** to **☁️ DeepSeek API** → paste the key. It's stored only in your browser's localStorage
 
 Notes:
 
-- Thinking mode maps to `deepseek-reasoner` (streamed thinking display), no-thinking maps to `deepseek-chat`; llama.cpp-specific params are stripped automatically
-- **Chat requires zero local services** — no QwenServer.app, no model files; cross-conversation memory, sessions, compression, export, and the 📊 one-click report PPT (cloud-only by design) all work
-- Two optional extras (need QwenServer.app on macOS, no model loading required): 📄 local PDF extraction and auto-archive; without them, paste paper text directly
-- Caveat: in cloud mode conversations go to DeepSeek's servers; uploading data files triggers an explicit "data leaves this machine" warning
+- Thinking mode maps to `deepseek-reasoner`, no-thinking to `deepseek-chat`; llama.cpp-specific params are stripped automatically
+- **Chat requires zero local services** — memory, sessions, compression, export, and the report PPT (cloud-only by design) all work
+- Two optional extras (need the macOS host app, no model loading): 📄 local PDF extraction and auto-archive; without them, paste paper text directly
+- Caveat: in cloud mode conversations go to DeepSeek's servers; uploading data triggers an explicit "data leaves this machine" warning
 
 ## Switching Models
 
-**Edit the config file (recommended, no recompile)**: create `~/Qwen38/config.json` and restart QwenServer.app:
+**Ollama route (LocalLLMServer.app)**: a model is just an Ollama package — `ollama pull` the new one, change the model tag in `~/Qwen38/config.json`, restart:
+
+```json
+{
+  "ollamaPath": "/opt/homebrew/bin/ollama",
+  "ollamaModel": "qwen3.8:27b-mlx",
+  "ollamaContextLength": 65536
+}
+```
+
+The model tag is also editable in chat.html ⚙️ settings (stored in localStorage).
+
+**llama.cpp route (QwenServer.app)**: write GGUF paths into `~/Qwen38/config.json`:
 
 ```json
 {
@@ -169,46 +193,20 @@ Notes:
 }
 ```
 
-- All three keys are optional; each falls back to a built-in default (default model path as above; context tier computed from your RAM)
-- `contextLength` only sets the default selection in the launch panel — still freely changeable
-- A nonexistent path falls back to the default automatically (with a hint)
-
-The source-edit route (the old way) still works: edit `QwenServer.swift` and run `./build.sh`. The working directory defaults to `~/Qwen38`; a global find-and-replace relocates everything.
+All keys are optional; each falls back to a built-in default. Source edits: change `LocalLLMServer.swift` then `./build_local.sh` (legacy: `QwenServer.swift` + `./build.sh`). Working directory defaults to `~/Qwen38`.
 
 ## Running on Windows / Linux (non-Apple-Silicon)
 
-QwenServer.app depends on macOS (SwiftUI + PDFKit) and cannot be ported — but **chat.html is pure frontend** and only needs an OpenAI-compatible chat API, so the backend is swappable:
+The host app depends on macOS (SwiftUI + PDFKit) — but **chat.html is pure frontend** and only needs an OpenAI-compatible chat API:
 
-1. Start any OpenAI-compatible backend, e.g.:
+1. Start any OpenAI-compatible backend:
    - [text-generation-webui](https://github.com/oobabooga/text-generation-webui) (`--api --listen`, default `http://127.0.0.1:5000/v1`)
-   - llama.cpp (builds on Windows/Linux too; `llama-server` ships `/v1` — identical to the Mac setup)
-   - [Ollama](https://ollama.com) (`OLLAMA_ORIGINS=* ollama serve` enables CORS, API at `http://127.0.0.1:11434/v1`)
-2. Open chat.html in a browser → ⚙️ Settings → set **Server address** to your backend (e.g. `http://127.0.0.1:5000`; for Ollama use `http://127.0.0.1:11434`) — it reconnects automatically, no code edit needed
-3. Done. Streaming, thinking collapse, mode presets, compression, export — none of these depend on the platform.
+   - llama.cpp (`llama-server` ships `/v1`)
+   - [Ollama](https://ollama.com) (`OLLAMA_ORIGINS=* ollama serve`, API at `http://127.0.0.1:11434/v1`)
+2. Open chat.html → ⚙️ Settings → set **Server address** (e.g. `http://127.0.0.1:11434`) — reconnects automatically
+3. Done. Streaming, thinking collapse, presets, compression, export all work.
 
-**Platform differences**: PDF paper upload and auto-archive rely on QwenServer's :8081 service (PDFKit extraction); without QwenServer those two features are unavailable (paste the paper text instead for literature reading); adjust the KaTeX asset path as needed. `chat_template_kwargs.enable_thinking` is llama.cpp-specific and simply ignored by other backends — whether thinking is shown depends on the backend returning `reasoning_content` or `<think>` tags, both of which chat.html handles.
-
-### Porting guide (for developers writing their own host service)
-
-This project officially supports macOS only, but the frontend/backend boundary is a pure HTTP contract — forks and ports are welcome. The full protocol lives in **[PORTING.md](PORTING.md)** (in Chinese), with a stdlib-only stub [mock_server.py](mock_server.py) for instant frontend integration; the minimum viable set is just three endpoints (`/health`, `/list`, `/archive`), half a day of work.
-
-## Context Length & Memory (dynamically computed)
-
-The model's native context ceiling is **256K** (GGUF metadata `qwen35.context_length = 262144`). The console uses a **two-tier picker** (recommended / extreme), computed live from your hardware — zero configuration across machines and models:
-
-```
-KV budget      = physical RAM × 70% − model file size − 1.5GB system reserve
-recommended    = the largest context the budget fits (KV bounded at 64KB/token + 15% headroom)
-```
-
-| RAM (with 27B Q4) | Default tier | Extreme tier |
-|-------------------|--------------|--------------|
-| 24GB | 8K | 16K |
-| 32GB | 64K | 128K |
-| 48GB | 128K | 256K |
-| 64GB+ | 256K (top) | — |
-
-Coefficients are calibrated against M1 Pro measurements (recent macOS locks ~70% of unified memory; Qwen3.8's hybrid attention actually uses less than the 64KB/token upper bound). The extreme tier exceeds the default GPU wired limit — run `sudo sysctl iogpu.wired_limit_mb=26624` first, otherwise it falls back to CPU and throughput collapses. That command lets a single process wire more unified memory (too high a value can freeze the system), lasts until reboot, and `=0` reverts it.
+**Platform differences**: PDF upload and auto-archive rely on the :8081 host service; without it, paste paper text instead. Full protocol for writing your own host: **[PORTING.md](PORTING.md)** (in Chinese), with a stdlib-only [mock_server.py](mock_server.py); the minimum viable set is three endpoints.
 
 ## Archive API (:8081, CORS, loopback only)
 
@@ -216,21 +214,23 @@ Coefficients are calibrated against M1 Pro measurements (recent macOS locks ~70%
 |----------|-------------|
 | `GET /health` | liveness check |
 | `GET /list` | list archive filenames |
-| `GET /archive/<name>` | read an archive |
-| `PUT /archive/<name>` | write an archive (called automatically each turn) |
-| `GET /projects/list` | project listing (per conversation: id/title/activity/attachments/notes/cards/auto-tags/table & chart counts), dashboard data source |
-| `GET /system/status` | llama-server liveness + CPU/memory/model name, dashboard data source |
+| `GET/PUT /archive/<name>` | read/write an archive (auto-called each turn) |
+| `GET/PUT /projfile/<conv>/<name>` · `GET /projlist/<conv>` | project-folder read/write (figure bitmaps, CSV tables, editor chapters & snapshots, global library) |
+| `POST /pdf` · `POST /file` | paper full-text + figure extraction · data-file overview |
+| `POST /rename` | project rename (archive + title + folder, rollback on failure) |
+| `POST /export-docx` | markdown → .docx (host pandoc + citeproc) |
+| `GET /projects/list` · `GET /system/status` · `GET /version` | dashboard data sources · git SHA version |
 
-One `chat_history/<id>-<title>.json` per conversation, with full messages/metrics/images; `memory.json` holds the cross-conversation memory. On startup the page merges with localStorage (keeping the fuller, newer version).
+One `chat_history/<id>-<title>.json` per conversation; `memory.json` holds cross-conversation memory. Pages merge with localStorage on startup (keeping the fuller, newer version).
 
 ## Chat API
 
-`http://127.0.0.1:8080/v1` (OpenAI-compatible), any API key:
+OpenAI-compatible: Ollama route `http://127.0.0.1:11434/v1` (`model` field required), llama.cpp route `http://127.0.0.1:8080/v1`, any API key:
 
 ```bash
-curl http://127.0.0.1:8080/v1/chat/completions \
+curl http://127.0.0.1:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Hello"}],
+  -d '{"model":"qwen3.8:27b-mlx","messages":[{"role":"user","content":"Hello"}],
        "chat_template_kwargs":{"enable_thinking": false}}'
 ```
 
@@ -238,15 +238,19 @@ curl http://127.0.0.1:8080/v1/chat/completions \
 
 | File | Description |
 |------|-------------|
-| `chat.html` | web chat UI |
-| `dashboard.html` | My Desktop: the project-dashboard portal (project overview + global status) |
-| `QwenServer.swift` | console + archive service source |
-| `build.sh` | one-command build (generates Info.plist, syncs /Applications) |
+| `chat.html` | web chat UI (literature reading) |
+| `editor.html` | ✍️ writing desk: chapters + snapshots + AI three-pane workbench |
+| `dashboard.html` | My Desktop: the portal (project overview + global status + library) |
+| `LocalLLMServer.swift` | console + archive/PDF/export service source (Ollama backend, `build_local.sh`) |
+| `QwenServer.swift` | legacy llama.cpp route source (`build.sh`), baseline retained |
+| `pptxgen.bundle.js` | PptxGenJS single-file local bundle (report PPT, offline) |
+| `build_local.sh` · `build.sh` | one-command builds |
 
 ## Rebuilding
 
 ```bash
-./build.sh   # after changing QwenServer.swift; chat.html just needs a browser refresh
+./build_local.sh   # after changing LocalLLMServer.swift (default route)
+./build.sh         # legacy llama.cpp route; HTML changes just need a refresh
 ```
 
 ## Deep docs
@@ -254,18 +258,18 @@ curl http://127.0.0.1:8080/v1/chat/completions \
 | Want to know | Where |
 |--------------|-------|
 | Product positioning, micro-autobiography & common questions | [FAQ.md](FAQ.md) (in Chinese) |
-| Benchmark report, test papers, reproducible scripts | [benchmark/](benchmark/) and [benchmark/report.html](benchmark/report.html) |
+| Benchmark reports, test papers, reproducible scripts | [benchmark/](benchmark/) |
 | API protocol spec for porting to Windows/Linux | [PORTING.md](PORTING.md) (in Chinese) |
 
 ## Acknowledgements
 
-- [Crossref](https://www.crossref.org) / [OpenAlex](https://openalex.org) — the two free open scholarly-metadata APIs behind citation verification (ranking, not generation — zero-hallucination lookup)
-- [PaSaMaster: Towards Self-Evolving Agentic Literature Retrieval (arXiv:2605.14306)](https://arxiv.org/abs/2605.14306) — the citation-verification architecture (database lookup + deterministic matching, never LLM recall) is inspired by it
+- [Crossref](https://www.crossref.org) / [OpenAlex](https://openalex.org) — free open scholarly-metadata APIs behind citation verification (ranking, not generation — zero-hallucination lookup)
+- [PaSaMaster: Towards Self-Evolving Agentic Literature Retrieval (arXiv:2605.14306)](https://arxiv.org/abs/2605.14306) — the citation-verification architecture is inspired by it
 - [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) — the "local host does file operations, browser is pure UI" layering is borrowed from it
-- [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) — inference engine
+- [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) · [Ollama](https://ollama.com) — inference engines
 - [unsloth](https://unsloth.ai) — high-quality dynamic-quant GGUFs
-- [KaTeX](https://katex.org) / [html2canvas](https://github.com/niklasvh/html2canvas) — formula rendering and PNG export
+- [KaTeX](https://katex.org) / [html2canvas](https://github.com/niklasvh/html2canvas) / [PptxGenJS](https://gitbrent.github.io/PptxGenJS/) — formula rendering, PNG export, editable PPTX generation
 
 ## License
 
-GPL-3.0
+AGPL-3.0 (the copyleft applies to network-service deployments too: derivatives serving users over the network must offer them the source)
