@@ -79,7 +79,13 @@
   .vsplit:hover::after, .vsplit.dragging::after { background: var(--accent); }
   aside { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
   #left { border-right: 1px solid var(--border); }
-  #right { border-left: 1px solid var(--border); }
+  #right { border-left: 1px solid var(--border); container-type: inline-size; }
+  /* 右栏变窄（拖拽或小窗）：按钮只留图标、藏标题文字与提示语、下拉收缩 */
+  @container (max-width: 360px) {
+    #bar .lbl, #chathead .tlabel { display: none; }
+    #bar .hint { display: none; }
+    #chathead select { max-width: 92px; text-overflow: ellipsis; }
+  }
   .pane { display: flex; flex-direction: column; min-height: 0; }
   #outlinepane { flex: none; min-height: 100px; }
   #respane { flex: 1; min-height: 100px; }
@@ -317,6 +323,25 @@
     font-size: 12px; padding: 2px 8px; cursor: pointer;
   }
   #selbar button:hover { border-color: var(--accent); background: var(--bg); }
+  /* @ 自动补全弹层：编辑区敲 @ 唤起，卡片/文献混合列表 */
+  #atmenu {
+    position: fixed; z-index: 70; min-width: 260px; max-width: 400px; max-height: 260px;
+    overflow-y: auto; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.45); padding: 4px;
+  }
+  #atmenu[hidden] { display: none; }
+  #atmenu .aitem { padding: 5px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  #atmenu .aitem small { color: var(--dim); margin-left: 6px; font-size: 11px; }
+  #atmenu .aitem.on { background: var(--bg); }
+  /* 窄窗口：中栏状态栏按钮只留图标（右栏走上面的容器查询） */
+  @media (max-width: 1100px) {
+    #statusbar button .lbl { display: none; }
+  }
+  /* 知识卡片引用 [[概念]] 的渲染产物 */
+  .cardchip {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 0 5px; font-size: .85em; color: var(--accent); cursor: help;
+  }
   /* 文献选择弹层条目 */
   .attrow { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
   .attrow:last-child { border-bottom: none; }
@@ -444,21 +469,21 @@
       <span id="savestate"></span>
       <span id="snapcount"></span>
       <span class="spacer"></span>
-      <button id="previewbtn">👁 预览</button>
+      <button id="previewbtn" title="预览">👁 <span class="lbl">预览</span></button>
       <div id="expwrap" style="position:relative">
-        <button id="expbtn">📤 导出</button>
+        <button id="expbtn" title="导出">📤 <span class="lbl">导出</span></button>
         <div id="expmenu">
           <div class="nopt" id="exp-html"><b>📄 HTML</b><small>自包含单文件 · 可打印为 PDF</small></div>
           <div class="nopt" id="exp-docx"><b>📝 Word (.docx)</b><small>宿主机 pandoc 转换 · 可直接编辑</small></div>
         </div>
       </div>
-      <button id="savebtn">💾 保存并快照</button>
+      <button id="savebtn" title="保存并快照（⌘S）">💾 <span class="lbl">保存并快照</span></button>
     </div>
   </main>
   <div class="vsplit" id="vs2" title="拖动调整右栏宽度（双击复位）"></div>
 
   <aside id="right">
-    <div id="chathead">✍️ 写作助手
+    <div id="chathead">✍️ <span class="tlabel">写作助手</span>
       <select id="mode" title="智能：按内容自动选择；精确适合润色改写">
         <option value="auto">⚡ 智能</option>
         <option value="think">💭 深度推理</option>
@@ -473,11 +498,11 @@
       <div id="inpgrip" title="拖动调整输入框高度（双击复位）"></div>
       <textarea id="p" rows="1" placeholder="问当前章节的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
       <div id="bar">
-        <button id="genbtn" title="按本章节大纲生成初稿（依据：附文献/全文草稿/引文键清单）">✨ 初稿</button>
-        <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 全文</button>
-        <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 文献</button>
+        <button id="genbtn" title="按本章节大纲生成初稿（依据：附文献/全文草稿/引文键清单）">✨ <span class="lbl">初稿</span></button>
+        <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
+        <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
         <span class="hint">AI 回答可一键插入正文</span>
-        <button id="stopbtn">■ 停止</button>
+        <button id="stopbtn" title="停止生成">■ <span class="lbl">停止</span></button>
         <button id="send">发送</button>
       </div>
     </div>
@@ -490,6 +515,8 @@
   <button data-op="扩写">✍️ 扩写</button>
   <button data-op="缩写">📋 缩写</button>
 </div>
+
+<div id="atmenu" hidden></div>
 
 <div id="verpanel" class="modal"><div class="mbox">
   <div class="mhead">🕐 版本快照<button class="hbtn" id="verclose">✕</button></div>
@@ -695,10 +722,24 @@ function md(src){
   return out;
 }
 // 引文渲染：[@key] → 上标编号 + 文末参考文献列表（Pandoc 兼容语法，库条目按首次出现排序）
+// 知识卡片引用 [[概念名]] → 卡片标记（内容取自当前卡片数据，卡片更新后重渲即同步）
 const fmtRef = it => it ? [it.authors, it.title + ".", it.journal && it.journal + ",", it.year]
   .filter(Boolean).join(" ") : "（未知文献）";
+function cardSub(src){
+  return src.replace(/\[\[([^\[\]\n]+?)\]\]/g, (m, name) => {
+    const i = ED.cards.findIndex(x => x.concept === name);
+    return i < 0 ? m : "\u0000K" + i + "\u0000";
+  });
+}
+function cardRestore(html){
+  return html.replace(/\u0000K(\d+)\u0000/g, (_, i) => {
+    const c = ED.cards[+i];
+    return c ? `<span class="cardchip" title="${esc([c.definition, c.example && "例：" + c.example].filter(Boolean).join("\n"))}">🃏${esc(c.concept)}</span>` : "";
+  });
+}
 function mdCite(src){
-  if (!ED.lib.length) return md(src);
+  src = cardSub(src);
+  if (!ED.lib.length) return cardRestore(md(src));
   const order = [];
   src = src.replace(/\[@([A-Za-z0-9_-]+)\]/g, (m, key) => {
     if (!ED.lib.some(x => x.key === key)) return m;   // 库里没有：原样保留
@@ -706,7 +747,7 @@ function mdCite(src){
     if (n === -1){ order.push(key); n = order.length - 1; }
     return "\u0000C" + n + "\u0000";
   });
-  let html = md(src);
+  let html = cardRestore(md(src));
   html = html.replace(/\u0000C(\d+)\u0000/g, (_, n) => {
     const it = ED.lib.find(x => x.key === order[+n]);
     return `<span class="cite" title="${esc(fmtRef(it))}">[${+n + 1}]</span>`;
@@ -1290,13 +1331,13 @@ function exportMd(){
 async function exportHtml(){
   const {title, md: doc} = exportMd();
   const order = [];
-  const src = doc.replace(/\[@([A-Za-z0-9_-]+)\]/g, (m, key) => {
+  const src = cardSub(doc).replace(/\[@([A-Za-z0-9_-]+)\]/g, (m, key) => {
     if (!ED.lib.some(x => x.key === key)) return m;
     let n = order.indexOf(key);
     if (n === -1){ order.push(key); n = order.length - 1; }
     return "\u0000C" + n + "\u0000";
   });
-  let html = md(src).replace(/\u0000C(\d+)\u0000/g, (_, n) =>
+  let html = cardRestore(md(src)).replace(/\u0000C(\d+)\u0000/g, (_, n) =>
     `<span class="cite">[${+n + 1}]</span>`);
   // 参考文献标题随正文语言（与服务端 docx 导出同一判定：中文字符占比 >10%）
   const zh = ((doc.match(/[\u4e00-\u9fff]/g) || []).length * 10 > doc.length);
@@ -1342,6 +1383,7 @@ blockquote { border-left: 3px solid #0969da; margin: 12px 0; padding: 4px 16px; 
 pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 13.5px; }
 code { font-family: ui-monospace, Menlo, monospace; }
 .cite { color: #0969da; }
+.cardchip { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px; padding: 0 5px; font-size: .85em; color: #0969da; }
 ol.refs { font-size: 13px; color: #57606a; }
 a { color: #0969da; }
 del { color: #8b949e; }
@@ -1380,7 +1422,10 @@ $("#cslok").onclick = () => {
   doExportDocx(v);
 };
 async function doExportDocx(csl){
-  const {title, md: doc} = exportMd();
+  // [[概念]] 卡片引用降级为纯文本注记（pandoc/citeproc 不认识卡片语法）
+  const {title, md: doc0} = exportMd();
+  const doc = doc0.replace(/\[\[([^\[\]\n]+?)\]\]/g, (m, n) =>
+    ED.cards.some(c => c.concept === n) ? `（知识卡片：${n}）` : m);
   // [@key] 原样保留 + 附 CSL-JSON 引文库 → pandoc citeproc 按 AMA 样式渲染编号引文与参考文献
   const keys = [...new Set([...doc.matchAll(/\[@([A-Za-z0-9_-]+)\]/g)].map(m => m[1]))]
     .filter(k => ED.lib.some(x => x.key === k));
@@ -1424,14 +1469,16 @@ $("#exp-docx").onclick = () => { $("#expmenu").classList.remove("open"); exportD
 // ---------- 附文献全文（全局文献库驱动） ----------
 function updateAttBtn(){
   const b = $("#attbtn");
-  b.textContent = ED.attDocs.length ? `📎 已附 ${ED.attDocs.length} 篇` : `📎 文献${ED.lib.length ? ` (${ED.lib.length})` : ""}`;
+  b.innerHTML = ED.attDocs.length
+    ? `📎 <span class="lbl">已附 ${ED.attDocs.length} 篇</span>`
+    : `📎 <span class="lbl">文献${ED.lib.length ? ` (${ED.lib.length})` : ""}</span>`;
   b.classList.toggle("on", ED.attDocs.length > 0);
   b.style.display = "";
 }
 // 附全文草稿开关：注入所有章节全文，解锁跨章节提问（复用附文献模式持久化）
 function updateDraftBtn(){
   const b = $("#draftbtn");
-  b.textContent = ED.attachDraft ? "📄 全文已附" : "📄 全文";
+  b.innerHTML = ED.attachDraft ? `📄 <span class="lbl">全文已附</span>` : `📄 <span class="lbl">全文</span>`;
   b.classList.toggle("on", ED.attachDraft);
 }
 $("#draftbtn").onclick = () => {
@@ -1741,6 +1788,9 @@ function buildEditorHistory(){
   if (ED.lib.length)
     sys.push("[可用引文键——在正文引用处写 [@键]（如 [@r1abc])，渲染时自动编号并列参考文献]\n"
       + ED.lib.map(x => `- ${x.key}: ${x.title}${x.year ? " (" + x.year + ")" : ""}`).join("\n"));
+  if (ED.cards.length)
+    sys.push("[知识卡片——本项目沉淀的概念卡；正文提及相关知识时写 [[概念名]] 标记（渲染为卡片徽标，悬停见定义），概念名须与清单完全一致]\n"
+      + ED.cards.map(c => `- ${c.concept}: ${c.definition || ""}`).join("\n"));
   // 指代消歧：附文献后"这篇文章"默认指文献而非草稿
   if (ED.attDocs.length)
     sys.push(`[指代消歧] 当前附有 ${ED.attDocs.length} 篇文献全文：用户说「这篇文章/该文献/论文」默认指所附文献；`
@@ -2005,7 +2055,68 @@ selbar.addEventListener("click", e => {
   send(`请${op}以下选中的文字，直接输出可以整段替换原文的成段中文（Markdown），不要引导语、不要解释、不要重复未改动的部分：\n\n${sel}`);
 });
 // 点工具条与编辑区以外任意处收起（mouseup→click 顺序：编辑区自己的显隐交给 mouseup 处理）
-document.addEventListener("click", e => { if (!e.target.closest("#selbar") && e.target !== ta) selbar.hidden = true; });
+document.addEventListener("click", e => {
+  if (!e.target.closest("#selbar") && e.target !== ta) selbar.hidden = true;
+  if (!e.target.closest("#atmenu") && e.target !== ta) atmenu.hidden = true;
+});
+// @ 自动补全：编辑区敲 @ 唤起（🃏 卡片 [[概念]] + 📄 文献 [@键] 混合），↑↓ 选择 Enter/Tab 插入，Esc 收起
+const atmenu = $("#atmenu");
+let atItems = [], atIdx = 0;
+function atToken(){
+  const m = ta.value.slice(0, ta.selectionStart).match(/@([^\s@\[\]]*)$/);
+  return m ? {start: ta.selectionStart - m[0].length, q: m[1]} : null;
+}
+function syncAtmenu(){
+  const t = atToken();
+  if (!t || !(ED.cards.length + ED.lib.length)){ atmenu.hidden = true; return; }
+  const q = t.q.toLowerCase();
+  atItems = [
+    ...ED.cards.filter(c => !q || (c.concept + (c.definition || "")).toLowerCase().includes(q))
+      .map(c => ({label: c.concept, sub: "🃏 卡片", ins: `[[${c.concept}]]`})),
+    ...ED.lib.filter(x => !q || (x.title || "").toLowerCase().includes(q))
+      .map(x => ({label: x.title, sub: `📄 文献`, ins: `[@${x.key}]`})),
+  ].slice(0, 8);
+  if (!atItems.length){ atmenu.hidden = true; return; }
+  atIdx = 0;
+  atmenu.innerHTML = atItems.map((it, i) =>
+    `<div class="aitem${i === atIdx ? " on" : ""}" data-i="${i}">${esc(it.label)}<small>${esc(it.sub)}</small></div>`).join("");
+  atmenu.hidden = false;
+  // 定位与 selbar 键盘估算同款（textarea 无光标坐标 API）
+  const r = ta.getBoundingClientRect();
+  const line = ta.value.slice(0, ta.selectionStart).split("\n").length - 1;
+  const lh = parseFloat(getComputedStyle(ta).lineHeight) || 24;
+  atmenu.style.left = Math.max(8, Math.min(r.left + 60, innerWidth - atmenu.offsetWidth - 8)) + "px";
+  atmenu.style.top = Math.max(8, r.top + line * lh - ta.scrollTop - atmenu.offsetHeight - 8) + "px";
+}
+function atInsert(i){
+  const t = atToken(), it = atItems[i];
+  atmenu.hidden = true;
+  if (!t || !it) return;
+  ta.focus();
+  ta.setSelectionRange(t.start, ta.selectionStart);   // 选中 @ 过滤词整体替换
+  if (!(document.execCommand && document.execCommand("insertText", false, it.ins)))
+    ta.setRangeText(it.ins, t.start, ta.selectionStart, "end");
+  saveSection(); updateOutline();
+}
+ta.addEventListener("input", syncAtmenu);
+ta.addEventListener("scroll", () => { atmenu.hidden = true; });
+ta.addEventListener("keydown", e => {
+  if (atmenu.hidden) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp"){
+    e.preventDefault();
+    atIdx = (atIdx + (e.key === "ArrowDown" ? 1 : atItems.length - 1)) % atItems.length;
+    atmenu.querySelectorAll(".aitem").forEach((el, i) => el.classList.toggle("on", i === atIdx));
+    atmenu.children[atIdx]?.scrollIntoView({block: "nearest"});
+  } else if (e.key === "Enter" || e.key === "Tab"){
+    e.preventDefault(); atInsert(atIdx);
+  } else if (e.key === "Escape"){
+    atmenu.hidden = true;
+  }
+});
+atmenu.addEventListener("mousedown", e => {
+  e.preventDefault();   // 不让 textarea 失焦（execCommand 依赖焦点）
+  const el = e.target.closest(".aitem"); if (el) atInsert(+el.dataset.i);
+});
 document.addEventListener("keydown", e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s"){
     e.preventDefault();
