@@ -1342,6 +1342,8 @@ $("#writebtn").onclick = () => location.href = "editor.html" + (curId ? "?conv="
 function curConv(){ return convs.find(c => c.id === curId); }
 function newConv(silent){
   curId = "c" + Date.now();
+  // 清掉历史遗留的空「新对话」壳（每次 ?new=1/点新建都 unshift 一具，磁盘虽不落档但 localStorage 会累积）
+  convs = convs.filter(c => c.title !== "新对话" || c.messages.length);
   convs.unshift({ id: curId, title: "新对话", ts: Date.now(), messages: [], ctxUsed: 0 });
   messages = []; ctxUsed = 0;
   persist(); renderConvs(); renderAll(); updateCtxBar();

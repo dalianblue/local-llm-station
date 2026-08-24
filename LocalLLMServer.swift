@@ -121,9 +121,25 @@ final class ArchiveServer {
                     tables = pf.filter { $0.pathExtension == "csv" }.count
                     figs = pf.filter { ["jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }.count
                 }
+                // 稿件阶段（editor.json 只读前 4KB 抠 stage/forkTo）
+                var stage = "", forkTo = ""
+                if let fh = try? FileHandle(forReadingFrom: dir.appendingPathComponent(
+                    f.deletingPathExtension().lastPathComponent).appendingPathComponent("editor.json")),
+                   let pre = try? fh.read(upToCount: 4096), let s = String(data: pre, encoding: .utf8) {
+                    try? fh.close()
+                    let ns = s as NSString
+                    if let re = try? NSRegularExpression(pattern: #""stage"\s*:\s*"(submitted|locked)""#),
+                       let m = re.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)) {
+                        stage = ns.substring(with: m.range(at: 1))
+                    }
+                    if let re = try? NSRegularExpression(pattern: #""forkTo"\s*:\s*"([^"]{1,40})""#),
+                       let m = re.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)) {
+                        forkTo = ns.substring(with: m.range(at: 1))
+                    }
+                }
                 list.append(["id": id, "name": title, "ts": ts, "docs": docs, "notes": hasNotes,
                              "cards": cards, "tags": tags, "file": f.lastPathComponent,
-                             "tables": tables, "figs": figs])
+                             "tables": tables, "figs": figs, "stage": stage, "forkTo": forkTo])
             }
             list.sort { ($0["ts"] as! Double) > ($1["ts"] as! Double) }
             body = (try? JSONSerialization.data(withJSONObject: ["convs": list])) ?? Data("{\"convs\":[]}".utf8)
@@ -189,6 +205,39 @@ final class ArchiveServer {
                 if failed { status = "500 Internal Server Error" }
                 else if !any { status = "404 Not Found" }
             } else { status = "400 Bad Request" }
+        // 项目 fork（收到审稿意见时复制投稿版为修稿项目）：存档 json + 项目目录 + 笔记/卡片
+        case ("POST", "/projects/fork"):
+            if let j = (try? JSONSerialization.jsonObject(with: req.body, options: [])) as? [String: String],
+               let from = j["from"], let to = j["to"], let nid = j["id"], let title = j["title"],
+               from.hasSuffix(".json"), to.hasSuffix(".json"),
+               !nid.isEmpty, !nid.contains("-"), !nid.contains("/"), !nid.contains(".."),
+               !title.isEmpty, !title.contains("/"), !title.contains(".."),
+               !from.contains(".."), !from.contains("/"), !to.contains(".."), !to.contains("/") {
+                let fm = FileManager.default
+                let fromURL = dir.appendingPathComponent(from), toURL = dir.appendingPathComponent(to)
+                let fdir = dir.appendingPathComponent(String(from.dropLast(5)), isDirectory: true)
+                let tdir = dir.appendingPathComponent(String(to.dropLast(5)), isDirectory: true)
+                guard fm.fileExists(atPath: fromURL.path),
+                      !fm.fileExists(atPath: toURL.path), !fm.fileExists(atPath: tdir.path) else {
+                    status = "409 Conflict"
+                    break
+                }
+                if let data = try? Data(contentsOf: fromURL),
+                   var obj = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] {
+                    obj["id"] = nid; obj["title"] = title
+                    obj["ts"] = Date().timeIntervalSince1970 * 1000   // 毫秒（scanArchive 只认 13 位）
+                    if let nd = try? JSONSerialization.data(withJSONObject: obj) {
+                        Self.safeWrite(nd, to: toURL)
+                        if fm.fileExists(atPath: fdir.path) { try? fm.copyItem(at: fdir, to: tdir) }
+                        let oid = String(from.prefix { $0 != "-" })
+                        for suf in [".notes.md", "-cards.json"]
+                        where fm.fileExists(atPath: dir.appendingPathComponent(oid + suf).path) {
+                            try? fm.copyItem(at: dir.appendingPathComponent(oid + suf),
+                                             to: dir.appendingPathComponent(nid + suf))
+                        }
+                    } else { status = "500 Internal Server Error" }
+                } else { status = "500 Internal Server Error" }
+            } else { status = "400 Bad Request" }
         // 文档导出：markdown → docx（宿主机 pandoc；输入输出都不过网络）
         // 请求 JSON {md, refs(CSL-JSON), csl(样式文件名，可选)}：
         // refs 非空时 --citeproc 按所选 CSL 样式（默认 AMA brackets）渲染 [@key] 引文
@@ -218,7 +267,8 @@ final class ArchiveServer {
                 let zh = cjk * 10 > s.count
                 let tplName = zh ? "export-template-zh.docx" : "export-template-en.docx"
                 let tpl = dir.deletingLastPathComponent().appendingPathComponent(tplName)
-                var args = [tmp.appendingPathExtension("md").path, "-o", out.path,
+                var args = ["-f", "markdown+mark",   // ==高亮== → docx 黄底（高亮修改稿用）
+                            tmp.appendingPathExtension("md").path, "-o", out.path,
                             "--resource-path", NSHomeDirectory() + "/Qwen38"]
                 if fm.fileExists(atPath: tpl.path) { args += ["--reference-doc", tpl.path] }
                 // citeproc 引文：样式文件限定 csl/ 目录，缺省回退 AMA

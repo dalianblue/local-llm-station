@@ -331,14 +331,16 @@ async function loadProjects(){
       <span class="ico">${isDoc ? "📄" : "💬"}</span>
       <span class="name" title="${esc(c.name)}">${esc(c.name)}</span>
       <span>${tagHtml(allTags(c))}</span>
-      <span class="meta"><span>${c.docs ? c.docs + " 份资料" : c.name.startsWith("✍️") ? "写作项目" : "纯对话"}</span>${c.tables ? "<span>📊 " + c.tables + " 表</span>" : ""}${c.figs ? "<span>🖼 " + c.figs + " 图</span>" : ""}${c.notes ? "<span>📝 笔记</span>" : ""}${c.cards ? "<span>🃏 " + c.cards + " 卡</span>" : ""}<span>活跃于 ${ago(c.ts)}</span></span>
+      <span class="meta"><span>${c.docs ? c.docs + " 份资料" : c.name.startsWith("✍️") ? "写作项目" : "纯对话"}</span>${c.stage === "locked" ? '<span style="color:var(--accent)">🔒 投稿版</span>' : c.stage === "submitted" ? "<span>📤 已投稿</span>" : ""}${c.tables ? "<span>📊 " + c.tables + " 表</span>" : ""}${c.figs ? "<span>🖼 " + c.figs + " 图</span>" : ""}${c.notes ? "<span>📝 笔记</span>" : ""}${c.cards ? "<span>🃏 " + c.cards + " 卡</span>" : ""}<span>活跃于 ${ago(c.ts)}</span></span>
       <div class="entrybar">
-        <button class="go-chat" title="进入对话：解读、提问、图表深读">💬 对话</button>
-        <button class="go-write" title="进入写作台：分章节写作与版本管理">✍️ 写作</button>
+        <button class="go-chat" title="进入对话：解读、提问、图表深读">💬 聊聊文献</button>
+        <button class="go-write" title="进入写作台：分章节写作与版本管理">✍️ 论文写作</button>
       </div>`;
     // 点卡片按项目类型分流：✍️ 写作项目进编辑器，其余进对话——默认去向跟随用户预期
+    // 锁定投稿版跳转它 fork 出的修稿项目（该干活的地方），修稿项目不存在则原样进
+    const target = c.stage === "locked" && c.forkTo && projects.find(x => x.id === c.forkTo) || c;
     d.onclick = () => location.href =
-      (c.name.startsWith("✍️") ? "editor.html" : "chat.html") + "?conv=" + encodeURIComponent(c.id);
+      (target.name.startsWith("✍️") ? "editor.html" : "chat.html") + "?conv=" + encodeURIComponent(target.id);
     d.querySelector(".pin").onclick = async e => {
       e.stopPropagation();
       pinned.has(c.id) ? pinned.delete(c.id) : pinned.add(c.id);
@@ -347,11 +349,11 @@ async function loadProjects(){
     };
     d.querySelector(".go-chat").onclick = e => {
       e.stopPropagation();
-      location.href = "chat.html?conv=" + encodeURIComponent(c.id);
+      location.href = "chat.html?conv=" + encodeURIComponent(target.id);
     };
     d.querySelector(".go-write").onclick = e => {
       e.stopPropagation();
-      location.href = "editor.html?conv=" + encodeURIComponent(c.id);
+      location.href = "editor.html?conv=" + encodeURIComponent(target.id);
     };
     d.querySelector(".tagbtn").onclick = e => {
       e.stopPropagation();
@@ -363,13 +365,19 @@ async function loadProjects(){
     };
     d.querySelector(".del").onclick = async e => {
       e.stopPropagation();
-      if (!confirm(`删除项目「${c.name.replace(/^📄 /, "")}」？\n会话存档、笔记与知识卡片一并删除，不可恢复。\n（已打开的浏览器里 localStorage 副本不受影响）`)) return;
+      if (!confirm(`删除项目「${c.name.replace(/^📄 /, "")}」？\n会话存档、笔记与知识卡片一并删除，不可恢复。\n（已打开的 chat 标签页刷新前侧栏仍可见，勿点开以免重新写盘）`)) return;
       const enc = encodeURIComponent;
       await Promise.allSettled([
         fetch(`${ARCH}/archive/${enc(c.file)}`, {method: "DELETE"}),
         fetch(`${ARCH}/archive/${enc(c.id + ".notes.md")}`, {method: "DELETE"}),
         fetch(`${ARCH}/archive/${enc(c.id + "-cards.json")}`, {method: "DELETE"}),
       ]);
+      // chat.html 侧栏列表来自 qwen_convs——不清会把已删会话重新写盘复活
+      try {
+        const rest = JSON.parse(localStorage.getItem("qwen_convs") || "[]").filter(x => x.id !== c.id);
+        localStorage.setItem("qwen_convs", JSON.stringify(rest));
+        if (localStorage.getItem("qwen_cur") === c.id) localStorage.removeItem("qwen_cur");
+      } catch {}
       pinned.delete(c.id); delete manualTags[c.id]; await saveMeta();
       loadProjects();
     };
@@ -941,6 +949,10 @@ loadPinned().then(loadProjects);
 loadStatus();
 setInterval(loadStatus, 5000);
 setInterval(loadProjects, 20000);
+// 页面重新可见即重拉：bfcache 后退恢复的是旧 DOM、后台标签页轮询被节流——
+// 两种"只看到旧列表"的场景都在切回/聚焦的瞬间被这两行治住（sig 去重防抖动）
+window.addEventListener("pageshow", e => { if (e.persisted) loadPinned().then(loadProjects); });
+window.addEventListener("focus", loadProjects);
 
 // ---------- 版本标识（git SHA，零手工维护）+ 上游更新提示 ----------
 (async () => {

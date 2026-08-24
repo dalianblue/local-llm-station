@@ -494,15 +494,18 @@
         <div id="expmenu">
           <div class="nopt" id="exp-html"><b>📄 HTML</b><small>自包含单文件 · 可打印为 PDF</small></div>
           <div class="nopt" id="exp-docx"><b>📝 Word (.docx)</b><small>宿主机 pandoc 转换 · 可直接编辑</small></div>
+          <div class="nopt" id="exp-mark" style="display:none"><b>🖍 高亮修改稿 (.docx)</b><small>与投稿基线 diff · 改动行黄底（参考文献除外）</small></div>
         </div>
       </div>
       <button id="savebtn" title="保存并快照（⌘S）">💾 <span class="lbl">保存并快照</span></button>
+      <button id="subbtn" title="标记为已投稿">📮 <span class="lbl">投稿</span></button>
+      <button id="revinbtn" title="粘贴审稿意见，AI 拆成逐条清单">📨 <span class="lbl">审稿意见</span></button>
     </div>
   </main>
   <div class="vsplit" id="vs2" title="拖动调整右栏宽度（双击复位）"></div>
 
   <aside id="right">
-    <div id="chathead">✍️ <span class="tlabel">写作助手</span>
+    <div id="chathead">✍️ <span class="tlabel">论文助手</span>
       <select id="mode" title="智能：按内容自动选择；精确适合润色改写">
         <option value="auto">⚡ 智能</option>
         <option value="think">💭 深度推理</option>
@@ -530,6 +533,7 @@
         </div>
         <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
         <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
+        <button id="histbtn" class="off" title="把本项目「聊聊文献」里的讨论记录带给论文助手（最近 15 条，截断纪要）">📋 <span class="lbl">聊天记录</span></button>
         <span class="hint">AI 回答可一键插入正文</span>
         <button id="stopbtn" title="停止生成">■ <span class="lbl">停止</span></button>
         <button id="send">发送</button>
@@ -560,7 +564,7 @@
 </div></div>
 
 <div id="attpanel" class="modal"><div class="mbox">
-  <div class="mhead">📎 附文献全文（写作助手将看到所选文献）<button class="hbtn" id="attclose">✕</button></div>
+  <div class="mhead">📎 附文献全文（论文助手将看到所选文献）<button class="hbtn" id="attclose">✕</button></div>
   <div id="attlist"></div>
   <div id="attfoot" style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px">
     <span id="attsum" style="font-size:12px;color:var(--dim);align-self:center"></span>
@@ -579,6 +583,24 @@
   <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px">
     <span id="cslhint" style="font-size:12px;color:var(--dim);align-self:center"></span>
     <button id="cslok" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer">导出 Word</button>
+  </div>
+</div></div>
+
+<div id="revinpanel" class="modal"><div class="mbox">
+  <div class="mhead">📨 粘贴审稿意见（整封 decision letter 一次贴入）<button class="hbtn" id="revinclose">✕</button></div>
+  <textarea id="revinraw" placeholder="Reviewer 1: …&#10;Reviewer 2: …" style="width:calc(100% - 36px);min-height:220px;margin:12px 18px 0;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font:inherit;font-size:13px;line-height:1.6;resize:vertical"></textarea>
+  <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px;margin-top:12px">
+    <span id="revinhint" style="font-size:12px;color:var(--dim);align-self:center"></span>
+    <button id="revinok" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer">🤖 解析成条目</button>
+  </div>
+</div></div>
+
+<div id="respanel" class="modal"><div class="mbox">
+  <div class="mhead"><span id="reshead">📝 Response</span><button class="hbtn" id="resclose">✕</button></div>
+  <textarea id="restext" style="width:calc(100% - 36px);min-height:220px;margin:12px 18px 0;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font:inherit;font-size:13px;line-height:1.6;resize:vertical"></textarea>
+  <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px;margin-top:12px">
+    <button id="resgrab" title="把右栏最近一条 AI 回复带入编辑（讨论结果改一改就能用）" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 12px;cursor:pointer">🤖 取最近 AI 回复</button>
+    <button id="resok" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer">保存</button>
   </div>
 </div></div>
 
@@ -934,6 +956,10 @@ async function loadProject(){
   // 章节文件名惰性生成（新建时才定名），已有清单按 file 字段
   for (const s of ED.sections) if (!s.file) s.file = `sec-${s.id}.md`;
   if (!ej) persistEditor();   // 首次初始化即落盘章节清单
+  ED.stage = ej?.stage || "draft"; ED.forkOf = ej?.forkOf || ""; ED.forkTo = ej?.forkTo || "";
+  updateStageBtn();
+  $("#exp-mark").style.display = ED.forkOf ? "" : "none";   // 高亮修改稿只对修稿版有意义
+  if (ED.stage === "locked") toast("这是锁定的投稿版——修改请在修稿项目进行", 5000);
   await Promise.all(ED.sections.map(async s => {
     // 加载失败（非 404）标记 bad：正文没读进来就 PUT 会用空串抹掉磁盘原文
     try { const r = await fetch(pf(s.file)); if (r.ok) s.md = await r.text(); else if (r.status !== 404) s.bad = true; }
@@ -941,18 +967,20 @@ async function loadProject(){
   }));
   journalRestore();   // 磁盘内容读入后：若有未落盘的崩溃草稿，询问恢复
   // 左栏资源并行加载（含存档本体：本项目文献全文由此而来）
-  const [cards, notes, vlist, plist, arch] = await Promise.all([
+  const [cards, notes, vlist, plist, arch, revs] = await Promise.all([
     fetch(ARCH + "/archive/" + encodeURIComponent(ED.convId + "-cards.json")).then(r => r.ok ? r.json() : []).catch(() => []),
     fetch(ARCH + "/archive/" + encodeURIComponent(ED.convId + ".notes.md")).then(r => r.ok ? r.text() : "").catch(() => ""),
     fetch(pf("versions.json")).then(r => r.ok ? r.json() : null).catch(() => null),
     fetch(ARCH + "/projlist/" + encodeURIComponent(ED.convDir)).then(r => r.ok ? r.json() : []).catch(() => []),
     fetch(ARCH + "/archive/" + encodeURIComponent(ED.projMeta.file)).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(pf("reviews.json")).then(r => r.ok ? r.json() : null).catch(() => null),
   ]);
   if (Array.isArray(cards)) ED.cards = cards;
   ED.notes = notes || "";
   if (vlist?.list) versions = vlist;
   ED.dataFiles = Array.isArray(plist) ? plist.filter(f => /\.csv$/i.test(f)) : [];
-  ED.reports = Array.isArray(plist) ? plist.filter(f => /^(审稿|检查)-.+\.md$/.test(f)).sort() : [];
+  ED.reports = Array.isArray(plist) ? plist.filter(f => /^(审稿|检查|落地体检)-.+\.md$/.test(f)).sort() : [];
+  ED.reviews = revs && Array.isArray(revs.items) ? revs : null;
   // 本项目文献：从存档消息里取 docs（按文件名去重）——附给 AI 不依赖全局文献库扫描
   ED.projDocs = [];
   if (arch?.messages){
@@ -977,6 +1005,10 @@ async function loadProject(){
   // 附全文开关按项目持久化（与附件勾选同一模式）
   try { ED.attachDraft = !!JSON.parse(localStorage.getItem("editor_drafts") || "{}")[ED.convId]; } catch {}
   updateDraftBtn();
+  // 📋 聊天记录开关：注入本项目 chat 存档最近讨论给论文助手
+  ED.chatHist = Array.isArray(arch?.messages) ? arch.messages : [];
+  try { ED.attachChat = !!JSON.parse(localStorage.getItem("editor_chats") || "{}")[ED.convId]; } catch {}
+  updateChatBtn();
 
   $("#picker").style.display = "none";
   $("#app").hidden = false;
@@ -1136,8 +1168,9 @@ async function persistEditor(){
       method: "PUT", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         schema: 1, updated: Date.now(),
+        stage: ED.stage || "draft", forkOf: ED.forkOf || undefined, forkTo: ED.forkTo || undefined,
         sections: ED.sections.map(s => ({id: s.id, title: s.title, file: s.file, archetype: s.archetype})),
-        chat: ED.chat.slice(-200),
+        chat: ED.chat.slice(-600),
       })
     });
   } catch {}
@@ -1236,6 +1269,49 @@ function renderResources(){
     nsec.appendChild(nrow);
   } else nsec.insertAdjacentHTML("beforeend", "<div style='color:var(--dim);font-size:12px;padding:2px 6px'>暂无</div>");
   el.appendChild(nsec);
+  // 📨 审稿意见：逐条清单（状态点点击轮换，💬 发给 AI 逐条讨论）
+  if (ED.reviews?.items?.length){
+    const pend = ED.reviews.items.filter(i => i.status === "待处理").length;
+    const vsec = document.createElement("div");
+    vsec.className = "rsec";
+    vsec.innerHTML = `<div class="rhead">📨 审稿意见（${ED.reviews.items.length} 条 · ${pend} 待处理）
+      <button class="v-exp" title="核对 Response 声称的修改是否真实落地在当前稿中（防 AI 幻觉声称）" style="float:right;cursor:pointer;border:none;background:none;color:var(--dim);font-size:13px;margin-right:6px">🏥 体检</button>
+      <button class="v-exp" title="组装 point-by-point 回复信并导出 Word（未写 Response 的条目留占位）" style="float:right;cursor:pointer;border:none;background:none;color:var(--dim);font-size:13px">📤 回复信</button></div>`;
+    const vbtns = vsec.querySelectorAll(".v-exp");
+    vbtns[0].onclick = verifyResponses;
+    vbtns[1].onclick = exportResponseLetter;
+    ED.reviews.items.forEach(it => {
+      const row = document.createElement("div");
+      row.className = "ritem";
+      const badge = it.severity === "minor" ? "🟡" : "🔴";
+      row.innerHTML = `<span class="vst" title="点击轮换状态" style="cursor:pointer">${REV_ST[it.status] || "⏳"}</span>
+        <span class="t" title="${esc(it.comment)}">${badge} ${esc(it.id)} ${esc((it.comment || "").slice(0, 38))}…</span>
+        <button class="v-res" title="${it.response ? "编辑 Response（已有草稿）" : "撰写该条的 Response"}"${it.response ? ' style="color:var(--accent)"' : ""}>📝</button>
+        <button class="v-rev" title="把这条意见发给 AI：定位章节 + 修改方案/反驳论点">💬</button>`;
+      row.querySelector(".vst").onclick = async () => {
+        const seq = ["待处理", "已修改", "已反驳"];
+        it.status = seq[(seq.indexOf(it.status) + 1) % 3];
+        await saveReviews();
+        renderResources();
+      };
+      row.querySelector(".v-res").onclick = () => openResponse(it);
+      row.querySelector(".v-rev").onclick = async () => {
+        if (busy) return toast("AI 正在回复，稍候再试");
+        ensureDraft();
+        input.value = `【审稿意见 ${it.id} · Reviewer ${it.reviewer} · ${it.severity === "minor" ? "Minor" : "Major"}】\n${it.comment}\n\n`
+          + `请针对这条审稿意见：1) 指出针对全文哪章哪部分；2) 给最小修改方案（需要改写处直接给改写文字草稿）；`
+          + `3) 若有不应采纳的部分，给出礼貌反驳的论点与文献角度（不编造文献）；`
+          + `4) 末尾单独一节「Response 草稿」：可直接用于 response letter 的正式回复段`
+          + `（意见为英文则用英文，注明修改位置——章节+小节，可引用已改文字）。`
+          + `修改声称纪律：草稿中写「已修改/已补充（We have revised…）」的内容，必须是你上文修改方案里`
+          + `给出了具体新旧文字的；给不出具体文字的只能写「建议修改（We propose to…）」或留给作者确认，`
+          + `严禁声称不存在的已完成修改。`;
+        input.focus(); fitInputH();
+      };
+      vsec.appendChild(row);
+    });
+    el.appendChild(vsec);
+  }
   // 审稿/检查报告：💬 对照逐条检查（报告全文注入上下文 + 自动附全文草稿）
   if (ED.reports?.length){
     const rsec = document.createElement("div");
@@ -1559,15 +1635,11 @@ $("#cslok").onclick = () => {
   localStorage.setItem("qwen_csl", v);
   doExportDocx(v);
 };
-async function doExportDocx(csl){
-  // [[概念]] 卡片引用降级为纯文本注记（pandoc/citeproc 不认识卡片语法）
-  const {title, md: doc0} = exportMd();
-  const doc = doc0.replace(/\[\[([^\[\]\n]+?)\]\]/g, (m, n) =>
-    ED.cards.some(c => c.concept === n) ? `（知识卡片：${n}）` : m);
-  // [@key] 原样保留 + 附 CSL-JSON 引文库 → pandoc citeproc 按 AMA 样式渲染编号引文与参考文献
+// [@key] 引文收集 → CSL-JSON（Word 导出与高亮修改稿共用）
+function collectRefs(doc){
   const keys = [...new Set([...doc.matchAll(/\[@([A-Za-z0-9_-]+)\]/g)].map(m => m[1]))]
     .filter(k => ED.lib.some(x => x.key === k));
-  const refs = keys.map(k => {
+  return keys.map(k => {
     const it = ED.lib.find(x => x.key === k);
     const author = (it.authors || "").split(" and ").filter(Boolean).map(n => {
       const i = n.indexOf(", ");
@@ -1580,19 +1652,73 @@ async function doExportDocx(csl){
     if (it.doi) item.DOI = it.doi;
     return item;
   });
+}
+async function pandocExportDocx(doc, name, csl){
   toast("📝 pandoc 转换中…");
   try {
     const r = await fetch(ARCH + "/export-docx", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({md: doc, refs, csl}),
+      body: JSON.stringify({md: doc, refs: collectRefs(doc), csl}),
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    const buf = await r.arrayBuffer();
-    downloadBlob(buf, title.replace(/[\\/:*?"<>|]/g, "_") + ".docx",
+    downloadBlob(await r.arrayBuffer(), name.replace(/[\\/:*?"<>|]/g, "_") + ".docx",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     toast("📝 已导出 Word 文档");
   } catch { toast("导出失败：需 LocalLLMServer 新版且宿主机装有 pandoc"); }
 }
+async function doExportDocx(csl){
+  // [[概念]] 卡片引用降级为纯文本注记（pandoc/citeproc 不认识卡片语法）
+  const {title, md: doc0} = exportMd();
+  const doc = doc0.replace(/\[\[([^\[\]\n]+?)\]\]/g, (m, n) =>
+    ED.cards.some(c => c.concept === n) ? `（知识卡片：${n}）` : m);
+  await pandocExportDocx(doc, title, csl);
+}
+// ---------- 🖍 高亮修改稿（forkOf 投稿基线 diff，M4） ----------
+// 只标新增/改动行（==…== → docx 黄底）；删除行不出现在高亮版；参考文献节不标
+const markLine = l => {
+  const m = l.match(/^(\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s*)?)(.*)$/);
+  return m[2] ? m[1] + `==${m[2]}==` : l;
+};
+async function exportMarked(){
+  if (!ED.forkOf) return toast("此项目不是修稿版（无投稿基线）");
+  let baseDir;
+  try {
+    const convs = (await (await fetch(ARCH + "/projects/list")).json()).convs;
+    const b = convs.find(c => c.id === ED.forkOf);
+    if (!b) throw 0;
+    baseDir = b.file.replace(/\.json$/, "");
+  } catch { return toast("找不到投稿基线项目（可能已被删除）"); }
+  let baseSecs = [];
+  try {
+    const r = await fetch(ARCH + "/projfile/" + encodeURIComponent(baseDir) + "/" + encodeURIComponent("editor.json"));
+    if (r.ok) baseSecs = (await r.json()).sections || [];
+  } catch {}
+  if (!baseSecs.length) return toast("基线项目无章节清单，无法对比");
+  const baseText = {};
+  await Promise.all(baseSecs.filter(s => s.file).map(async s => {
+    try {
+      const r = await fetch(ARCH + "/projfile/" + encodeURIComponent(baseDir) + "/" + encodeURIComponent(s.file));
+      if (r.ok) baseText[s.file] = await r.text();
+    } catch {}
+  }));
+  flushSave();
+  const parts = []; let changed = 0;
+  for (const s of ED.sections){
+    const isRefs = /^(参考文献|references)/i.test(s.title || "");
+    let body = (s.md || "").trim();
+    if (!isRefs){
+      const old = s.file ? (baseText[s.file] ?? "") : "";   // 基线无此章节 = 整章新增
+      const d = lineDiff(old.split("\n"), (s.md || "").split("\n"));
+      changed += d.filter(x => x.t === "+").length;
+      body = d.filter(x => x.t !== "-").map(x => x.t === "+" ? markLine(x.l) : x.l).join("\n").trim();
+    }
+    parts.push(/^#\s/m.test(body) ? body : `# ${s.title}\n\n${body}`);
+  }
+  if (!changed) toast("与投稿基线无文本差异（仍导出普通版）");
+  await pandocExportDocx(parts.join("\n\n"),
+    (ED.projName || "").replace(/^✍️\s*/, "") + " · 高亮修改稿");
+}
+$("#exp-mark").onclick = () => { $("#expmenu").classList.remove("open"); exportMarked(); };
 function downloadBlob(data, name, type){
   const blob = data instanceof Blob ? data : new Blob([data], {type});
   const a = document.createElement("a");
@@ -1619,6 +1745,22 @@ function updateDraftBtn(){
   b.innerHTML = ED.attachDraft ? `📄 <span class="lbl">全文已附</span>` : `📄 <span class="lbl">全文</span>`;
   b.classList.toggle("on", ED.attachDraft);
 }
+function updateChatBtn(){
+  const b = $("#histbtn");
+  b.innerHTML = ED.attachChat ? `📋 <span class="lbl">已带讨论</span>` : `📋 <span class="lbl">聊天记录</span>`;
+  b.classList.toggle("on", ED.attachChat);
+}
+$("#histbtn").onclick = () => {
+  if (!ED.attachChat && !(ED.chatHist || []).some(m => (m.text || "").trim()))
+    return toast("本项目「聊聊文献」里还没有对话记录");
+  ED.attachChat = !ED.attachChat;
+  try {
+    const all = JSON.parse(localStorage.getItem("editor_chats") || "{}");
+    all[ED.convId] = ED.attachChat;
+    localStorage.setItem("editor_chats", JSON.stringify(all));
+  } catch {}
+  updateChatBtn();
+};
 $("#draftbtn").onclick = () => {
   ED.attachDraft = !ED.attachDraft;
   try {
@@ -1758,6 +1900,194 @@ function ensureDraft(){
   updateDraftBtn();
   toast("已自动附全文草稿");
 }
+// ---------- 稿件阶段：投稿标记 / fork 修稿项目 ----------
+function updateStageBtn(){
+  const b = $("#subbtn");
+  if (ED.stage === "locked") { b.style.display = "none"; return; }
+  b.style.display = "";
+  if (ED.stage === "submitted") {
+    b.innerHTML = '📮 <span class="lbl">收到审稿</span>';
+    b.title = "收到审稿意见：fork 出修稿项目，本卡片锁定不动";
+  } else {
+    b.innerHTML = '📮 <span class="lbl">投稿</span>';
+    b.title = "标记为已投稿";
+  }
+}
+$("#subbtn").onclick = async () => {
+  if (!ED.convDir) return;
+  if (ED.stage === "submitted") return forkForReview();
+  if (!confirm("标记为「已投稿」？")) return;
+  ED.stage = "submitted"; await persistEditor(); updateStageBtn();
+  toast("已标记投稿——收到审稿意见后点「收到审稿」fork 修稿版");
+};
+// fork 修稿项目：整卡复制（章节/快照/编辑器数据/笔记卡片），源卡锁定，跳转新项目
+async function forkForReview(){
+  const base = (ED.projName || "").replace(/^✍️\s*/, "");
+  const t = prompt("修稿版标题：", base + " · R1");
+  if (!t) return;
+  const title = "✍️ " + t.replace(/^✍️\s*/, "");
+  const nid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const toFile = nid + "-" + title.replace(/[/\\]/g, "_") + ".json";
+  const r = await fetch(ARCH + "/projects/fork", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({from: ED.projMeta.file, to: toFile, id: nid, title})
+  });
+  if (!r.ok) return toast("fork 失败（" + r.status + "）");
+  ED.stage = "locked"; ED.forkTo = nid; await persistEditor();
+  // 新项目清单：stage 复位 draft + 记 forkOf（M4 高亮 diff 的基准指针）
+  const nd = encodeURIComponent(toFile.replace(/\.json$/, ""));
+  const ep = ARCH + "/projfile/" + nd + "/" + encodeURIComponent("editor.json");
+  try {
+    const er = await fetch(ep);
+    if (er.ok) {
+      const ej = await er.json();
+      ej.stage = "draft"; ej.forkOf = ED.convId; delete ej.forkTo;
+      await fetch(ep, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(ej)});
+    }
+  } catch {}
+  toast("已 fork 修稿版，正在跳转…");
+  setTimeout(() => location.href = "editor.html?conv=" + encodeURIComponent(nid), 600);
+}
+// ---------- 📨 审稿意见：粘贴 → AI 结构化 → reviews.json ----------
+const REV_ST = {"待处理": "⏳", "已修改": "✅", "已反驳": "🛡"};
+$("#revinbtn").onclick = () => {
+  $("#revinraw").value = "";
+  $("#revinhint").textContent = ED.reviews?.items?.length
+    ? `已有 ${ED.reviews.items.length} 条，本次解析为追加（二轮意见）` : "";
+  $("#revinpanel").classList.add("open");
+  setTimeout(() => $("#revinraw").focus(), 50);
+};
+$("#revinclose").onclick = () => $("#revinpanel").classList.remove("open");
+// 📝 逐条 Response 编辑（M2：M3 组装回复信的原料）
+let resItem = null;
+function openResponse(it){
+  resItem = it;
+  $("#reshead").textContent = `📝 Response · ${it.id} · ${it.status}`;
+  $("#restext").value = it.response || "";
+  $("#respanel").classList.add("open");
+  setTimeout(() => $("#restext").focus(), 50);
+}
+$("#resclose").onclick = () => $("#respanel").classList.remove("open");
+$("#resgrab").onclick = () => {
+  const last = [...ED.chat].reverse().find(m => m.role === "assistant" && (m.text || "").trim());
+  if (!last) return toast("还没有 AI 回复");
+  // 💬 提示词约定末节「Response 草稿」——有则只取该节，讨论过程不进信
+  const m = last.text.match(/Response 草稿[^\n]*\n([\s\S]+)/);
+  $("#restext").value = (m ? m[1] : last.text).trim();
+};
+$("#resok").onclick = async () => {
+  if (!resItem) return;
+  resItem.response = $("#restext").value.trim();
+  await saveReviews();
+  $("#respanel").classList.remove("open");
+  renderResources();
+  toast(resItem.response ? `已保存 ${resItem.id} 的 Response` : `已清空 ${resItem.id} 的 Response`);
+};
+async function saveReviews(){
+  try {
+    await fetch(pf("reviews.json"), {method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({updated: Date.now(), raw: ED.reviews?.raw || "", items: ED.reviews?.items || []})});
+  } catch {}
+}
+// ---------- 📤 point-by-point 回复信组装与导出（M3） ----------
+function buildResponseLetter(){
+  const byRev = {};
+  ED.reviews.items.forEach(it => { (byRev[it.reviewer] = byRev[it.reviewer] || []).push(it); });
+  const lines = [
+    "# Response to Reviewers", "",
+    "**Manuscript:** " + (ED.projName || "").replace(/^✍️\s*/, ""), "",
+    "**Date:** " + new Date().toLocaleDateString("sv"), "",
+    "We thank the reviewers for their careful reading and constructive comments. "
+      + "Our point-by-point responses follow; all changes are indicated by section in the revised manuscript.",
+  ];
+  for (const rv of Object.keys(byRev).sort((a, b) => a - b)){
+    lines.push("", rv === "0" ? "## General Comments" : `## Reviewer ${rv}`);
+    for (const it of byRev[rv]) lines.push("",
+      `**Comment ${it.id.replace(/^R/, "")}:** ${it.comment}`, "",
+      `**Response:** ${it.response || "(To be completed.)"}`);
+  }
+  return lines.join("\n");
+}
+async function exportResponseLetter(){
+  const items = ED.reviews?.items || [];
+  const pend = items.filter(i => i.status === "待处理").length;
+  const noResp = items.filter(i => !i.response).length;
+  if (pend && !confirm(`还有 ${pend} 条待处理（其中 ${noResp} 条未写 Response）。\n仍导出草稿？未写的条目会留英文占位。`)) return;
+  toast("📝 pandoc 转换中…");
+  try {
+    const r = await fetch(ARCH + "/export-docx", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({md: buildResponseLetter()}),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const name = (((ED.projName || "").replace(/^✍️\s*/, "")) + " · Response Letter.docx")
+      .replace(/[\\/:*?"<>|]/g, "_");
+    downloadBlob(await r.arrayBuffer(), name,
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    toast("📤 已导出回复信");
+  } catch { toast("导出失败：需 LocalLLMServer 新版且宿主机装有 pandoc"); }
+}
+// 🏥 落地体检：核对 Response 声称的修改是否真实存在（防信里"已修改"稿里没改的幻觉）
+async function verifyResponses(){
+  const items = (ED.reviews?.items || []).filter(i => (i.response || "").trim());
+  if (!items.length) return toast("还没有任何 Response 草稿，先逐条撰写");
+  if (busy) return toast("AI 正在回复，稍候再试");
+  if (ED.sections.filter(s => wc(s.md) > 20).length < 2)
+    return toast("全文稿太单薄，体检无意义");
+  ensureDraft();
+  const list = items.map(i => `【${i.id}】Response：\n${i.response}`).join("\n\n");
+  await send("请核对我的回复信草稿与修改后全文稿的一致性——部分 Response 由 AI 代拟，"
+    + "必须防止信里声称的修改在稿中并未发生。\n\n" + list + "\n\n"
+    + "要求：逐条核对每条 Response 中**声称的具体修改**（we have added/revised/clarified/expanded/"
+    + "rewrote/deleted 等的每一处）：在全文稿中找到落地证据才标 ✅（注明章节并引用稿中关键原句）；"
+    + "找不到的明确标 ⚠️ 未落地，说明稿中缺什么。纯解释/反驳（未声称改稿）标 ➖ 无需落地。\n"
+    + "输出 Markdown 表格：| 条目 | 声称的修改 | ✅/⚠️/➖ | 证据或缺失说明 |。"
+    + "只核对存在性不评价修改质量；每条都要出现在表格里，核对过的条目不省略。");
+  saveReport(`落地体检-${dateTag()}.md`);
+}
+$("#revinok").onclick = async () => {
+  const raw = $("#revinraw").value.trim();
+  if (raw.length < 20) return toast("先把审稿意见粘贴进来");
+  const btn = $("#revinok"), hint = $("#revinhint");
+  btn.disabled = true; hint.textContent = "AI 正在拆解意见…";
+  let items = [];
+  try {
+    const res = await apiPost({
+      messages: [{role: "user", content:
+        "以下是期刊返回的审稿意见全文。请把每位审稿人的每条意见拆成独立条目，只输出 JSON 数组、不要任何其他文字：\n"
+        + '[{"reviewer":1,"severity":"major","comment":"意见原文"}]\n'
+        + "规则：reviewer 按 Reviewer 编号数字（无法区分时全填 1）；severity 按性质判断——"
+        + "要求补实验/补分析/重写章节/质疑方法有效性为 major，措辞、格式、图表美化等小问题为 minor，"
+        + "拿不准一律 major；comment 完整保留意见原文（英文原文不翻译、不缩写）；"
+        + "审稿人的开场客套话（感谢、期望之类）丢弃。\n\n审稿意见全文：\n" + raw}],
+      stream: false, temperature: 0, chat_template_kwargs: {enable_thinking: false},
+    });
+    const j = await res.json();
+    let txt = (j.choices?.[0]?.message?.content || "").trim()
+      .replace(/^```(json)?\s*/i, "").replace(/```\s*$/, "");
+    const m = txt.match(/\[[\s\S]*\]/);   // 模型若在 JSON 前后加了说明文字，抠出数组本体
+    if (m) txt = m[0];
+    const arr = JSON.parse(txt);
+    if (Array.isArray(arr)) items = arr
+      .filter(x => x && String(x.comment || "").trim().length > 3)
+      .map(x => ({reviewer: +x.reviewer || 0, severity: x.severity === "minor" ? "minor" : "major",
+                  comment: String(x.comment).trim()}));
+  } catch {}
+  if (!items.length) items = [{reviewer: 0, severity: "major", comment: raw}];   // 解析失败整段一条，宁粗不丢
+  ED.reviews = ED.reviews || {raw: "", items: []};
+  ED.reviews.raw += (ED.reviews.raw ? "\n\n----\n\n" : "") + raw;
+  const cnt = {};   // 编号要跨"已有清单 + 本批"连续，map 内实时计数
+  ED.reviews.items.push(...items.map(x => {
+    const base = cnt[x.reviewer] ?? ED.reviews.items.filter(i => i.reviewer === x.reviewer).length;
+    cnt[x.reviewer] = base + 1;
+    return {...x, id: `R${x.reviewer}.${cnt[x.reviewer]}`, status: "待处理", response: ""};
+  }));
+  await saveReviews();
+  btn.disabled = false; hint.textContent = "";
+  $("#revinpanel").classList.remove("open");
+  renderResources();
+  toast(`📨 已解析 ${items.length} 条审稿意见`);
+};
 // 🧭 跨章节一致性检查：自动附全文草稿，按结果—讨论呼应/一致性问题/术语数据三节输出报告
 $("#chkbtn").onclick = async () => {
   if (busy) return toast("AI 正在回复，稍候再试");   // send 在 busy 时静默返回，不带守卫会把上一轮回复误存成报告
@@ -2020,6 +2350,16 @@ function buildEditorHistory(){
   } else {
     h.push({role: "user", content: `[当前章节《${cur.title}》全文开始]\n${cur.md || "（空章节）"}\n[全文结束]\n\n以上是我正在写作的章节，后续讨论围绕它展开。`});
     h.push({role: "assistant", content: "好的，我已了解当前章节全文，请告诉我需要什么帮助。"});
+  }
+  // 📋 聊天记录：chat 存档最近 15 条纯文本（不带 docs 全文），逐条截断防挤爆上下文
+  if (ED.attachChat && ED.chatHist?.length){
+    const clip = ED.chatHist.slice(-15)
+      .map(m => ({role: m.role, text: (m.text || "").trim()}))
+      .filter(m => m.text)
+      .map(m => (m.role === "user" ? "我" : "研究伙伴") + "：" + m.text.slice(0, m.role === "user" ? 300 : 800));
+    if (clip.length) h.push({role: "user", content:
+      `[聊天记录纪要开始（我在本项目「聊聊文献」里与 AI 的讨论，供了解研究背景；其中「这篇文章/该文献」多指所讨论的文献而非我的草稿）]\n`
+      + clip.join("\n") + "\n[纪要结束]"});
   }
   for (const m of ED.chat.slice(-20)) h.push({role: m.role, content: m.text});
   return h;
@@ -2394,7 +2734,7 @@ function bindSplit(el, side){
     const x0 = e.clientX, w0 = side === "left" ? layout.leftW : layout.rightW;
     const move = ev => {
       const d = side === "left" ? ev.clientX - x0 : x0 - ev.clientX;
-      const w = Math.min(480, Math.max(150, Math.round(w0 + d)));
+      const w = Math.min(560, Math.max(150, Math.round(w0 + d)));
       if (side === "left") layout.leftW = w; else layout.rightW = w;
       applyLayout(false);
     };
