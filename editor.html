@@ -306,11 +306,11 @@
     padding: 5px 16px; font-size: 13px; cursor: pointer;
   }
   #stopbtn { background: #f85149; display: none; }
-  #attbtn, #draftbtn, #genbtn {
+  #attbtn, #draftbtn, #genbtn, #histbtn {
     background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
     font-size: 12px; padding: 3px 8px; cursor: pointer;
   }
-  #attbtn.on, #draftbtn.on { color: var(--accent); border-color: var(--accent); }
+  #attbtn.on, #draftbtn.on, #histbtn.on { color: var(--accent); border-color: var(--accent); }
   #genbtn { color: var(--accent); }
   /* 选中文字浮动工具条：跟随选区（mouseup 定位，键盘选择按行估算） */
   #selbar {
@@ -533,7 +533,7 @@
         </div>
         <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
         <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
-        <button id="histbtn" class="off" title="把本项目「聊聊文献」里的讨论记录带给论文助手（最近 15 条，截断纪要）">📋 <span class="lbl">聊天记录</span></button>
+        <button id="histbtn" class="off" title="把本项目「聊聊文献」里的讨论记录带给论文助手（最近 15 条，截断纪要）">💬 <span class="lbl">聊天记录</span></button>
         <span class="hint">AI 回答可一键插入正文</span>
         <button id="stopbtn" title="停止生成">■ <span class="lbl">停止</span></button>
         <button id="send">发送</button>
@@ -1747,7 +1747,7 @@ function updateDraftBtn(){
 }
 function updateChatBtn(){
   const b = $("#histbtn");
-  b.innerHTML = ED.attachChat ? `📋 <span class="lbl">已带讨论</span>` : `📋 <span class="lbl">聊天记录</span>`;
+  b.innerHTML = ED.attachChat ? `💬 <span class="lbl">已带讨论</span>` : `💬 <span class="lbl">聊天记录</span>`;
   b.classList.toggle("on", ED.attachChat);
 }
 $("#histbtn").onclick = () => {
@@ -1760,6 +1760,9 @@ $("#histbtn").onclick = () => {
     localStorage.setItem("editor_chats", JSON.stringify(all));
   } catch {}
   updateChatBtn();
+  toast(ED.attachChat
+    ? "💬 已带聊天记录——论文助手可见「聊聊文献」里的最近讨论（截断纪要）"
+    : "已取消带入聊天记录");
 };
 $("#draftbtn").onclick = () => {
   ED.attachDraft = !ED.attachDraft;
