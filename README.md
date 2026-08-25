@@ -27,13 +27,13 @@
 
 ## 快速开始
 
-**一键安装**（自动装 Homebrew/llama.cpp、克隆源码到 `~/Qwen38`、下载 27B 模型与 KaTeX、编译启动；国内可先 `export HF_ENDPOINT=https://hf-mirror.com`）：
+**一键安装**（自动装 Homebrew/oMLX/uv、克隆源码到 `~/Qwen38`、从 ModelScope 下载模型（主模型 16GB + MTP drafter）与 KaTeX、写入 drafter 配置、编译启动 LocalLLMServer-oMLX.app）：
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dalianblue/local-llm-station/main/install.sh)
 ```
 
-内存不足 24GB 或暂不下载模型：`SKIP_MODEL=1` 运行上述命令（一键脚本当前走 Ollama 路线）。**Apple Silicon 用户推荐下面的 oMLX 路线**（Metal 原生、MTP 投机解码 ~14 tok/s、前缀缓存，实测对照见 [benchmark/](benchmark/)）；手动分步：
+内存不足 24GB 或暂不下载模型：`SKIP_MODEL=1` 运行上述命令。**一键脚本即 oMLX 路线**（自动装 Homebrew/oMLX/uv、克隆源码、ModelScope 下载模型、写入 MTP drafter 配置、编译启动）。手动分步等价操作：
 
 ```bash
 # 1. 安装 oMLX 并下载模型（ModelScope 源；主模型 15.7GB + MTP drafter 267MB）

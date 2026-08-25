@@ -137,7 +137,7 @@ All file operations are performed by the local host process; the browser has zer
 bash <(curl -fsSL https://raw.githubusercontent.com/dalianblue/local-llm-station/main/install.sh)
 ```
 
-Less than 24GB RAM or skip the model: run with `SKIP_MODEL=1` (the one-liner currently installs the Ollama route). **The oMLX route below is recommended on Apple Silicon** (native Metal, MTP speculative decoding, prefix caching; measured comparison in [benchmark/](benchmark/)). Manual steps:
+Less than 24GB RAM or skip the model: run with `SKIP_MODEL=1`. **The one-liner installs the oMLX route** (Homebrew + oMLX + uv, ModelScope model downloads, MTP drafter config, builds and launches LocalLLMServer-oMLX.app). Equivalent manual steps:
 
 ```bash
 # 1. Install oMLX and download the models (ModelScope; main 15.7GB + MTP drafter 267MB)
