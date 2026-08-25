@@ -39,11 +39,11 @@ Works offline · Data never leaves your machine · OpenAI-compatible API.
 
 | Config | Notes |
 |--------|-------|
-| **Minimum** | Apple Silicon (M1 or later) + 24GB RAM + ~20GB disk (default Qwen3.8-27B quant) |
+| **Minimum** | Apple Silicon (M1 or later) + 24GB RAM + ~16GB disk (oMLX route default: Qwen3.8-27B nvfp4 quant) |
 | **Recommended** | 32GB RAM (64K context, comfortable multimodal) |
 | **16GB machines** | Use a ≤14B quantized model; everything else works unchanged |
 
-**Measured on M1 Pro 32GB / 64K context:** model load ~30 s · generation 5-10 tok/s (thinking off) · first-token 1-2 s · single-image understanding in seconds.
+**Measured on M1 Pro 32GB / Qwen3.8-27B-nvfp4 (oMLX + MTP):** model load ~30 s · generation ~14 tok/s (MTP acceptance 98.8%; ~9.6 without the drafter) · first-token 1-3 s · prefix cache hits at 2048-token block granularity (follow-ups skip prefill) · single-image understanding in seconds (~6 s for repeated questions via the vision feature cache).
 
 ## Features
 
@@ -108,7 +108,7 @@ Four manually graded suites for the default Qwen3.8-27B, 56 questions, scored po
 | CN↔EN translation (incl. back-translation) | 14 | 8 exact + 2 half, zero drift |
 | Data-analysis coding (actually executed) | 7 | **100% · Excellent** |
 
-Bottom line: **code, everyday translation and writing are safe; long-tail facts and medication details need verification; fact-checking and clinical decisions are off-limits.** Full reports: [benchmark/report.html](benchmark/report.html) and the Ollama-vs-llama.cpp comparison [benchmark/ollama_vs_llamacpp_report.html](benchmark/ollama_vs_llamacpp_report.html) (quality on par, Ollama ~1.86× faster on long-thinking tasks — the basis for the dual-backend default).
+Bottom line: **code, everyday translation and writing are safe; long-tail facts and medication details need verification; fact-checking and clinical decisions are off-limits.** Full reports: [benchmark/report.html](benchmark/report.html), the Ollama-vs-llama.cpp comparison [benchmark/ollama_vs_llamacpp_report.html](benchmark/ollama_vs_llamacpp_report.html) and the oMLX-vs-Ollama comparison [benchmark/omlx_vs_ollama_report.html](benchmark/omlx_vs_ollama_report.html) (oMLX ~3-12× faster on non-thinking tasks via MTP; Ollama more stable on long-thinking tasks).
 
 Key engineering conclusion: **temp 0.0 + thinking off** gives the highest precision and ~20× speed on translation/code — shipped as the "exact" preset in chat.html.
 

@@ -93,21 +93,22 @@ dashboard「📚 文献库」把读过的 PDF 扫描入库（自动抓 DOI）→
 
 | 配置 | 说明 |
 |------|------|
-| **最低可用** | Apple Silicon（M1 及以后）+ 24GB 内存 + 约 20GB 磁盘（默认 Qwen3.8-27B Q4 量化） |
+| **最低可用** | Apple Silicon（M1 及以后）+ 24GB 内存 + 约 16GB 磁盘（oMLX 路线默认 Qwen3.8-27B nvfp4 量化） |
 | **推荐** | 32GB 内存（可开 64K 上下文，多模态更从容） |
 | **16GB 机器** | 换 14B 及以下量化模型，本站其余功能全部可用 |
 
-**本机实测速度**（M1 Pro 32GB / Qwen3.8-27B UD-Q4_K_XL / 64K 上下文）：
+**本机实测速度**（M1 Pro 32GB / Qwen3.8-27B-nvfp4 · oMLX + MTP 投机解码）：
 
 | 指标 | 数值 |
 |------|------|
-| 模型加载 | ~30 秒 |
-| 生成速度 | 5-8 tok/s（关闭深度思考） |
-| 首字延迟 | 1-2 秒（短提问） |
-| 纯文本对话流畅度 | 可用，长回答需等待 |
-| OCR / 图片理解 | 单图 1-2K token，秒级出结果 |
+| 模型加载 | ~30 秒（首次请求时加载） |
+| 生成速度 | ~14 tok/s（MTP 接受率 98.8%；未挂 drafter ~9.6） |
+| 首字延迟 | 1-3 秒（短提问） |
+| 前缀缓存 | 2048 token 块粒度命中，同上下文追问免重付预填充 |
+| 纯文本对话流畅度 | 流畅（对照 llama.cpp 路线 5-8 tok/s 提升约一倍） |
+| OCR / 图片理解 | 单图秒级；同图重问约 6 秒（视觉特征缓存生效） |
 
-模型能力四套件实测与 Ollama/llama.cpp 双后端对照见 [docs/benchmark.md](docs/benchmark.md)。
+模型能力四套件实测与 oMLX / Ollama / llama.cpp 后端对照见 [docs/benchmark.md](docs/benchmark.md) 与 [benchmark/omlx_vs_ollama_report.html](benchmark/omlx_vs_ollama_report.html)。
 
 ## 零本地模型方案：DeepSeek 云端 API（旧电脑 / 无 Mac 均可用）
 
