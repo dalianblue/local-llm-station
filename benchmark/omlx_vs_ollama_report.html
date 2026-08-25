@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>oMLX vs Ollama (MLX) · Qwen3.8-27B 对照测试报告</title>
+<style>
+  :root {
+    --ink: oklch(20% 0.02 260);
+    --paper: oklch(97% 0.005 260);
+    --card: #fff;
+    --ox: oklch(52% 0.13 200);
+    --ol: oklch(55% 0.15 40);
+    --line: oklch(88% 0.01 260);
+    --muted: oklch(45% 0.02 260 / .8);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: "Songti SC", "Noto Serif SC", Georgia, serif;
+    background: var(--paper); color: var(--ink);
+    max-width: 860px; margin: 0 auto; padding: 48px 24px 96px;
+    line-height: 1.75;
+  }
+  header { border-bottom: 3px double var(--ink); padding-bottom: 24px; margin-bottom: 36px; }
+  h1 { font-size: clamp(26px, 4vw, 38px); letter-spacing: .02em; }
+  .meta { color: var(--muted); font-size: 14px; margin-top: 12px; font-family: "SF Mono", Menlo, monospace; }
+  h2 { font-size: 20px; margin: 40px 0 8px; border-left: 4px solid var(--ink); padding-left: 10px; }
+  .desc { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); font-size: 14px;
+          font-family: "SF Mono", Menlo, monospace; box-shadow: 0 1px 3px oklch(0% 0 0 / .08); }
+  th, td { padding: 7px 12px; border-bottom: 1px solid var(--line); text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { background: var(--ink); color: var(--paper); font-weight: 600; }
+  tbody tr:hover { background: oklch(95% 0.02 260); }
+  td.ox { color: var(--ox); font-weight: 700; }
+  td.ol { color: var(--ol); font-weight: 700; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0; }
+  .card { background: var(--card); padding: 16px; border-top: 3px solid var(--ink); box-shadow: 0 1px 3px oklch(0% 0 0 / .08); }
+  .card .num { font-size: 26px; font-weight: 700; font-family: "SF Mono", Menlo, monospace; }
+  .card .lab { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .verdict { background: var(--card); padding: 20px 24px; margin: 16px 0; border-left: 4px solid var(--ink); }
+  ul { padding-left: 22px; } li { margin: 6px 0; }
+  .win-ox { color: var(--ox); font-weight: 700; }
+  .win-ol { color: var(--ol); font-weight: 700; }
+  .bad { color: oklch(50% 0.18 25); font-weight: 700; }
+  footer { margin-top: 60px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>oMLX（MLX · MTP）vs Ollama（MLX · DFlash）</h1>
+  <p style="font-size:16px;margin-top:6px;">Qwen3.8-27B 同题对照 · 本机四套件基准 + 思考档专项</p>
+  <p class="meta">2026-08-25 · Apple M1 Pro / 32GB · oMLX 0.6.3rc3（Qwen3.8-27B-nvfp4, mlx-community/ModelScope, 15.7GB + 官方 MTP drafter, 端口 8000）vs Ollama 0.32.15（qwen3.8:27b-mlx, NVFP4, 基准 2026-08-21）· 同温度/思考开关/题面</p>
+</header>
+
+<h2>总览</h2>
+<div class="cards">
+  <div class="card"><div class="num">57 题</div><div class="lab">四套件总题量（22+17+7+11）</div></div>
+  <div class="card"><div class="num">4752s</div><div class="lab">oMLX 总耗时</div></div>
+  <div class="card"><div class="num">4718s</div><div class="lab">Ollama 总耗时</div></div>
+  <div class="card"><div class="num">14.2 vs 10</div><div class="lab">解码 tok/s（MTP 98.8% 接受 vs DFlash 0.62-0.82）</div></div>
+  <div class="card"><div class="num">7/7</div><div class="lab">编程卷双方全通过（实际运行验证）</div></div>
+</div>
+<p class="desc">总耗时看似持平，实为两极分化：无思考任务 oMLX 快 3-12 倍，思考档长任务因思考链发散/复读反而更慢——见下文专项。</p>
+
+<h2>分套件对照</h2>
+<table>
+  <thead><tr><th>套件</th><th>题数</th><th>质量判定</th><th>oMLX</th><th>Ollama</th><th>速度</th></tr></thead>
+  <tbody>
+    <tr><td>常识卷</td><td>22</td><td>oMLX 略输：F4 水浒排位错、L4 未按要求造句；Ollama 的 R1 空响应、S4 过保守拒答（oMLX 答对《出埃及记》）</td><td class="ox">440s</td><td class="ol">1000s</td><td class="win-ox">oMLX ×2.3</td></tr>
+    <tr><td>医学卷（思考开）</td><td>17</td><td>正文质量平（关键事实抽查全对）；oMLX 困底 0/17（Ollama 有 ~2%）；但 oMLX 陷阱题 X1 无限复读全废</td><td class="ox">4142s</td><td class="ol">2909s</td><td class="win-ol">Ollama ×1.4</td></tr>
+    <tr><td>编程卷</td><td>7</td><td>双方 7/7 运行成功</td><td class="ox">124s</td><td class="ol">376s</td><td class="win-ox">oMLX ×3.0</td></tr>
+    <tr><td>翻译卷</td><td>11</td><td>持平（T10 歧义句 oMLX 的解读更接近正确）</td><td class="ox">37s</td><td class="ol">433s</td><td class="win-ox">oMLX ×11.7</td></tr>
+  </tbody>
+</table>
+
+<h2>思考档专项：重复惩罚（penalty）复测</h2>
+<p class="desc">oMLX 默认采样无重复惩罚（Ollama 内置 repeat_penalty 1.1）。无惩罚时陷阱题 X1 复读 ×212 直到 max_tokens。复测参数：frequency_penalty 0.3 + presence_penalty 0.1，temperature 0.2，思考开。</p>
+<table>
+  <thead><tr><th>题</th><th>无 penalty</th><th>+ penalty</th><th>判定</th></tr></thead>
+  <tbody>
+    <tr><td>X1 指南陷阱</td><td>622s · 复读 ×212 · 全废</td><td>133s · 思考 1348 字 · 干净</td><td class="win-ox">治好</td></tr>
+    <tr><td>X2 地高辛</td><td>367s · 思考 9853 字</td><td>299s · 正文干净</td><td class="win-ox">改善</td></tr>
+    <tr><td>X3 脑死亡</td><td>756s · 复读 ×24</td><td class="bad">888s · 复读 ×58 · 思考全文泄漏进正文</td><td class="bad">更糟</td></tr>
+    <tr><td>M1 TCA 循环</td><td>347s · 正文正确</td><td class="bad">874s · 复读 ×46 · 思考 26465 字泄漏</td><td class="bad">更糟</td></tr>
+  </tbody>
+</table>
+<div class="verdict">
+  <b>结论：</b>penalty 时灵时不灵（4 题中 2 治 2 恶化），思考档在 oMLX 上整体不稳定：思考链比 Ollama 长 5-10 倍，长思考偶发无限复读与"思考全文泄漏进 content"。根因未定位（疑似 HF chat_template 思考段渲染或采样路径），升级 oMLX / 换模板后值得复测。
+</div>
+
+<h2>工程与基建对照</h2>
+<table>
+  <thead><tr><th>项</th><th>oMLX</th><th>Ollama</th></tr></thead>
+  <tbody>
+    <tr><td>解码速度</td><td class="ox">~14.2 tok/s（官方 MTP，接受率 98.8%）</td><td class="ol">~10 tok/s（DFlash，0.62-0.82）</td></tr>
+    <tr><td>视觉读值 / 同图重问</td><td class="ox">埋值全对 / 8.1→6.2s</td><td class="ol">埋值全对 / 每次 ~12s 重付</td></tr>
+    <tr><td>文本前缀缓存</td><td>命中，2048 token 块粒度（3000 token 前缀省 60%）</td><td>命中，55.7x（短上下文）</td></tr>
+    <tr><td>思考控制</td><td>chat_template_kwargs（同 llama.cpp），reasoning_effort 无效</td><td>reasoning_effort（/v1）</td></tr>
+    <tr><td>流式思考字段</td><td>delta.reasoning_content（同 llama.cpp）</td><td>delta.reasoning</td></tr>
+    <tr><td>困底（答案困在思考通道）</td><td class="ox">0/17 未见</td><td class="ol">~2% 低频（issue #17911）</td></tr>
+    <tr><td>CORS / file:// 页面</td><td class="ox">默认 *，直连免配置</td><td class="ol">需 OLLAMA_ORIGINS="*"</td></tr>
+    <tr><td>上下文探活</td><td>/v1/models → max_model_len 262144</td><td>/api/ps → context_length</td></tr>
+    <tr><td>32GB 内存 64K 上下文</td><td class="bad">守卫上限 20.4GB，KV 紧张，需 iogpu.wired_limit_mb 提升</td><td>同硬件基线可用</td></tr>
+  </tbody>
+</table>
+
+<h2>判定</h2>
+<div class="verdict">
+  <ul>
+    <li><b>无思考档（日常 / 精确 / 翻译 / 编程 / 文献处理链路）：oMLX 全面占优</b>——质量持平，速度快 3-12 倍，视觉重复问减半，思考通道字段与 llama.cpp 方言一致（前端透传分支可复用），CORS 免配。</li>
+    <li><b>思考档（深度分析 / 医学难题）：暂不建议迁移</b>——思考链发散 + 复读/泄漏不稳定，penalty 非可靠解；Ollama 基线稳定。</li>
+    <li>推荐后端路由：无思考档 → oMLX，思考档 → Ollama（或 llama.cpp 兜底），与现有双后端自适应架构（后端开关 + 探活反哺）兼容，无需重构。</li>
+  </ul>
+</div>
+
+<footer>
+  数据：常识/医学/翻译/编程卷面与 penalty 复测原始记录（本地）；Ollama 基准 benchmark/ollama_mlx_test_results.md（2026-08-21）· 解码速度来自服务端 vlm_mtp stats 日志（接受率 247/250）· 视觉缓存计时为同图三连问实测。
+</footer>
+</body>
+</html>
