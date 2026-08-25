@@ -33,22 +33,24 @@
 bash <(curl -fsSL https://raw.githubusercontent.com/dalianblue/local-llm-station/main/install.sh)
 ```
 
-内存不足 24GB 或暂不下载模型：`SKIP_MODEL=1` 运行上述命令。以下为手动分步（默认 Ollama 路线）：
+内存不足 24GB 或暂不下载模型：`SKIP_MODEL=1` 运行上述命令（一键脚本当前走 Ollama 路线）。**Apple Silicon 用户推荐下面的 oMLX 路线**（Metal 原生、MTP 投机解码 ~14 tok/s、前缀缓存，实测对照见 [benchmark/](benchmark/)）；手动分步：
 
 ```bash
-# 1. 安装 Ollama 并拉取默认模型（NVFP4 量化约 18GB）
-brew install ollama
-ollama pull qwen3.8:27b-mlx
+# 1. 安装 oMLX 并下载模型（ModelScope 源；主模型 15.7GB + MTP drafter 267MB）
+brew tap jundot/omlx https://github.com/jundot/omlx && brew install jundot/omlx/omlx
+mkdir -p ~/.omlx/models/mlx-community
+uvx modelscope download --model mlx-community/Qwen3.8-27B-nvfp4 --local_dir ~/.omlx/models/mlx-community/Qwen3.8-27B-nvfp4
+uvx modelscope download --model mlx-community/Qwen3.8-27B-MTP-nvfp4 --local_dir ~/.omlx/models/mlx-community/Qwen3.8-27B-MTP-nvfp4
 
 # 2. 可选：KaTeX 公式渲染资产（2.9MB，不入库；缺失时公式自动降级为原样文本，其余功能不受影响）
 mkdir -p ~/Qwen38/katex && curl -sL https://registry.npmjs.org/katex/-/katex-0.16.11.tgz -o /tmp/katex.tgz \
   && tar xzf /tmp/katex.tgz -C ~/Qwen38/katex --strip-components=2 package/dist
 
 # 3. 编译并启动控制台，app 里启动服务 → 开始对话
-./build_local.sh && open LocalLLMServer.app
+./build_omlx.sh && open LocalLLMServer-oMLX.app
 ```
 
-llama.cpp 路线（跑任意 GGUF，`build.sh` 构建 QwenServer.app）与换模型配置见 [docs/features.md](docs/features.md#换模型)。
+Ollama 路线（`brew install ollama && ollama pull qwen3.8:27b-mlx`，`build_local.sh` 构建）与 llama.cpp 路线（跑任意 GGUF，`build.sh` 构建 QwenServer.app）保留可用——前端按服务地址自动识别后端方言，切换只改设置。换模型配置见 [docs/features.md](docs/features.md#换模型)。
 
 ## 新手指南：5 分钟跑通第一条文献工作流
 
@@ -124,15 +126,15 @@ dashboard.html（我的桌面：项目总览 + 全局状态，门户页）
    │  卡片悬停出底部双入口（💬 聊聊文献 | ✍️ 论文写作）；点卡片按类型分流兜底
    ▼
 chat.html / editor.html（任意浏览器，纯 UI + localStorage 缓存）
-   │  :11434/v1  对话 API（Ollama MLX，LocalLLMServer 启停；旧路线 :8080/v1 llama.cpp）
+   │  :8000/v1   对话 API（oMLX，LocalLLMServer-oMLX 启停；旧路线 :11434 Ollama / :8080 llama.cpp）
    │  :8081      存档 API（LocalLLMServer 内嵌微型 HTTP 服务）
    ▼
-LocalLLMServer.app（宿主进程）
-   ├── 启停 ollama serve / llama-server、上下文选择、运行时间/日志
+LocalLLMServer-oMLX.app（宿主进程）
+   ├── 启停 omlx serve / ollama serve / llama-server、运行时间/日志
    └── 读写 ~/local-llm-station/chat_history/*.json
 ```
 
-推理后端双轨：**Ollama（MLX）** 为默认（`qwen3.8:27b-mlx`，视觉+思考原生、长思考任务快约 2 倍），**llama.cpp** 路线保留；前端按服务地址自动识别后端方言，切换只改设置。文件操作全部由本地宿主进程执行，浏览器零文件权限——这是本项目的核心设计：借鉴 deepseek-harness 的"本地宿主 + 浏览器纯 UI"分层，浏览器只是壳。完整存档 API 见 [docs/features.md](docs/features.md#存档-api8081带-cors仅供本机)。
+推理后端三轨：**oMLX（MLX + MTP）** 为 Apple Silicon 推荐（`Qwen3.8-27B-nvfp4`，Metal 原生、视觉内嵌、解码 ~14 tok/s、前缀缓存），**Ollama**（长思考任务更稳）与 **llama.cpp**（跑任意 GGUF）路线保留——同一份 `LocalLLMServer.swift` 源码经编译开关产出两个 app，前端按服务地址自动识别后端方言，切换只改设置。文件操作全部由本地宿主进程执行，浏览器零文件权限——这是本项目的核心设计：借鉴 deepseek-harness 的"本地宿主 + 浏览器纯 UI"分层，浏览器只是壳。完整存档 API 见 [docs/features.md](docs/features.md#存档-api8081带-cors仅供本机)。
 
 ## 文件说明与重新编译
 
@@ -141,13 +143,14 @@ LocalLLMServer.app（宿主进程）
 | `chat.html` | 网页对话界面 |
 | `editor.html` | ✍️ 写作台：分章节写作 + 版本快照 + AI 辅助三栏工作台 |
 | `dashboard.html` | 我的桌面：项目仪表盘门户页（项目总览 + 全局状态 + 文献库） |
-| `LocalLLMServer.swift` | 控制台 + 存档/PDF/图表提取/导出服务源码（Ollama 后端，`build_local.sh` 构建） |
+| `LocalLLMServer.swift` | 控制台 + 存档/PDF/图表提取/导出服务源码（oMLX/Ollama 双后端共用，编译开关区分） |
 | `QwenServer.swift` | 旧 llama.cpp 路线源码（`build.sh` 构建），功能基线保留 |
 | `pptxgen.bundle.js` | PptxGenJS 单文件本地包（汇报 PPT 渲染，离线零 CDN） |
-| `build_local.sh` · `build.sh` | 一键编译（自动生成 Info.plist；前者出 LocalLLMServer.app，后者出 QwenServer.app） |
+| `build_omlx.sh` · `build_local.sh` · `build.sh` | 一键编译（自动生成 Info.plist；分别出 oMLX / Ollama / llama.cpp 三个 app） |
 
 ```bash
-./build_local.sh   # 改 LocalLLMServer.swift 后执行（Ollama 路线，默认）
+./build_omlx.sh    # oMLX 路线（-D OMLX 编译开关，出 LocalLLMServer-oMLX.app，Apple Silicon 推荐）
+./build_local.sh   # Ollama 路线（出 LocalLLMServer.app）
 ./build.sh         # 旧 llama.cpp 路线（QwenServer.swift）；改 chat.html 等 HTML 刷新浏览器即可
 ```
 

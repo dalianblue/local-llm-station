@@ -21,7 +21,7 @@ Works offline · Data never leaves your machine · OpenAI-compatible API.
 
 ---
 
-**One native console app (LocalLLMServer, formerly QwenServer) + web pages (chat.html / editor.html / dashboard.html)**; dual inference backends: **Ollama (MLX)** is the default (`qwen3.8:27b-mlx`, native vision + thinking, ~2× faster on long-thinking tasks), the **llama.cpp** route is retained (QwenServer.app via `build.sh`, runs any GGUF). The frontend auto-detects the backend dialect from the service address. Developed and validated on an M1 Pro 32GB.
+**One native console app (LocalLLMServer, formerly QwenServer) + web pages (chat.html / editor.html / dashboard.html)**; inference backends: **oMLX (MLX + MTP)** is recommended on Apple Silicon (`Qwen3.8-27B-nvfp4`, native Metal, ~14 tok/s with MTP speculative decoding, prefix caching), the **Ollama** route (more stable on long-thinking tasks) and the **llama.cpp** route (QwenServer.app via `build.sh`, runs any GGUF) are retained — one `LocalLLMServer.swift` source builds both console apps via a compile flag. The frontend auto-detects the backend dialect from the service address. Developed and validated on an M1 Pro 32GB.
 
 ## The Workflow: Read → Explain → Write
 
@@ -137,22 +137,24 @@ All file operations are performed by the local host process; the browser has zer
 bash <(curl -fsSL https://raw.githubusercontent.com/dalianblue/local-llm-station/main/install.sh)
 ```
 
-Less than 24GB RAM or skip the model: run with `SKIP_MODEL=1`. Manual steps (default Ollama route):
+Less than 24GB RAM or skip the model: run with `SKIP_MODEL=1` (the one-liner currently installs the Ollama route). **The oMLX route below is recommended on Apple Silicon** (native Metal, MTP speculative decoding, prefix caching; measured comparison in [benchmark/](benchmark/)). Manual steps:
 
 ```bash
-# 1. Install Ollama and pull the default model (NVFP4 quant, ~18GB)
-brew install ollama
-ollama pull qwen3.8:27b-mlx
+# 1. Install oMLX and download the models (ModelScope; main 15.7GB + MTP drafter 267MB)
+brew tap jundot/omlx https://github.com/jundot/omlx && brew install jundot/omlx/omlx
+mkdir -p ~/.omlx/models/mlx-community
+uvx modelscope download --model mlx-community/Qwen3.8-27B-nvfp4 --local_dir ~/.omlx/models/mlx-community/Qwen3.8-27B-nvfp4
+uvx modelscope download --model mlx-community/Qwen3.8-27B-MTP-nvfp4 --local_dir ~/.omlx/models/mlx-community/Qwen3.8-27B-MTP-nvfp4
 
 # 2. Optional: KaTeX assets (2.9MB; formulas degrade to plain text if missing)
 mkdir -p ~/Qwen38/katex && curl -sL https://registry.npmjs.org/katex/-/katex-0.16.11.tgz -o /tmp/katex.tgz \
   && tar xzf /tmp/katex.tgz -C ~/Qwen38/katex --strip-components=2 package/dist
 
 # 3. Build and launch the console → start the service → start chatting
-./build_local.sh && open LocalLLMServer.app
+./build_omlx.sh && open LocalLLMServer-oMLX.app
 ```
 
-llama.cpp route (any GGUF, QwenServer.app via `build.sh`): `brew install llama.cpp` → download a GGUF → `./build.sh && open QwenServer.app`, model paths go into `~/Qwen38/config.json` (see [Switching Models](#switching-models)).
+Ollama route (`brew install ollama && ollama pull qwen3.8:27b-mlx`, `build_local.sh`) and llama.cpp route (any GGUF, QwenServer.app via `build.sh`): download the model, put paths into `~/Qwen38/config.json` (see [Switching Models](#switching-models)); the frontend auto-detects the backend from the service address.
 
 ## No local model? Use the DeepSeek cloud API
 
@@ -241,15 +243,16 @@ curl http://127.0.0.1:11434/v1/chat/completions \
 | `chat.html` | web chat UI (literature reading) |
 | `editor.html` | ✍️ writing desk: chapters + snapshots + AI three-pane workbench |
 | `dashboard.html` | My Desktop: the portal (project overview + global status + library) |
-| `LocalLLMServer.swift` | console + archive/PDF/export service source (Ollama backend, `build_local.sh`) |
+| `LocalLLMServer.swift` | console + archive/PDF/export service source (shared by oMLX/Ollama backends via a compile flag) |
 | `QwenServer.swift` | legacy llama.cpp route source (`build.sh`), baseline retained |
 | `pptxgen.bundle.js` | PptxGenJS single-file local bundle (report PPT, offline) |
-| `build_local.sh` · `build.sh` | one-command builds |
+| `build_omlx.sh` · `build_local.sh` · `build.sh` | one-command builds (oMLX / Ollama / llama.cpp apps) |
 
 ## Rebuilding
 
 ```bash
-./build_local.sh   # after changing LocalLLMServer.swift (default route)
+./build_omlx.sh    # oMLX route (-D OMLX compile flag, LocalLLMServer-oMLX.app; recommended on Apple Silicon)
+./build_local.sh   # Ollama route (LocalLLMServer.app)
 ./build.sh         # legacy llama.cpp route; HTML changes just need a refresh
 ```
 

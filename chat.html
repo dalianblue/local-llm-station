@@ -415,7 +415,7 @@
     </div>
     <div class="row" id="baserow">
       <span>服务地址<small>任何 OpenAI 兼容服务：Ollama / vLLM / LM Studio 等</small></span>
-      <input type="text" id="localbase" placeholder="http://127.0.0.1:11434" autocomplete="off"
+      <input type="text" id="localbase" placeholder="http://127.0.0.1:8000" autocomplete="off"
              style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12.5px;width:150px">
     </div>
     <div class="row" id="modelrow">
@@ -532,6 +532,7 @@ const usingDeep = () => S.provider === "deepseek" && S.dskey;
 // 后端类型标记：pollStatus 探活时更新（/api/version 存在 = Ollama）；
 // 首次探明前按端口猜测。切后端（localbase 变更）会重置
 let isOllama = null;
+let openaiModels = null;   // /v1/models 探测到的模型表（oMLX 等多模型端点；drafter 按 mtp/draft 命名惯例排除）
 const ollamaBackend = () => isOllama !== null ? isOllama : /:11434\/?$/.test(BASE);
 function apiPost(body, signal){
   if (usingDeep()){
@@ -541,9 +542,13 @@ function apiPost(body, signal){
       headers:{"Content-Type":"application/json", Authorization:"Bearer " + S.dskey},
       body: JSON.stringify(body)});
   }
-  // llama-server 等 OpenAI 兼容端点：chat_template_kwargs 原样透传（enable_thinking 由其模板层生效）
-  if (!ollamaBackend())
+  // llama-server / oMLX 等 OpenAI 兼容端点：chat_template_kwargs 原样透传（enable_thinking 由其模板层生效）
+  // oMLX 必传 model：取设置标签，缺省用探测到的非 drafter 模型；llama-server 忽略该字段
+  if (!ollamaBackend()){
+    const mid = S.localmodel || openaiModels?.find(id => !/mtp|draft|assistant/i.test(id)) || openaiModels?.[0];
+    if (mid) body.model = mid;
     return fetch(API, {method:"POST", signal, headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  }
   // Ollama 方言：翻译 chat_template_kwargs → think + reasoning_effort，model 字段必传
   const think = body.chat_template_kwargs?.enable_thinking;
   delete body.chat_template_kwargs;
@@ -569,8 +574,8 @@ const S = Object.assign(
   { mode: "auto", effort: "xhigh", autozip: true, provider: "local", dskey: "", localbase: "", localmodel: "" },
   JSON.parse(localStorage.getItem("qwen_settings") || "{}")
 );
-// 本地服务地址可配置：Ollama 默认 11434，vLLM 8000、LM Studio 1234 等，任意 OpenAI 兼容端点
-let BASE = (S.localbase || "http://127.0.0.1:11434").replace(/\/+$/, "");
+// 本地服务地址可配置：oMLX 默认 8000，Ollama 11434、LM Studio 1234 等，任意 OpenAI 兼容端点
+let BASE = (S.localbase || "http://127.0.0.1:8000").replace(/\/+$/, "");
 let API = BASE + "/v1/chat/completions";
 if (!MODES[S.mode] && S.mode !== "auto") S.mode = "auto";
 if (MODES[S.mode]) { S.thinking = MODES[S.mode].thinking; S.temp = MODES[S.mode].temp; }
@@ -600,7 +605,7 @@ function applySettingsUI(){
   $("#provider").value = S.provider;
   $("#dskey").value = S.dskey || "";
   $("#dskeyrow").style.display = S.provider === "deepseek" ? "" : "none";
-  $("#localbase").value = S.localbase || "http://127.0.0.1:11434";
+  $("#localbase").value = S.localbase || "http://127.0.0.1:8000";
   $("#baserow").style.display = S.provider === "local" ? "" : "none";
   $("#localmodel").value = S.localmodel || "";
   $("#modelrow").style.display = S.provider === "local" ? "" : "none";
@@ -628,10 +633,11 @@ $("#provider").onchange = e => {
 $("#dskey").onchange = e => { S.dskey = e.target.value.trim(); saveSettings(); };
 $("#localbase").onchange = e => {
   S.localbase = e.target.value.trim().replace(/\/+$/, "");
-  BASE = S.localbase || "http://127.0.0.1:11434";
+  BASE = S.localbase || "http://127.0.0.1:8000";
   API = BASE + "/v1/chat/completions";
   ctxTotal = null;                 // 换服务后重新读上下文
   isOllama = null;                 // 后端类型重新探测（apiPost 翻译层依赖）
+  openaiModels = null;
   saveSettings(); applySettingsUI(); pollStatus();
 };
 $("#localmodel").onchange = e => { S.localmodel = e.target.value.trim(); saveSettings(); };
@@ -1596,22 +1602,40 @@ async function pollStatus(){
     return;
   }
   try {
-    // Ollama 无 /health，探 /api/version；llama-server 等旧端点回落 /health。
-    // 探测结果同时更新后端类型标记（apiPost 翻译层按此选方言）
-    try { await fetch(BASE + "/api/version", {signal: AbortSignal.timeout(3000)}); isOllama = true; }
-    catch { await fetch(BASE + "/health", {signal: AbortSignal.timeout(3000)}); isOllama = false; }
+    // 探测链：/api/version（Ollama）→ /v1/models（oMLX 等多模型端点，兼拿模型表与 max_model_len）
+    // → /health（llama-server）。结果更新后端类型标记（apiPost 翻译层按此选方言）
+    // 注意 404 不会让 fetch reject，必须查 res.ok——oMLX 等对未知路径回 404
+    try { const r = await fetch(BASE + "/api/version", {signal: AbortSignal.timeout(3000)}); if (!r.ok) throw 0; isOllama = true; }
+    catch {
+      try {
+        const r = await fetch(BASE + "/v1/models", {signal: AbortSignal.timeout(3000)});
+        if (!r.ok) throw 0;
+        const j = await r.json();
+        if (!Array.isArray(j?.data)) throw 0;
+        isOllama = false;
+        openaiModels = j.data.map(m => m.id);
+      } catch {
+        const r = await fetch(BASE + "/health", {signal: AbortSignal.timeout(3000)});
+        if (!r.ok) throw 0;
+        isOllama = false; openaiModels = null;
+      }
+    }
     $("#dot").className = "dot on";
     $("#statustext").textContent = "本地模型 · " + BASE.replace("http://","") + " · 在线";
     if (!ctxTotal){
       try {
         // Ollama：/api/ps 取已加载模型的 context_length（未加载时为空，加载后下次轮询补上）
-        // llama-server：/props 的 n_ctx
+        // oMLX：/v1/models 的 max_model_len；llama-server：/props 的 n_ctx
         if (ollamaBackend()){
           const j = await (await fetch(BASE + "/api/ps")).json();
           ctxTotal = j?.models?.[0]?.context_length ?? null;
         } else {
-          const j = await (await fetch(BASE + "/props")).json();
-          ctxTotal = j?.default_generation_settings?.n_ctx ?? j?.n_ctx ?? null;
+          try { const j = await (await fetch(BASE + "/v1/models")).json();
+                ctxTotal = j?.data?.find(m => m.max_model_len)?.max_model_len ?? null; } catch {}
+          if (!ctxTotal){
+            const j = await (await fetch(BASE + "/props")).json();
+            ctxTotal = j?.default_generation_settings?.n_ctx ?? j?.n_ctx ?? null;
+          }
         }
         if (ctxTotal) updateCtxBar();
       } catch {}
@@ -2589,6 +2613,7 @@ async function generate(noThink, noRetry, forceThink){
 
   const t0 = performance.now();
   let ttft = null, genTokens = 0, answer = "", thinking = "", inThink = false, usage = null;
+  let loopHit = false, lastLoopChk = 0;
   ctrl = new AbortController();
 
   // 生效模式：手动档直接用；智能档按最后一条用户消息（含是否带图）自动分类
@@ -2652,6 +2677,14 @@ async function generate(noThink, noRetry, forceThink){
           if (ttft === null) ttft = (performance.now()-t0)/1000;
           genTokens++;
           thinking += rtok;
+          // 思考通道复读循环检测：尾窗内 48 字片段出现 ≥4 次判为循环（oMLX 思考档已知退化，omlx#3129）
+          if (!loopHit && thinking.length - lastLoopChk > 600){
+            lastLoopChk = thinking.length;
+            const win = thinking.slice(-2000), frag = win.slice(-48);
+            let i = 0, c = 0;
+            while ((i = win.indexOf(frag, i)) !== -1){ c++; i += 8; }
+            if (c >= 4){ loopHit = true; ctrl.abort(); }
+          }
           thinkBox.hidden = false; thinkBox.open = true;
           // 非思考模式下模型自发开 <think> 时标注出来
           if (!useThink) thinkBox.querySelector("summary").textContent = "思考过程（模型自发开启）";
@@ -2675,6 +2708,9 @@ async function generate(noThink, noRetry, forceThink){
         scrollBottom();
       }
     }
+    // oMLX 思考泄漏：生成在思考段内结束时整段思考被冲进一条 content delta（omlx#3129），
+    // content 与 reasoning 逐字相同——按思考兜底渲染，不当正文
+    if (answer && thinking && answer === thinking) answer = "";
     am.text = answer || thinking || "（空响应）";
     // 答案困在思考通道时思考已充当正文，不入 think 字段（防重渲双显）
     am.think = answer ? (thinking || undefined) : undefined;
@@ -2706,6 +2742,13 @@ async function generate(noThink, noRetry, forceThink){
   } catch (e) {
     contentEl.classList.remove("typing");
     if (e.name === "AbortError"){
+      // 复读循环中断：关思考重试一次（原样重发会以相同采样复发）
+      if (loopHit && !noRetry && useThink){
+        sysCard("⚠ 思考通道检测到复读循环，已中断并关闭思考重试…");
+        messages.splice(messages.indexOf(am), 1);
+        bb.parentElement.remove();
+        return generate(true, true);
+      }
       am.text = answer || thinking || "（已中断）";
       am.think = thinking || undefined;
       outlineEl.hidden = true;

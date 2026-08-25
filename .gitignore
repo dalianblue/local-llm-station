@@ -30,3 +30,6 @@ demo/
 
 # PDF 回归语料（用户真实文献，版权/隐私原因不上传）
 pdf_corpus/
+
+# oMLX 版编译产物
+LocalLLMServer-oMLX.app/

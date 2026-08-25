@@ -608,7 +608,7 @@
   <label>推理服务</label>
   <select id="set-provider"><option value="local">本地（Ollama / llama-server）</option><option value="deepseek">DeepSeek 云端</option></select>
   <label>本地服务地址</label>
-  <input id="set-base" placeholder="http://127.0.0.1:11434">
+  <input id="set-base" placeholder="http://127.0.0.1:8000">
   <label>模型名（Ollama 必填）</label>
   <input id="set-model" placeholder="qwen3.8:27b-mlx">
   <label>DeepSeek API Key</label>
@@ -627,6 +627,7 @@ let archOK = false;
 const DEEPSEEK_API = "https://api.deepseek.com/v1/chat/completions";
 const usingDeep = () => S.provider === "deepseek" && S.dskey;
 let isOllama = null;
+let openaiModels = null;   // /v1/models 探测到的模型表（oMLX 等多模型端点；drafter 按 mtp/draft 命名惯例排除）
 const ollamaBackend = () => isOllama !== null ? isOllama : /:11434\/?$/.test(BASE);
 function apiPost(body, signal){
   if (usingDeep()){
@@ -636,8 +637,12 @@ function apiPost(body, signal){
       headers:{"Content-Type":"application/json", Authorization:"Bearer " + S.dskey},
       body: JSON.stringify(body)});
   }
-  if (!ollamaBackend())
+  // oMLX 必传 model：取设置标签，缺省用探测到的非 drafter 模型；llama-server 忽略该字段
+  if (!ollamaBackend()){
+    const mid = S.localmodel || openaiModels?.find(id => !/mtp|draft|assistant/i.test(id)) || openaiModels?.[0];
+    if (mid) body.model = mid;
     return fetch(API, {method:"POST", signal, headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  }
   // Ollama：/v1 的 think 不可靠，叠加 reasoning_effort:"none"（官方文档指定做法）
   const think = body.chat_template_kwargs?.enable_thinking;
   delete body.chat_template_kwargs;
@@ -656,7 +661,7 @@ const S = Object.assign(
   { mode: "auto", effort: "xhigh", provider: "local", dskey: "", localbase: "", localmodel: "" },
   JSON.parse(localStorage.getItem("qwen_settings") || "{}")
 );
-let BASE = (S.localbase || "http://127.0.0.1:11434").replace(/\/+$/, "");
+let BASE = (S.localbase || "http://127.0.0.1:8000").replace(/\/+$/, "");
 let API = BASE + "/v1/chat/completions";
 if (!MODES[S.mode] && S.mode !== "auto") S.mode = "auto";
 if (MODES[S.mode]) { S.thinking = MODES[S.mode].thinking; S.temp = MODES[S.mode].temp; }
@@ -835,8 +840,21 @@ async function pollStatus(){
     return;
   }
   try {
-    try { await fetch(BASE + "/api/version", {signal: AbortSignal.timeout(3000)}); isOllama = true; }
-    catch { await fetch(BASE + "/health", {signal: AbortSignal.timeout(3000)}); isOllama = false; }
+    try { const r = await fetch(BASE + "/api/version", {signal: AbortSignal.timeout(3000)}); if (!r.ok) throw 0; isOllama = true; }
+    catch {
+      try {
+        const r = await fetch(BASE + "/v1/models", {signal: AbortSignal.timeout(3000)});
+        if (!r.ok) throw 0;
+        const j = await r.json();
+        if (!Array.isArray(j?.data)) throw 0;
+        isOllama = false;
+        openaiModels = j.data.map(m => m.id);
+      } catch {
+        const r = await fetch(BASE + "/health", {signal: AbortSignal.timeout(3000)});
+        if (!r.ok) throw 0;
+        isOllama = false; openaiModels = null;
+      }
+    }
     $("#dot").className = "dot on";
     $("#statustext").textContent = "本地模型 · 在线";
     $("#cloudbtn").style.display = "none";
@@ -846,8 +864,12 @@ async function pollStatus(){
           const j = await (await fetch(BASE + "/api/ps")).json();
           ctxTotal = j?.models?.[0]?.context_length ?? null;
         } else {
-          const j = await (await fetch(BASE + "/props")).json();
-          ctxTotal = j?.default_generation_settings?.n_ctx ?? j?.n_ctx ?? null;
+          try { const j = await (await fetch(BASE + "/v1/models")).json();
+                ctxTotal = j?.data?.find(m => m.max_model_len)?.max_model_len ?? null; } catch {}
+          if (!ctxTotal){
+            const j = await (await fetch(BASE + "/props")).json();
+            ctxTotal = j?.default_generation_settings?.n_ctx ?? j?.n_ctx ?? null;
+          }
         }
         if (ctxTotal) updateCtxBar();
       } catch {}
@@ -2398,7 +2420,7 @@ async function generate(noThink, noRetry, forceThink){
   const am = {role: "assistant", text: "", ts: Date.now()};
   let lastPaint = 0, answer = "", thinking = "", inThink = false, usage = null;
   const t0 = performance.now();
-  let ttft = null, genTokens = 0;
+  let ttft = null, genTokens = 0, loopHit = false, lastLoopChk = 0;
   ctrl = new AbortController();
 
   const body = {
@@ -2448,6 +2470,14 @@ async function generate(noThink, noRetry, forceThink){
           if (ttft === null) ttft = (performance.now()-t0)/1000;
           genTokens++;
           thinking += rtok;
+          // 思考通道复读循环检测：尾窗内 48 字片段出现 ≥4 次判为循环（oMLX 思考档已知退化，omlx#3129）
+          if (!loopHit && thinking.length - lastLoopChk > 600){
+            lastLoopChk = thinking.length;
+            const win = thinking.slice(-2000), frag = win.slice(-48);
+            let i = 0, c = 0;
+            while ((i = win.indexOf(frag, i)) !== -1){ c++; i += 8; }
+            if (c >= 4){ loopHit = true; ctrl.abort(); }
+          }
           thinkBox.hidden = false; thinkBox.open = true;
           if (!useThink) thinkBox.querySelector("summary").textContent = "思考过程（模型自发开启）";
           thinkEl.textContent = thinking;
@@ -2470,6 +2500,8 @@ async function generate(noThink, noRetry, forceThink){
         scrollBottom();
       }
     }
+    // oMLX 思考泄漏：content 与 reasoning 逐字相同（omlx#3129），按思考兜底渲染
+    if (answer && thinking && answer === thinking) answer = "";
     am.text = answer || thinking || "（空响应）";
     // 答案困在思考通道时思考已充当正文，不入 think 字段（防重渲双显）
     am.think = answer ? (thinking || undefined) : undefined;
@@ -2499,6 +2531,12 @@ async function generate(noThink, noRetry, forceThink){
   } catch (e) {
     contentEl.classList.remove("typing");
     if (e.name === "AbortError"){
+      // 复读循环中断：关思考重试一次（原样重发会以相同采样复发）
+      if (loopHit && !noRetry && useThink){
+        sysCard("⚠ 思考通道检测到复读循环，已中断并关闭思考重试…");
+        bb.remove();
+        return generate(true, true);
+      }
       am.text = answer || thinking || "（已中断）";
       am.think = thinking || undefined;
       if (answer || thinking){

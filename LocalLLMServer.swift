@@ -482,7 +482,11 @@ enum SystemStatus {
     private static func llmUp() -> Bool {
         let sem = DispatchSemaphore(value: 0)
         var up = false
+#if OMLX
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:8000/v1/models")!)
+#else
         var req = URLRequest(url: URL(string: "http://127.0.0.1:11434/api/version")!)
+#endif
         req.timeoutInterval = 1.5
         URLSession.shared.dataTask(with: req) { _, resp, _ in
             up = (resp as? HTTPURLResponse)?.statusCode == 200
@@ -1200,9 +1204,15 @@ struct LocalLLMServerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     var body: some Scene {
         MenuBarExtra { TrayMenu() } label: { TrayLabel() }
+#if OMLX
+        Window("LocalLLM 服务（oMLX）", id: "main") {
+            ContentView().frame(width: 480, height: 520)
+        }
+#else
         Window("LocalLLM 服务（Ollama）", id: "main") {
             ContentView().frame(width: 480, height: 520)
         }
+#endif
     }
 }
 
@@ -1227,8 +1237,14 @@ struct TrayLabel: View {
 // 菜单栏自定义图标：Resources/tray.png（纯黑透明 template，已裁边）；缺图回落 sparkles
 enum TrayIcon {
     static let image: NSImage? = {
+#if OMLX
+        // oMLX 版：iconTemplate.pdf（矢量 template）
+        guard let url = Bundle.main.url(forResource: "iconTemplate", withExtension: "pdf"),
+              let img = NSImage(contentsOf: url) else { return nil }
+#else
         guard let url = Bundle.main.url(forResource: "tray", withExtension: "png"),
               let img = NSImage(contentsOf: url) else { return nil }
+#endif
         let h: CGFloat = 20   // 菜单栏高 22pt，20 接近撑满
         img.size = NSSize(width: h * img.size.width / max(img.size.height, 1), height: h)
         img.isTemplate = true   // 菜单栏单色图标：浅色栏黑色、深色栏白色，随系统切换
@@ -1315,6 +1331,16 @@ enum Config {
               let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { return [:] }
         return j
     }()
+#if OMLX
+    // oMLX 模型目录名（如 "Qwen3.8-27B-nvfp4"）
+    static var ollamaModel: String { dict["omlxModel"] as? String ?? "Qwen3.8-27B-nvfp4" }
+    // omlx 可执行文件：brew tap 安装默认路径，config.json 可覆盖
+    static var ollamaPath: String {
+        (dict["omlxPath"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+            ?? "/opt/homebrew/bin/omlx"
+    }
+    static let modelDir = NSHomeDirectory() + "/.omlx/models"
+#else
     // Ollama 模型标签（如 "qwen3.8:27b-mlx"）
     static var ollamaModel: String { dict["ollamaModel"] as? String ?? "qwen3.8:27b-mlx" }
     // ollama 可执行文件：brew 安装默认路径，config.json 可覆盖
@@ -1322,6 +1348,7 @@ enum Config {
         (dict["ollamaPath"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
             ?? "/opt/homebrew/bin/ollama"
     }
+#endif
     // 可选：启动时默认选中的上下文档位（缺省 = 按内存动态计算的推荐档）
     // 经 OLLAMA_CONTEXT_LENGTH 环境变量注入 ollama serve
     static var context: Int? { dict["contextLength"] as? Int }
@@ -1336,13 +1363,35 @@ final class ServerManager: ObservableObject {
     @Published var logs: [LogLine] = []
 
     static let ollamaURL = URL(fileURLWithPath: Config.ollamaPath)
+#if OMLX
+    // "模型就绪" = omlx 二进制存在且模型目录（含两级组织）里有带 config.json 的模型
+    static var modelExists: Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: ollamaURL.path) else { return false }
+        func hasModel(_ dir: String) -> Bool {
+            guard let subs = try? fm.contentsOfDirectory(atPath: dir) else { return false }
+            return subs.contains { s in
+                var isDir: ObjCBool = false
+                let p = dir + "/" + s
+                return fm.fileExists(atPath: p, isDirectory: &isDir) && isDir.boolValue
+                    && (fm.fileExists(atPath: p + "/config.json") || hasModel(p))
+            }
+        }
+        return hasModel(Config.modelDir)
+    }
+#else
     // "模型就绪" = ollama 二进制存在（模型包缺失时 serve 也能起，首次请求自动拉取或按提示手动 pull）
     static var modelExists: Bool { FileManager.default.fileExists(atPath: ollamaURL.path) }
+#endif
 
     // 按内存推荐上下文档（经 OLLAMA_CONTEXT_LENGTH 注入 serve）
     static func recommendedContext() -> Int {
         let ram = Double(ProcessInfo.processInfo.physicalMemory)
+#if OMLX
+        let budget = ram * 0.7 - 16.5e9   // 模型权重 + 系统余量
+#else
         let budget = ram * 0.7 - 19e9   // 模型权重 + 系统余量
+#endif
         for (ctx, kv) in [(262144, 16.0), (131072, 8.0), (65536, 4.0), (32768, 2.0), (16384, 1.0)] {
             if budget >= kv * 1.15e9 { return ctx }
         }
@@ -1374,21 +1423,33 @@ final class ServerManager: ObservableObject {
         // serve 已在跑（brew services / 手动）→ 只记日志接管状态；否则拉起
         if Self.serveUp() {
             proc = nil; running = true; startedAt = Date()
+#if OMLX
+            logs = [LogLine("▶ oMLX serve 已在运行（端口 8000），直接接管（外部进程，退出无法自动感知，状态点以页面轮询为准）")]
+#else
             // 接管时读 /api/ps 明示实际 ctx
             var line = "▶ ollama serve 已在运行（端口 11434），直接接管（外部进程，退出无法自动感知，状态点以页面轮询为准）"
             if let psCtx = Self.runningContext(), psCtx != context {
                 line += "：实际 ctx=\(psCtx) 与所选 \(context) 不符（外部 serve 无法改 env，停掉它后由本 app 拉起即生效）"
             }
             logs = [LogLine(line)]
+#endif
             return
         }
         let p = Process()
         p.executableURL = Self.ollamaURL
+#if OMLX
+        p.arguments = ["serve", "--model-dir", Config.modelDir, "--port", "8000"]
+#else
         p.arguments = ["serve"]
+#endif
         var env = ProcessInfo.processInfo.environment
+#if OMLX
+        // oMLX：CORS 默认放行、上下文按模型 per-model 管理，无需 env 注入
+#else
         env["OLLAMA_CONTEXT_LENGTH"] = String(context)
         // CORS 放行 *（file:// 页面 Origin=null；服务只绑 127.0.0.1）
         env["OLLAMA_ORIGINS"] = "*"
+#endif
         p.environment = env
         let pipe = Pipe()
         p.standardOutput = pipe; p.standardError = pipe
@@ -1398,21 +1459,38 @@ final class ServerManager: ObservableObject {
                 // 只清自己的状态（proc 仍是本进程 = 崩溃或被外部终止）
                 guard let self, self.proc?.processIdentifier == termProc.processIdentifier else { return }
                 self.running = false; self.startedAt = nil; self.proc = nil
+#if OMLX
+                self.logs.append(LogLine("⚠ oMLX serve 已退出（崩溃或被外部终止）——点「启动服务」重试"))
+#else
                 self.logs.append(LogLine("⚠ ollama serve 已退出（崩溃或被外部终止）——点「启动服务」重试"))
+#endif
             }
         }
+#if OMLX
+        let failHint = "（brew tap jundot/omlx https://github.com/jundot/omlx && brew install jundot/omlx/omlx）"
+#else
+        let failHint = "（brew install ollama）"
+#endif
         do {
             try p.run()
+#if OMLX
+            proc = p; running = true; startedAt = Date(); logs = [LogLine("▶ 已启动 pid=\(p.processIdentifier)（模型 \(Config.ollamaModel)，首次请求加载）")]
+#else
             proc = p; running = true; startedAt = Date(); logs = [LogLine("▶ 已启动 pid=\(p.processIdentifier) ctx=\(context)")]
+#endif
             readPipe(pipe)
-        } catch { logs.append(LogLine("启动失败: \(error.localizedDescription)（brew install ollama）")) }
+        } catch { logs.append(LogLine("启动失败: \(error.localizedDescription)\(failHint)")) }
     }
 
-    // 探活 ollama serve（同步短超时，仅启动时调用一次）
+    // 探活 serve（同步短超时，仅启动时调用一次）
     static func serveUp() -> Bool {
         let sem = DispatchSemaphore(value: 0)
         var up = false
+#if OMLX
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:8000/v1/models")!)
+#else
         var req = URLRequest(url: URL(string: "http://127.0.0.1:11434/api/version")!)
+#endif
         req.timeoutInterval = 1.5
         URLSession.shared.dataTask(with: req) { _, resp, _ in
             up = (resp as? HTTPURLResponse)?.statusCode == 200
@@ -1438,6 +1516,18 @@ final class ServerManager: ObservableObject {
         return ctx
     }
 
+#if OMLX
+    // 停止 = 结束 serve 进程（模型内存随之释放；运行期的 LRU/TTL 卸载归 oMLX 自己管）
+    func stop() {
+        if let own = proc, own.isRunning {
+            own.terminate()
+            logs.append(LogLine("■ 已停止 oMLX serve（模型内存随之释放，下次启动重载约 30 秒）"))
+        } else {
+            logs.append(LogLine("■ 外部 oMLX serve（brew services / 手动启动）无法由本 app 停止——brew services stop omlx"))
+        }
+        running = false; startedAt = nil; proc = nil
+    }
+#else
     // 停止 = 卸载模型（释放 ~18GB 统一内存），serve 进程常驻（自身 <200MB，下次秒起）
     func stop() {
         let p = Process()
@@ -1449,6 +1539,7 @@ final class ServerManager: ObservableObject {
         running = false; startedAt = nil; proc = nil
         logs.append(LogLine("■ 已卸载模型 \(Config.ollamaModel)"))
     }
+#endif
 
     private func readPipe(_ pipe: Pipe) {
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -1494,8 +1585,13 @@ struct ContentView: View {
             // 状态区
             HStack(spacing: 10) {
                 Circle().fill(server.running ? Color.green : Color.red).frame(width: 10, height: 10)
+#if OMLX
+                Text(server.running ? "运行中 · 127.0.0.1:8000" : "已停止")
+                    .font(.system(size: 13, weight: .medium))
+#else
                 Text(server.running ? "运行中 · 127.0.0.1:11434" : "已停止")
                     .font(.system(size: 13, weight: .medium))
+#endif
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("运行时间").font(.caption2).foregroundStyle(.secondary)
@@ -1506,6 +1602,16 @@ struct ContentView: View {
             .padding(.horizontal, 4)
 
             // 上下文选择
+#if OMLX
+            GroupBox("上下文") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("上下文由 oMLX 按模型管理（\(Config.ollamaModel) 上限 262K），"
+                         + "前缀缓存自动复用；per-model 调整在 http://127.0.0.1:8000/admin 。"
+                         + "32GB 机型跑长上下文建议：sudo sysctl iogpu.wired_limit_mb=26624")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }.padding(4)
+            }
+#else
             GroupBox("上下文长度（重启后生效）") {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("", selection: $context) {
@@ -1520,6 +1626,7 @@ struct ContentView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(4)
             }
+#endif
 
             // 极速启动：开机登录项 + app 启动即拉服务（模型加载 ~30 秒移到后台）
             GroupBox("启动") {
@@ -1553,12 +1660,22 @@ struct ContentView: View {
             }
 
             if !ServerManager.modelExists {
+#if OMLX
+                Label("未就绪：需要 omlx 二进制（\(Config.ollamaPath)）与模型目录（\(Config.modelDir)）。"
+                    + "安装：brew tap jundot/omlx https://github.com/jundot/omlx && brew install jundot/omlx/omlx；"
+                    + "模型（ModelScope）：mlx-community/Qwen3.8-27B-nvfp4 与 …-MTP-nvfp4 下载到模型目录。"
+                    + "无本地模型也可用：PDF 提取与存档服务（:8081）随 app 启动自动运行，"
+                    + "chat.html 设置里切换 DeepSeek 云端 API 即可对话",
+                    systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+#else
                 Label("未找到 ollama（\(Config.ollamaPath)）。"
                     + "无本地模型也可用：PDF 提取与存档服务（:8081）随 app 启动自动运行，"
                     + "chat.html 设置里切换 DeepSeek 云端 API 即可对话；"
                     + "brew install ollama 并 ollama pull \(Config.ollamaModel) 后再点「启动服务」",
                     systemImage: "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(.orange)
+#endif
             }
 
             // 日志
