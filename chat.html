@@ -414,13 +414,13 @@
       </select>
     </div>
     <div class="row" id="baserow">
-      <span>服务地址<small>任何 OpenAI 兼容服务：Ollama / vLLM / LM Studio 等</small></span>
+      <span>服务地址<small>任何 OpenAI 兼容服务：oMLX / Ollama / vLLM 等</small></span>
       <input type="text" id="localbase" placeholder="http://127.0.0.1:8000" autocomplete="off"
              style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12.5px;width:150px">
     </div>
     <div class="row" id="modelrow">
-      <span>模型标签<small>Ollama 模型名，升级换模型只改这里</small></span>
-      <input type="text" id="localmodel" placeholder="qwen3.8:27b-mlx" autocomplete="off"
+      <span>模型标签<small>oMLX 可留空自动探测；Ollama 须填模型名</small></span>
+      <input type="text" id="localmodel" placeholder="Qwen3.8-27B-nvfp4（留空自动探测）" autocomplete="off"
              style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12.5px;width:150px">
     </div>
     <div class="row" id="dskeyrow" style="display:none">
@@ -1918,7 +1918,7 @@ async function makePPT(m){
 let drBusy = false;
 async function deepReadCharts(m){
   if (drBusy) return toast("🔍 正在深读中，请稍候…");
-  if (usingDeep()) return alert("🔍 图表深读为本地多模态功能（qwen3.8-mlx 本地模型，图表不出本机）。\n请在设置（⚙️）切回本地模式，并确保 ollama serve 已启动。");
+  if (usingDeep()) return alert("🔍 图表深读为本地多模态功能（本地模型，图表不出本机）。\n请在设置（⚙️）切回本地模式，并确保本地服务（omlx serve / LocalLLMServer.app）已启动。");
   try { await fetch(BASE + "/api/version", {signal: AbortSignal.timeout(3000)}); }
   catch {
     try { await fetch(BASE + "/health", {signal: AbortSignal.timeout(3000)}); }
@@ -2760,7 +2760,7 @@ async function generate(noThink, noRetry, forceThink){
       let msg = e.message || String(e);
       if (/fetch|network|load failed|timeout/i.test(msg))
         msg = usingDeep() ? "无法连接 DeepSeek API——检查网络或代理设置"
-                          : "无法连接本地服务（" + BASE + "）——ollama serve 是否在运行？";
+                          : "无法连接本地服务（" + BASE + "）——服务是否在运行？（omlx / ollama / llama-server）";
       sysCard("请求失败：" + msg);
     }
   }
