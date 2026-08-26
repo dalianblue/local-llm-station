@@ -180,6 +180,18 @@
     caret-color: var(--accent);
   }
   #secpreview { width: 100%; max-width: 46em; height: 100%; overflow-y: auto; }
+  /* 📚 参考文献验证（伪章节工具页：不进 ED.sections，导出与 AI 上下文天然隔离） */
+  #refwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 20px 24px; }
+  #refwrap[hidden] { display: none; }
+  #refin {
+    flex: none; height: 24%; width: 100%; max-width: 46em; margin: 0 auto; resize: vertical;
+    background: none; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
+    color: var(--text); outline: none; font: 13px/1.8 var(--mono); caret-color: var(--accent);
+  }
+  #refbar { flex: none; display: flex; align-items: center; gap: 12px; width: 100%; max-width: 46em; margin: 0 auto; font-size: 12px; color: var(--dim); }
+  #refgo { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 14px; cursor: pointer; }
+  #refgo:hover { border-color: var(--dim); }
+  #refout { flex: 1; min-height: 0; width: 100%; max-width: 46em; margin: 0 auto; overflow-y: auto; }
   #statusbar {
     flex: none; border-top: 1px solid var(--border); background: var(--panel);
     padding: 5px 16px; display: flex; align-items: center; gap: 16px;
@@ -486,6 +498,14 @@
       <textarea id="secmd" spellcheck="false" placeholder="用 Markdown 写这一章节……（⌘S 保存并快照）"></textarea>
       <div id="secpreview" class="content" hidden></div>
     </div>
+    <div id="refwrap" hidden>
+      <textarea id="refin" spellcheck="false" placeholder="把论文助手给出的参考文献列表粘贴到这里（任意格式、任意语言）——验证通过后转为 Vancouver 格式"></textarea>
+      <div id="refbar">
+        <button id="refgo">✅ 验证</button>
+        <span id="refstate">查证链 Crossref → OpenAlex → PubMed · 此栏不进导出，仅快速核验用</span>
+      </div>
+      <div id="refout" class="content"></div>
+    </div>
     <div id="statusbar">
       <span id="wordcount">0 字</span>
       <span id="savestate"></span>
@@ -707,8 +727,14 @@ const EDIT_RULES = `
 ---
 （替换后的文本）
 \`\`\`
-  - 原文片段必须从正文逐字复制（含标点与换行），并足以在正文中唯一定位
+  - 原文片段必须从正文逐字复制（含标点与换行），并足以在正文中唯一定位；正文里不存在的文字（包括「（空章节）」「（无原文）」这类占位符）绝不能当原文片段用
   - 一次可输出多个 edit 块，各块独立应用；块外只写简短说明，不要复述修改后的全文
+  - 用户要求修改其他章节（非当前章节）时同样用 edit 块，原文片段从该章节逐字复制，系统会自动定位并应用到对应章节；若你的上下文中没有该章节全文，先请用户切换到该章节，不要凭记忆编造原文片段
+  - 章节为空或整体重写（无原文可锚定）时一律用整章写入块：\`\`\`edit 章节标题 后换行直接写该章节全文，系统会定位该章节并整体替换其内容——写入块不需要你先看到该章节全文，章节标题照大纲写即可，非当前章节也能直接写。示例（向「回复意见」章节写入全文）：
+\`\`\`edit 回复意见
+（该章节的完整新全文）
+\`\`\`
+  - 用户说「直接写到/写入/填到某章节」时用 edit 块或整章写入块完成——你可以直接写章节文件，不要回答无法写文件，也不要让用户手动复制粘贴
   - 只改被要求修改的地方，原文片段以外的内容一个字都不要动
   - 答疑、查证、审稿/检查报告等非改稿回复不要用 edit 块；用户说「不要直接改」时只输出建议文字`;
 
@@ -1002,6 +1028,13 @@ async function loadProject(){
     catch { s.bad = true; }
   }));
   journalRestore();   // 磁盘内容读入后：若有未落盘的崩溃草稿，询问恢复
+  // 📚 参考文献验证页存档恢复
+  fetch(pf("refcheck.json")).then(r => r.ok ? r.json() : null).catch(() => null).then(j => {
+    if (!j) return;
+    refData = {in: j.in || "", out: j.out || ""};
+    $("#refin").value = refData.in;
+    $("#refout").innerHTML = md(refData.out);
+  });
   // 左栏资源并行加载（含存档本体：本项目文献全文由此而来）
   const [cards, notes, vlist, plist, arch, revs] = await Promise.all([
     fetch(ARCH + "/archive/" + encodeURIComponent(ED.convId + "-cards.json")).then(r => r.ok ? r.json() : []).catch(() => []),
@@ -1070,6 +1103,12 @@ function renderTabs(){
     d.addEventListener("drop", e => { e.preventDefault(); d.classList.remove("over"); moveSection(dragIdx, i); });
     el.appendChild(d);
   });
+  const rt = document.createElement("div");
+  rt.className = "tab" + (refTab ? " active" : "");
+  rt.title = "粘贴引文逐条核验并转 Vancouver——不进导出";
+  rt.innerHTML = `<span>📚 参考文献验证</span>`;
+  rt.onclick = openRefTab;
+  el.appendChild(rt);
   const add = document.createElement("div");
   add.className = "tab";
   add.innerHTML = `<span class="add" title="新增章节">＋</span>`;
@@ -1080,6 +1119,10 @@ function showSection(i){
   ED.cur = i;
   $("#secmd").value = ED.sections[i].md || "";
   $("#selbar").hidden = true;   // 切章节后原选区失义，收起浮动工具条
+  refTab = false;
+  $("#refwrap").hidden = true;
+  $("#mdbar").style.display = "";
+  $("#editwrap").style.display = "";
   if (previewOn) togglePreview(false);
   renderTabs(); updateOutline(); updateStatusBar();
   if (ED.sections[i].bad) toast("⚠ 该章节正文加载失败，编辑不会保存——请确认存档服务在运行后刷新", 6000);
@@ -1131,6 +1174,165 @@ async function delSection(i){
   persistEditor();
   showSection(Math.min(i, ED.sections.length - 1));
 }
+
+// ---------- 📚 参考文献验证（伪章节工具页，见 kb/features.md · 参考文献验证） ----------
+let refTab = false, refBusy = false, refData = {in: "", out: ""};
+function openRefTab(){
+  flushSave();
+  refTab = true;
+  $("#refwrap").hidden = false;
+  $("#mdbar").style.display = "none";
+  $("#editwrap").style.display = "none";
+  renderTabs();
+  $("#refin").focus();
+}
+const MAILTO = "local-llm-station@users.noreply.github.com";   // polite pool 标识
+const normTitle = s => (s || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ").trim();
+function titleSim(a, b){
+  const A = new Set(normTitle(a).split(/\s+/).filter(Boolean)), B = new Set(normTitle(b).split(/\s+/).filter(Boolean));
+  if (!A.size || !B.size) return 0;
+  let hit = 0; for (const t of A) if (B.has(t)) hit++;
+  return hit / Math.max(A.size, B.size);
+}
+// PubMed 限速：免 Key 3 req/s，全局节流器保证任意两次调用间隔 ≥350ms
+let pmLast = 0;
+async function pmGap(){
+  const wait = 350 - (Date.now() - pmLast);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  pmLast = Date.now();
+}
+async function refSearch(r){
+  // 返回最优候选（含 Vancouver 所需元数据）；查证绝不让模型凭记忆作答
+  let best = {score: 0};
+  try {
+    const q = encodeURIComponent(r.raw || r.title || "");
+    const j = await (await fetch(`https://api.crossref.org/works?query.bibliographic=${q}&rows=3&mailto=${MAILTO}`)).json();
+    for (const it of (j.message?.items || [])){
+      const s = titleSim(r.title, (it.title || [])[0]);
+      if (s > best.score) best = {score: s, title: (it.title || [])[0] || "",
+        year: it.issued?.["date-parts"]?.[0]?.[0], doi: it.DOI, source: "Crossref",
+        authors: it.author, journal: (it["container-title"] || [])[0], volume: it.volume, issue: it.issue, pages: it.page};
+    }
+  } catch {}
+  if (best.score < 0.75){   // Crossref 未定：OpenAlex 按标题再查
+    try {
+      const j = await (await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(r.title || r.raw || "")}&per-page=3&mailto=${MAILTO}`)).json();
+      for (const it of (j.results || [])){
+        const s = titleSim(r.title, it.display_name);
+        if (s > best.score) best = {score: s, title: it.display_name || "",
+          year: it.publication_year, doi: (it.doi || "").replace("https://doi.org/", ""), source: "OpenAlex",
+          authors: (it.authorships || []).map(a => a.author?.display_name).filter(Boolean),
+          journal: it.primary_location?.source?.display_name,
+          volume: it.biblio?.volume, issue: it.biblio?.issue,
+          pages: [it.biblio?.first_page, it.biblio?.last_page].filter(Boolean).join("-")};
+      }
+    } catch {}
+  }
+  if (best.score < 0.75){   // 仍存疑：PubMed 交叉验证（两步调用均走限流）
+    try {
+      await pmGap();
+      const j = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=3&term=${encodeURIComponent((r.title || "").slice(0, 200))}[Title]`)).json();
+      const ids = j.esearchresult?.idlist || [];
+      if (ids.length){
+        await pmGap();
+        const s = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=${ids.join(",")}`)).json();
+        for (const id of ids){
+          const it = s.result?.[id]; if (!it) continue;
+          const sc = titleSim(r.title, it.title);
+          if (sc > best.score) best = {score: sc, title: it.title || "",
+            year: +(it.pubdate || "").slice(0, 4) || null, pmid: id, source: "PubMed",
+            authors: (it.authors || []).map(a => a.name).filter(Boolean),
+            journal: it.source, volume: it.volume, pages: it.pages};
+        }
+      }
+    } catch {}
+  }
+  return best;
+}
+function vanFmt(b){
+  const aus = (b.authors || []).map(a => {
+    const [fam, giv] = typeof a === "string"
+      ? [a.trim().split(/\s+/).pop(), a.trim().split(/\s+/).slice(0, -1).join(" ")]
+      : [a.family || "", a.given || ""];
+    const ini = (giv || "").split(/[\s.\-]+/).filter(Boolean).map(w => w[0]).join("").toUpperCase();
+    return (fam + (ini ? " " + ini : "")).trim();
+  }).filter(Boolean);
+  const auStr = !aus.length ? "" : aus.length > 6 ? aus.slice(0, 6).join(", ") + ", et al." : aus.join(", ") + ".";
+  const vip = [b.volume ? b.volume + (b.issue ? "(" + b.issue + ")" : "") : "", b.pages].filter(Boolean).join(":");
+  const segs = [auStr, (b.title || "") + "."];
+  if (b.journal) segs.push(b.journal + ".");
+  if (b.year || vip) segs.push([b.year, vip].filter(Boolean).join(";") + ".");
+  if (b.doi) segs.push("doi:" + b.doi);
+  else if (b.pmid) segs.push("PMID: " + b.pmid);
+  return segs.filter(Boolean).join(" ");
+}
+function saveRefcheck(){
+  fetch(pf("refcheck.json"), {method: "PUT", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(refData)}).catch(() => {});
+}
+async function runRefCheck(){
+  const text = $("#refin").value.trim();
+  if (text.length < 20) return toast("⚠ 请先粘贴参考文献列表");
+  if (refBusy || busy) return toast("⚠ AI 正在生成，稍后再试");
+  refBusy = true; $("#refgo").disabled = true;
+  const render = () => { $("#refout").innerHTML = md(refData.out || ""); $("#refout").scrollTop = $("#refout").scrollHeight; };
+  try {
+    // 第 1 步：LLM 解析任意格式引文为结构化（提取是强项；不参与查证判定）
+    $("#refstate").textContent = "正在解析引文列表…";
+    const r1 = await apiPost({
+      messages: [{role: "user", content:
+        `以下是参考文献列表（任意格式、任意语言）。把每条解析为一个 JSON 数组元素：{"raw":"该条原文","title":"文献标题（英文保留原文，去掉多余空格）","year":2019}。最多 60 条；解析不出标题的条目 title 给空字符串、year 给 null。只输出 JSON 数组（可包在 \`\`\`json 代码块中），禁止输出其他文字。\n\n${text.slice(0, 20000)}`}],
+      stream: false, temperature: 0, max_tokens: 6000,
+      chat_template_kwargs: {enable_thinking: false},
+    });
+    const raw1 = (await r1.json()).choices?.[0]?.message?.content || "";
+    const refs = JSON.parse((raw1.match(/```json\s*([\s\S]*?)```/) || [, /\[.*\]/.test(raw1.trim()) ? raw1 : "[]"])[1].trim()).slice(0, 60);
+    if (!refs.length) throw new Error("未能从文本中解析出引文");
+    // 第 2 步：逐条查证（串行 + 150ms 间隔，礼貌限流）
+    const lines = [], van = [];
+    let ok = 0, warn = 0, miss = 0;
+    for (let i = 0; i < refs.length; i++){
+      const r = refs[i];
+      const b = r.title ? await refSearch(r) : {score: 0};
+      let line;
+      if (b.score >= 0.75 && b.title){
+        const yd = r.year && b.year && Math.abs(r.year - b.year) > 1;
+        if (yd){ warn++; line = `⚠️ **第 ${i + 1} 条 · 标题匹配但年份不符**：引文 ${r.year}，数据库 ${b.year}（${b.source}）`; }
+        else { ok++; van.push(vanFmt(b)); line = `✅ **第 ${i + 1} 条 · 已验证**（${b.source}${b.year ? " · " + b.year : ""}）`; }
+      } else if (b.score >= 0.5){
+        warn++; line = `⚠️ **第 ${i + 1} 条 · 疑似相近但不一致**（相似度 ${(b.score * 100) | 0}%）——数据库最相近：${b.title}（${b.source}）`;
+      } else {
+        miss++; line = `❌ **第 ${i + 1} 条 · 未找到**（Crossref / OpenAlex / PubMed 均无匹配）`;
+      }
+      lines.push(line + "\n> " + esc((r.title || r.raw || "").slice(0, 120)));
+      refData.out = `# 📚 校验进度 ${i + 1}/${refs.length}\n\n${lines.slice(-8).join("\n\n")}`;
+      render();
+      $("#refstate").textContent = `已校验 ${i + 1}/${refs.length}（✅ ${ok} · ⚠️ ${warn} · ❌ ${miss}）`;
+      await new Promise(res => setTimeout(res, 150));
+    }
+    refData.out = `# 📚 校验报告\n\n**${refs.length} 条引文：✅ ${ok} 已验证 · ⚠️ ${warn} 疑似不一致 · ❌ ${miss} 未找到**\n\n`
+      + `<details open><summary>逐条结果</summary>\n\n${lines.join("\n\n")}\n\n</details>\n\n`
+      + (van.length ? `## Vancouver 格式（已验证 ${van.length} 条，可直接复制）\n\n${van.map((v, i) => `${i + 1}. ${v}`).join("\n")}\n` : "（无已验证条目，无 Vancouver 输出）")
+      + `\n---\n边界：本校验确认引文存在且元数据吻合，不核对被引文献是否支撑正文观点；「未找到」可能因未入库（会议论文集/预印本/撤稿）而非造假。`;
+    render();
+    $("#refstate").textContent = `完成：✅ ${ok} · ⚠️ ${warn} · ❌ ${miss}`;
+    toast(`📚 校验完成：${ok} 验证 · ${warn} 疑似 · ${miss} 未找到`);
+  } catch (e) {
+    $("#refstate").textContent = "中断：" + e.message;
+    toast("⚠ 校验中断：" + e.message);
+  } finally {
+    refBusy = false; $("#refgo").disabled = false;
+    refData.in = $("#refin").value;
+    saveRefcheck();
+  }
+}
+let refSaveT;
+$("#refin").addEventListener("input", () => {
+  clearTimeout(refSaveT);
+  refSaveT = setTimeout(() => { refData.in = $("#refin").value; saveRefcheck(); }, 1000);
+});
+$("#refgo").onclick = runRefCheck;
 
 // 防抖保存：调度时快照目标与内容，防抖期间切章节不写错文件
 let saveTimer = null, saveReq = 0;
@@ -2337,6 +2539,7 @@ function insertAnswer(m, btn){
   });
 }
 async function insertText(text){
+  if (refTab) return toast("⚠ 当前在参考文献验证页——先切回章节再插入");
   if (previewOn) togglePreview(false);
   await snapshot("pre-insert");
   const ta = $("#secmd");
@@ -2360,16 +2563,47 @@ function insertInline(text){
   saveSection(); updateOutline(); updateStatusBar();
 }
 // ---------- edit 块：AI 直接改稿（见 kb/features.md · 改稿模式） ----------
-const EDIT_RE = /```edit[ \t]*\n([\s\S]*?)\n[ \t]*---[ \t]*\n([\s\S]*?)\n?```/g;
+// 行级围栏解析（markdown 规则：带 info 的围栏只能开不能关，纯 ``` 按深度配对）——
+// 非贪婪正则会在写入块内容里遇内嵌围栏提前闭合，剩余文本被误解析成独立块
 function splitEdits(text){
-  const out = []; let last = 0, m;
-  EDIT_RE.lastIndex = 0;
-  while ((m = EDIT_RE.exec(text))){
-    if (m.index > last && text.slice(last, m.index).trim()) out.push({txt: text.slice(last, m.index)});
-    out.push({edit: true, old: m[1], neu: m[2]});
-    last = EDIT_RE.lastIndex;
+  const lines = (text || "").split("\n");
+  const out = [];
+  let txt = [];
+  const flushTxt = () => { const t = txt.join("\n"); if (t.trim()) out.push({txt: t}); txt = []; };
+  const isClose = L => /^[ \t]*```[ \t]*$/.test(L);
+  let i = 0;
+  while (i < lines.length){
+    const l = lines[i];
+    let m;
+    if (/^```edit[ \t]*$/.test(l)){          // 普通 edit 块：old / --- / neu
+      const oldL = [], neuL = [];
+      let j = i + 1, stage = 0, closed = false;
+      for (; j < lines.length; j++){
+        const L = lines[j];
+        if (stage === 0 && /^[ \t]*---[ \t]*$/.test(L)){ stage = 1; continue; }
+        if (stage === 1 && isClose(L)){ closed = true; break; }
+        (stage === 0 ? oldL : neuL).push(L);
+      }
+      if (closed){ flushTxt(); out.push({edit: true, old: oldL.join("\n"), neu: neuL.join("\n")}); i = j + 1; continue; }
+      txt.push(l); i++; continue;   // 未闭合按纯文本兜底
+    }
+    if ((m = l.match(/^```edit[ \t]+(.+?)[ \t]*$/))){   // 整章写入块：```edit 章节标题
+      const body = [];
+      let j = i + 1, depth = 0, closed = false;
+      for (; j < lines.length; j++){
+        const L = lines[j];
+        if (isClose(L)){
+          if (depth === 0){ closed = true; break; }
+          depth--;
+        } else if (/^```/.test(L)) depth++;
+        body.push(L);
+      }
+      if (closed){ flushTxt(); out.push({write: true, to: m[1].trim(), neu: body.join("\n")}); i = j + 1; continue; }
+      txt.push(l); i++; continue;
+    }
+    txt.push(l); i++;
   }
-  if (last < text.length && text.slice(last).trim()) out.push({txt: text.slice(last)});
+  flushTxt();
   return out;
 }
 // 唯一定位：精确匹配 → 首尾 trim 兜底
@@ -2383,42 +2617,93 @@ function findEdit(hay, old){
 }
 async function applyEditBlocks(am){
   if (!editMode) return;
-  const blocks = splitEdits(am.text || "").filter(s => s.edit);
+  const blocks = splitEdits(am.text || "").filter(s => s.edit || s.write);
   if (!blocks.length) return;
   const ta = $("#secmd");
   am.edits = [];
-  if (blocks.some(b => findEdit(ta.value, b.old))){
+  const cur = ED.sections[ED.cur];
+  // 跨章节定位：当前章节未命中时在其他章节找唯一匹配（见 kb/features.md · 改稿模式）
+  const locate = old => {
+    const hit = findEdit(ta.value, old);
+    if (hit) return {sec: cur, ...hit, inCur: true};
+    for (const s of ED.sections){
+      if (s === cur || s.bad || s.md == null) continue;
+      const h = findEdit(s.md, old);
+      if (h) return {sec: s, ...h, inCur: false};
+    }
+    return null;
+  };
+  const findSec = t => ED.sections.find(s => s.title === t)
+    || ED.sections.find(s => !s.bad && s.title.includes(t));
+  let snapped = false, ok = 0; const perSec = {};
+  const ensureSnap = async () => {
+    if (snapped) return;
+    snapped = true;
     if (previewOn) togglePreview(false);
     await snapshot("pre-edit");
     am.diffSnap = versions.list[0]?.id;
-  }
-  let ok = 0;
-  for (const b of blocks){
-    const hit = findEdit(ta.value, b.old);
+  };
+  // 模型把空章节写成「（空章节）」占位符原文的兜底：当前章节确为空时按整章写入处理
+  const PLACEHOLDER_RE = /^[（(]?\s*(空章节|空|无原文|empty|none)\s*[)）]?$/i;
+  for (let b of blocks){
+    if (b.edit && PLACEHOLDER_RE.test((b.old || "").trim()) && !ta.value.trim())
+      b = {write: true, to: cur.title, neu: b.neu};
+    if (b.write){
+      const sec = findSec(b.to);
+      if (!sec){ am.edits.push({...b, fail: `未找到章节「${b.to}」`}); continue; }
+      await ensureSnap();
+      if (sec === cur){
+        ta.focus();
+        ta.setSelectionRange(0, ta.value.length);
+        if (!(document.execCommand && document.execCommand("insertText", false, b.neu)))
+          ta.setRangeText(b.neu, 0, ta.value.length, "end");
+      } else {
+        sec.md = b.neu;
+        fetch(pf(sec.file), {method: "PUT", body: sec.md}).catch(() => {});
+      }
+      perSec[sec.title] = (perSec[sec.title] || 0) + 1;
+      am.edits.push({...b, ok: true, ...(sec === cur ? {} : {sec: sec.title})});
+      ok++;
+      continue;
+    }
+    const hit = locate(b.old);
     if (!hit){ am.edits.push({...b, fail: "原文未找到或出现多次"}); continue; }
-    ta.focus();
-    ta.setSelectionRange(hit.i, hit.i + hit.n);
-    // execCommand 才能进原生撤销栈（⌘Z 逐块回退），与 insertText 同款
-    if (!(document.execCommand && document.execCommand("insertText", false, b.neu)))
-      ta.setRangeText(b.neu, hit.i, hit.i + hit.n, "end");
-    am.edits.push({...b, ok: true});
+    await ensureSnap();
+    if (hit.inCur){
+      ta.focus();
+      ta.setSelectionRange(hit.i, hit.i + hit.n);
+      // execCommand 才能进原生撤销栈（⌘Z 逐块回退），与 insertText 同款
+      if (!(document.execCommand && document.execCommand("insertText", false, b.neu)))
+        ta.setRangeText(b.neu, hit.i, hit.i + hit.n, "end");
+    } else {
+      hit.sec.md = hit.sec.md.slice(0, hit.i) + b.neu + hit.sec.md.slice(hit.i + hit.n);
+      fetch(pf(hit.sec.file), {method: "PUT", body: hit.sec.md}).catch(() => {});
+      perSec[hit.sec.title] = (perSec[hit.sec.title] || 0) + 1;
+    }
+    am.edits.push({...b, ok: true, ...(hit.inCur ? {} : {sec: hit.sec.title})});
     ok++;
   }
   if (ok){
     saveSection(); updateOutline(); updateStatusBar();
     const bad = am.edits.length - ok;
-    toast(`✏️ 已直接修改 ${ok} 处（⌘Z 可逐步撤销）` + (bad ? `，${bad} 处未匹配` : ""));
+    const cross = Object.entries(perSec).map(([t, n]) => `《${t}》${n} 处`).join("、");
+    toast(`✏️ 已直接修改 ${ok} 处（⌘Z 可逐步撤销）`
+      + (cross ? `；其他章节：${cross}（已自动快照，⌘Z 不含这些，可从历史版本恢复）` : "")
+      + (bad ? `，${bad} 处未匹配` : ""));
   } else {
     am.diffSnap = undefined;
     toast("⚠ edit 块未匹配到正文，可手动「插入到光标处」");
   }
 }
 function editBlockHtml(e){
-  const rows = lineDiff((e.old || "").split("\n"), (e.neu || "").split("\n"))
-    .filter(r => r.t !== "=");
+  const rows = e.write
+    ? (e.neu || "").split("\n").map(l => ({t: "+", l}))
+    : lineDiff((e.old || "").split("\n"), (e.neu || "").split("\n")).filter(r => r.t !== "=");
   const head = e.fail
     ? `<div style="padding:2px 8px;font-size:12px;color:#d29922">⚠ ${esc(e.fail)}</div>`
-    : `<div style="padding:2px 8px;font-size:12px;color:#3fb950">✏️ 已应用到正文</div>`;
+    : e.write
+      ? `<div style="padding:2px 8px;font-size:12px;color:#3fb950">✏️ 已写入${e.sec ? "《" + esc(e.sec) + "》" : ""}</div>`
+      : `<div style="padding:2px 8px;font-size:12px;color:#3fb950">✏️ 已应用到正文</div>`;
   const lines = rows.map(r =>
     `<div style="padding:1px 8px;white-space:pre-wrap;${r.t === "-"
       ? "color:#f85149;background:rgba(248,81,73,.12)"
@@ -2490,7 +2775,17 @@ function buildEditorHistory(){
       `[聊天记录纪要开始（我在本项目「聊聊文献」里与 AI 的讨论，供了解研究背景；其中「这篇文章/该文献」多指所讨论的文献而非我的草稿）]\n`
       + clip.join("\n") + "\n[纪要结束]"});
   }
-  for (const m of ED.chat.slice(-20)) h.push({role: m.role, content: m.text});
+  const msgs = ED.chat.slice(-20).map(m => ({role: m.role, content: m.text}));
+  // 点名章节注入：末条用户消息提到其他章节标题时，该章节实时全文拼进该条消息
+  //（agent 式定位——模型看得见目标文件才敢直接改；尾部拼接，前缀缓存友好）
+  const lu = msgs.length && msgs[msgs.length - 1].role === "user" ? msgs[msgs.length - 1] : null;
+  if (lu && lu.content){
+    const named = ED.sections.filter(s => s !== cur && !s.bad && lu.content.includes(s.title));
+    if (named.length)
+      lu.content += "\n\n（系统注入：用户消息提到的章节实时全文，修改/写入以此为准）\n" + named.map(s =>
+        `[《${s.title}》章节全文开始]\n${(s.md || "").slice(0, 12000) || "（空章节——向它写入新内容请用整章写入块）"}\n[全文结束]`).join("\n\n");
+  }
+  for (const m of msgs) h.push(m);
   return h;
 }
 async function send(text){
@@ -2724,8 +3019,12 @@ $("#editbtn").onclick = () => {
 syncEditBtn();
 $("#send").onclick = () => send();
 $("#stopbtn").onclick = () => ctrl?.abort();
+// Safari 怪癖：确认输入法组合的回车时 isComposing 已是 false——加 229 键码与组合结束时间窗双保险
+let composeEndAt = 0;
+input.addEventListener("compositionend", () => composeEndAt = Date.now());
 input.addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229
+      && Date.now() - composeEndAt > 100){ e.preventDefault(); send(); }
 });
 input.addEventListener("input", () => {
   input.style.height = "auto";
