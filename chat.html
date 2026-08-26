@@ -488,7 +488,7 @@
   <div class="wtitle">读一篇文献，讲清楚一篇文献</div>
   <div class="whint">拖入 PDF：本地提取全文与图表 → 四段解读 · 海报 · 汇报 PPT</div>
   <div class="whint">或直接在下方输入框提问——支持图片、追问走缓存</div>
-  <div class="whint">输入「找文献 关键词」检索最新文献（PubMed + OpenAlex，含开放获取全文链接）</div>
+  <div class="whint">输入「找文献 需求」一条命令完成：DeepSeek 构造检索式 → 四源检索（PubMed / OpenAlex / Europe PMC / ClinicalTrials.gov）→ DeepSeek 相关性判定</div>
   <button id="wup">📄 上传文献 PDF</button>
 </div>
 
@@ -1095,53 +1095,109 @@ async function refAudit(text){
   } finally { busy = false; }
 }
 
-// ---------- 文献检索：「找文献 关键词」前缀触发，PubMed（最新）+ OpenAlex（相关，含 OA 全文链接）双源 ----------
+// ---------- 文献检索：「找文献 需求」一条命令——DeepSeek 构造检索式 + 四源检索 + DeepSeek 相关性判定 ----------
+// 判定走云端（本地小模型筛选不可靠）；无 DeepSeek Key 时退化为原词直检不判定
+async function dsSearchStep(content, maxTokens){
+  const r = await fetch(DEEPSEEK_API, {method: "POST",
+    headers: {"Content-Type": "application/json", Authorization: "Bearer " + S.dskey},
+    body: JSON.stringify({model: "deepseek-chat", messages: [{role: "user", content}],
+      stream: false, temperature: 0.2, max_tokens: maxTokens})});
+  if (!r.ok) throw new Error("DeepSeek API " + r.status);
+  return (await r.json()).choices?.[0]?.message?.content || "";
+}
 async function litSearch(q){
   if (busy) return toast("⚠ 正在生成中，稍后再试");
   busy = true;
   $("#welcome").style.display = "none";
-  const out = {role: "assistant", text: `# 🔍 文献检索：${q}\n\n（正在检索 PubMed 与 OpenAlex…）`, ts: Date.now()};
+  const out = {role: "assistant", text: `# 🔍 文献检索：${q}\n\n（正在构造检索式${S.dskey ? "（DeepSeek）" : ""}…）`, ts: Date.now()};
   messages.push(out);
   renderAll();
   const update = t => { out.text = t; renderAll(); };
   try {
-    // PubMed：按发表日期取最新 8 篇（esearch→esummary 两步，均过限流器）
-    let pm = [];
-    try {
-      await pmGap();
-      const j = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=8&sort=pub_date&term=${encodeURIComponent(q)}`)).json();
-      const ids = j.esearchresult?.idlist || [];
-      if (ids.length){
+    // 第 1 步：DeepSeek 构造英文检索式（主题词+同义词扩展；无 Key 用原词）
+    let qs = [q];
+    if (S.dskey){
+      try {
+        const raw = await dsSearchStep(
+          `把下面的文献检索需求转成两条英文检索式（PubMed 风格：主题词 + 同义词，OR 连接，每条是一个完整查询字符串；两条各有侧重，如一条偏干预/技术、一条偏结局/人群）。只输出 JSON：{"qs": ["检索式一", "检索式二"]}，不要输出其他文字。\n需求：${q}`, 600);
+        const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || [, "{}"])[1]);
+        if (Array.isArray(j.qs) && j.qs.filter(Boolean).length) qs = j.qs.filter(Boolean).slice(0, 2);
+      } catch {}
+    }
+    const qEn = qs[0];
+    update(`# 🔍 文献检索：${q}\n\n检索式：${qs.join(" / ")}\n\n（正在检索 PubMed / OpenAlex / Europe PMC / ClinicalTrials.gov…）`);
+    // 第 2 步：四源并行（PubMed 内部过限流器，Promise.all 不冲突）
+    const pmSearch = async () => {
+      try {
+        await pmGap();
+        const j = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=8&sort=pub_date&term=${encodeURIComponent(qEn)}`)).json();
+        const ids = j.esearchresult?.idlist || [];
+        if (!ids.length) return [];
         await pmGap();
         const s = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=${ids.join(",")}`)).json();
-        pm = ids.map(id => s.result?.[id]).filter(Boolean).map(it => ({
+        return ids.map(id => s.result?.[id]).filter(Boolean).map(it => ({
           title: it.title || "", author: (it.authors?.[0]?.name || "").split(" ").slice(-1)[0],
-          year: +(it.pubdate || "").slice(0, 4) || "", journal: it.source || "", pmid: it.uids || it.pmid || id,
-          doi: (it.articleids || []).find(a => a.idtype === "doi")?.value || "",
-        }));
-      }
-    } catch {}
-    update(`# 🔍 文献检索：${q}\n\n（PubMed 完成，正在检索 OpenAlex…）`);
-    // OpenAlex：按相关性 8 篇，附 OA 全文链接
-    let oa = [];
-    try {
-      const j = await (await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(q)}&per-page=8&mailto=${MAILTO}`)).json();
-      oa = (j.results || []).map(it => ({
-        title: it.display_name || "", author: (it.authorships?.[0]?.author?.display_name || "").split(" ").slice(-1)[0],
-        year: it.publication_year || "", journal: (it.primary_location?.source?.display_name || ""),
-        doi: (it.doi || "").replace("https://doi.org/", ""),
-        pdf: it.best_oa_location?.pdf_url || "",
-      }));
-    } catch {}
-    const card = (x, i, pmMode) => `**${i + 1}. ${esc(x.title.slice(0, 140))}**\n   ${x.author ? esc(x.author) + " et al. · " : ""}${x.year}${x.journal ? " · " + esc(x.journal) : ""}` +
-      (pmMode
-        ? `${x.pmid ? ` · [PubMed](https://pubmed.ncbi.nlm.nih.gov/${x.pmid}/)` : ""}${x.doi ? ` · [doi](${x.doi.startsWith("http") ? "" : "https://doi.org/"}${x.doi})` : ""}`
-        : `${x.doi ? ` · [doi](${"https://doi.org/"}${x.doi})` : ""}${x.pdf ? ` · [📄 OA 全文](${x.pdf})` : " · （无开放获取副本）"}`);
-    update(`# 🔍 文献检索：${q}\n\n` +
-      `## 最新（PubMed，按发表日期）\n\n${pm.length ? pm.map((x, i) => card(x, i, true)).join("\n\n") : "（无结果或网络不可达）"}\n\n` +
-      `## 相关（OpenAlex）\n\n${oa.length ? oa.map((x, i) => card(x, i, false)).join("\n\n") : "（无结果或网络不可达）"}\n\n` +
+          year: +(it.pubdate || "").slice(0, 4) || "", journal: it.source || "",
+          pmid: it.uids || it.pmid || id, doi: (it.articleids || []).find(a => a.idtype === "doi")?.value || "",
+          src: "PubMed"}));
+      } catch { return []; }
+    };
+    const oaSearch = async () => {
+      try {
+        const j = await (await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(qEn)}&per-page=8&mailto=${MAILTO}`)).json();
+        return (j.results || []).map(it => ({
+          title: it.display_name || "", author: (it.authorships?.[0]?.author?.display_name || "").split(" ").slice(-1)[0],
+          year: it.publication_year || "", journal: it.primary_location?.source?.display_name || "",
+          doi: (it.doi || "").replace("https://doi.org/", ""), pdf: it.best_oa_location?.pdf_url || "",
+          src: "OpenAlex"}));
+      } catch { return []; }
+    };
+    const epSearch = async () => {
+      try {
+        const j = await (await fetch(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(qEn)}&format=json&pageSize=10`)).json();
+        return (j.resultList?.result || []).map(it => ({
+          title: it.title || "", author: (it.authorString || "").split(",")[0]?.trim().split(" ").slice(-1)[0] || "",
+          year: it.pubYear || "", journal: it.journalTitle || "", pmid: it.pmid || "", doi: it.doi || "",
+          preprint: /RXIV|PREPRINT/i.test(it.source || ""),
+          src: it.source === "MED" ? "EuropePMC" : (it.source || "EuropePMC")}));
+      } catch { return []; }
+    };
+    const ctSearch = async () => {
+      try {
+        const j = await (await fetch(`https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(qEn)}&pageSize=5`)).json();
+        return (j.studies || []).map(s => {
+          const p = s.protocolSection || {}, id = p.identificationModule || {},
+                st = p.statusModule || {}, d = p.designModule || {};
+          return {title: id.briefTitle || "", nct: id.nctId || "", status: st.overallStatus || "",
+            phase: (d.phases || []).join("/")};
+        }).filter(x => x.nct);
+      } catch { return []; }
+    };
+    const [pm, oa, ep, ct] = await Promise.all([pmSearch(), oaSearch(), epSearch(), ctSearch()]);
+    // 去重合并（doi → pmid → 规范化标题前缀）
+    const seen = new Set(), all = [];
+    for (const x of [...pm, ...oa, ...ep]){
+      const k = x.doi || (x.pmid ? "p:" + x.pmid : "t:" + normTitle(x.title).slice(0, 60));
+      if (!x.title || seen.has(k)) continue;
+      seen.add(k); all.push(x);
+    }
+    // 第 3 步：DeepSeek 相关性判定（三值 + 理由，MedSR 式粗筛）
+    let verdict = "";
+    if (S.dskey && all.length){
+      update(`# 🔍 文献检索：${q}\n\n检索式：${qs.join(" / ")}\n\n（四源检索完成，DeepSeek 正在判定相关性…）`);
+      try {
+        verdict = await dsSearchStep(
+          `用户检索需求：「${q}」。下面是四库合并去重后的 ${all.length} 条候选文献（编号|标题|期刊|年份|来源，末列有「预印本」标记的是未同行评审版本）。逐条判定相关性：✅ 高相关（直接回答或支撑需求，附一句为什么值得读）；🟡 中相关（部分相关或背景价值）；❌ 低相关（主题偏移）。输出 markdown：按 ✅→🟡→❌ 排列的清单（编号 + 判定 + 理由，✅ 的理由必填），末尾一段「检索建议」——现有结果是否覆盖需求、要不要换角度再搜。不要复述标题全文。\n\n${all.map((x, i) => `${i + 1}|${(x.title || "").slice(0, 120)}|${x.journal || ""}|${x.year || ""}|${x.src}${x.preprint ? "|预印本" : ""}`).join("\n")}`, 2500);
+      } catch (e) { verdict = "⚠ 判定步骤失败：" + e.message + "（下面为未判定列表）"; }
+    }
+    const card = x => `**· ${esc((x.title || "").slice(0, 140))}**${x.preprint ? " 🧪预印本" : ""}\n   ${x.src}${x.author ? " · " + esc(x.author) + " et al." : ""}${x.year ? " · " + x.year : ""}${x.journal ? " · " + esc(x.journal) : ""}` +
+      `${x.pmid ? ` · [PubMed](https://pubmed.ncbi.nlm.nih.gov/${x.pmid}/)` : ""}${x.doi ? ` · [doi](https://doi.org/${x.doi})` : ""}${x.pdf ? ` · [📄 OA 全文](${x.pdf})` : ""}`;
+    update(`# 🔍 文献检索：${q}\n\n检索式：${qs.join(" / ")}\n\n` +
+      (verdict ? `## 🤖 相关性判定（DeepSeek）\n\n${verdict}\n\n---\n` : "") +
+      `## 候选文献（四源去重 ${all.length} 条）\n\n${all.length ? all.map(card).join("\n\n") : "（无结果或网络不可达）"}\n\n` +
+      (ct.length ? `## 🧪 在研试验（ClinicalTrials.gov）\n\n${ct.map(x => `**· ${esc((x.title || "").slice(0, 140))}**\n   ${x.status}${x.phase && x.phase !== "NA" ? " · " + x.phase : ""} · [${x.nct}](https://clinicaltrials.gov/study/${x.nct})`).join("\n\n")}\n\n` : "") +
       `---\n可继续追问，如"细讲第 2 篇的研究设计"（模型不联网，深读请下载 PDF 后拖入本页解读）。`);
-    persist(); toast(`🔍 检索完成：PubMed ${pm.length} 篇 · OpenAlex ${oa.length} 篇`);
+    persist(); toast(`🔍 四源检索完成：文献 ${all.length} 条 · 在研试验 ${ct.length} 项`);
   } catch (e) {
     update(`# 🔍 文献检索：${q}\n\n⚠ 中断：${e.message}`);
     persist();
@@ -2912,7 +2968,7 @@ input.addEventListener("keydown", e=>{
 
 // ---------- / 快捷指令菜单：隐藏指令（找文献/深读/引文校验/数据体检）的可见入口 ----------
 const SLASH_CMDS = [
-  {cmd: "找文献", desc: "PubMed + OpenAlex 双源检索，后接关键词", fill: "找文献 "},
+  {cmd: "找文献", desc: "一条命令：检索式生成 → 四源检索 → 相关性判定（需 DeepSeek Key）", fill: "找文献 "},
   {cmd: "深读", desc: "图表逐张多模态解读，如「深读 图1,3 表2」（本地限定）", fill: "深读 "},
   {cmd: "证据提取", desc: "RCT/Meta 按 PICOS+偏倚提取证据，结果存项目笔记", paper: EXTRACT_RCT, label: "证据提取"},
   {cmd: "观点提取", desc: "论著 7 维度提取观点与数据，结果存项目笔记", paper: EXTRACT_VIEW, label: "观点提取"},

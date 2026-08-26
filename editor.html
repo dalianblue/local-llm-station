@@ -741,7 +741,10 @@ const EDIT_RULES = `
 // 章节读取协议：常驻 persona（感知工具，不依赖改稿开关）
 const READ_RULES = `
 - 你可以查看任意章节：需要引用或修改非当前章节而上下文里没有其全文时，输出单独一行 \`\`\`read 章节标题（标题照大纲写），系统会载入该章节全文并自动继续任务；不要凭记忆猜测章节内容`;
-let readChain = 0;   // read 自动续跑链深度（用户发言复位，上限 2 防递归）
+let readChain = 0;   // read/search 自动续跑链深度（用户发言复位，上限 2 防递归）
+// 文献检索协议：常驻 persona（联网感知工具；判定走 DeepSeek，无 Key 退化为不判定）
+const SEARCH_RULES = `
+- 你可以联网检索文献：用户要求「找文献支持／补充文献／找证据／查查有没有类似研究」时，输出单独一行 \`\`\`search 检索需求（提炼出的检索主题，可中文），系统会多库检索（PubMed／OpenAlex／Europe PMC／ClinicalTrials.gov）并判定相关性后自动继续——你只能引用检索结果中列出的文献，严禁编造结果里没有的文献`;
 
 let memory = [];
 try { memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]"); } catch {}
@@ -1338,6 +1341,96 @@ $("#refin").addEventListener("input", () => {
   refSaveT = setTimeout(() => { refData.in = $("#refin").value; saveRefcheck(); }, 1000);
 });
 $("#refgo").onclick = runRefCheck;
+
+// ---------- 🔍 search 块流水线：DeepSeek 检索式 + 四源检索 + DeepSeek 判定（与 chat.html litSearch 同一套） ----------
+async function dsSearchStep(content, maxTokens){
+  const r = await fetch(DEEPSEEK_API, {method: "POST",
+    headers: {"Content-Type": "application/json", Authorization: "Bearer " + S.dskey},
+    body: JSON.stringify({model: "deepseek-chat", messages: [{role: "user", content}],
+      stream: false, temperature: 0.2, max_tokens: maxTokens})});
+  if (!r.ok) throw new Error("DeepSeek API " + r.status);
+  return (await r.json()).choices?.[0]?.message?.content || "";
+}
+async function runSearch(q, progress){
+  let qs = [q];
+  if (S.dskey){
+    progress("正在构造检索式（DeepSeek）…");
+    try {
+      const raw = await dsSearchStep(
+        `把下面的文献检索需求转成两条英文检索式（PubMed 风格：主题词 + 同义词，OR 连接，每条是一个完整查询字符串；两条各有侧重，如一条偏干预/技术、一条偏结局/人群）。只输出 JSON：{"qs": ["检索式一", "检索式二"]}，不要输出其他文字。\n需求：${q}`, 600);
+      const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || [, "{}"])[1]);
+      if (Array.isArray(j.qs) && j.qs.filter(Boolean).length) qs = j.qs.filter(Boolean).slice(0, 2);
+    } catch {}
+  }
+  const qEn = qs[0];
+  progress(`检索式：${qs.join(" / ")}——正在检索 PubMed / OpenAlex / Europe PMC / ClinicalTrials.gov…`);
+  const pmSearch = async () => {
+    try {
+      await pmGap();
+      const j = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=8&sort=pub_date&term=${encodeURIComponent(qEn)}`)).json();
+      const ids = j.esearchresult?.idlist || [];
+      if (!ids.length) return [];
+      await pmGap();
+      const s = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=${ids.join(",")}`)).json();
+      return ids.map(id => s.result?.[id]).filter(Boolean).map(it => ({
+        title: it.title || "", author: (it.authors?.[0]?.name || "").split(" ").slice(-1)[0],
+        year: +(it.pubdate || "").slice(0, 4) || "", journal: it.source || "",
+        pmid: it.uids || it.pmid || id, doi: (it.articleids || []).find(a => a.idtype === "doi")?.value || "",
+        src: "PubMed"}));
+    } catch { return []; }
+  };
+  const oaSearch = async () => {
+    try {
+      const j = await (await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(qEn)}&per-page=8&mailto=${MAILTO}`)).json();
+      return (j.results || []).map(it => ({
+        title: it.display_name || "", author: (it.authorships?.[0]?.author?.display_name || "").split(" ").slice(-1)[0],
+        year: it.publication_year || "", journal: it.primary_location?.source?.display_name || "",
+        doi: (it.doi || "").replace("https://doi.org/", ""), pdf: it.best_oa_location?.pdf_url || "",
+        src: "OpenAlex"}));
+    } catch { return []; }
+  };
+  const epSearch = async () => {
+    try {
+      const j = await (await fetch(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(qEn)}&format=json&pageSize=10`)).json();
+      return (j.resultList?.result || []).map(it => ({
+        title: it.title || "", author: (it.authorString || "").split(",")[0]?.trim().split(" ").slice(-1)[0] || "",
+        year: it.pubYear || "", journal: it.journalTitle || "", pmid: it.pmid || "", doi: it.doi || "",
+        preprint: /RXIV|PREPRINT/i.test(it.source || ""),
+        src: it.source === "MED" ? "EuropePMC" : (it.source || "EuropePMC")}));
+    } catch { return []; }
+  };
+  const ctSearch = async () => {
+    try {
+      const j = await (await fetch(`https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(qEn)}&pageSize=5`)).json();
+      return (j.studies || []).map(s => {
+        const p = s.protocolSection || {}, id = p.identificationModule || {},
+              st = p.statusModule || {}, d = p.designModule || {};
+        return {title: id.briefTitle || "", nct: id.nctId || "", status: st.overallStatus || "",
+          phase: (d.phases || []).join("/")};
+      }).filter(x => x.nct);
+    } catch { return []; }
+  };
+  const [pm, oa, ep, ct] = await Promise.all([pmSearch(), oaSearch(), epSearch(), ctSearch()]);
+  const seen = new Set(), all = [];
+  for (const x of [...pm, ...oa, ...ep]){
+    const k = x.doi || (x.pmid ? "p:" + x.pmid : "t:" + normTitle(x.title).slice(0, 60));
+    if (!x.title || seen.has(k)) continue;
+    seen.add(k); all.push(x);
+  }
+  let verdict = "";
+  if (S.dskey && all.length){
+    progress(`四源完成（去重 ${all.length} 条），正在判定相关性（DeepSeek）…`);
+    try {
+      verdict = await dsSearchStep(
+        `用户检索需求：「${q}」。下面是四库合并去重后的 ${all.length} 条候选文献（编号|标题|期刊|年份|来源，末列有「预印本」标记的是未同行评审版本）。逐条判定相关性：✅ 高相关（直接回答或支撑需求，附一句为什么值得读）；🟡 中相关（部分相关或背景价值）；❌ 低相关（主题偏移）。输出 markdown：按 ✅→🟡→❌ 排列的清单（编号 + 判定 + 理由，✅ 的理由必填），末尾一段「检索建议」。不要复述标题全文。\n\n${all.map((x, i) => `${i + 1}|${(x.title || "").slice(0, 120)}|${x.journal || ""}|${x.year || ""}|${x.src}${x.preprint ? "|预印本" : ""}`).join("\n")}`, 2500);
+    } catch (e) { verdict = "⚠ 判定步骤失败：" + e.message + "（下面为未判定列表）"; }
+  }
+  const card = x => `**· ${esc((x.title || "").slice(0, 140))}**${x.preprint ? " 🧪预印本" : ""}\n   ${x.src}${x.author ? " · " + esc(x.author) + " et al." : ""}${x.year ? " · " + x.year : ""}${x.journal ? " · " + esc(x.journal) : ""}` +
+    `${x.pmid ? ` · [PubMed](https://pubmed.ncbi.nlm.nih.gov/${x.pmid}/)` : ""}${x.doi ? ` · [doi](https://doi.org/${x.doi})` : ""}${x.pdf ? ` · [📄 OA 全文](${x.pdf})` : ""}`;
+  return (verdict ? `## 🤖 相关性判定（DeepSeek）\n\n${verdict}\n\n---\n` : "")
+    + `## 候选文献（四源去重 ${all.length} 条）\n\n${all.length ? all.map(card).join("\n\n") : "（无结果或网络不可达）"}\n\n`
+    + (ct.length ? `## 🧪 在研试验（ClinicalTrials.gov）\n\n${ct.map(x => `**· ${esc((x.title || "").slice(0, 140))}**\n   ${x.status}${x.phase && x.phase !== "NA" ? " · " + x.phase : ""} · [${x.nct}](https://clinicaltrials.gov/study/${x.nct})`).join("\n\n")}\n\n` : "");
+}
 
 // 防抖保存：调度时快照目标与内容，防抖期间切章节不写错文件
 let saveTimer = null, saveReq = 0;
@@ -2750,7 +2843,7 @@ function buildEditorHistory(){
   if (memory.length)
     sys.push("[用户长期记忆——跨对话记住的用户信息，自然使用即可，不必逐条复述]\n"
       + memory.map(m => "- " + m.text).join("\n"));
-  sys.push(EDITOR_PERSONA + READ_RULES + (editMode ? EDIT_RULES : ""));
+  sys.push(EDITOR_PERSONA + READ_RULES + SEARCH_RULES + (editMode ? EDIT_RULES : ""));
   sys.push("[当前文档大纲]\n" + ED.sections.map((s, i) =>
     `${i + 1}. ${s.title}（${wc(s.md).toLocaleString()} 字）${i === ED.cur ? " ← 当前章节" : ""}`).join("\n"));
   // 引文键清单：AI 写正文时用 [@key] 标注引用，前端渲染为编号引文
@@ -2850,7 +2943,7 @@ async function generate(noThink, noRetry, forceThink){
         thinkBox = bb.querySelector(".think-block");
   const am = {role: "assistant", text: "", ts: Date.now()};
   let lastPaint = 0, answer = "", thinking = "", inThink = false, usage = null;
-  let reads = [];   // read 块请求的章节标题（try 内填充，尾部续跑消费）
+  let reads = [], searches = [];   // read/search 块请求（try 内填充，尾部续跑消费）
   const t0 = performance.now();
   let ttft = null, genTokens = 0, loopHit = false, lastLoopChk = 0;
   ctrl = new AbortController();
@@ -2934,9 +3027,11 @@ async function generate(noThink, noRetry, forceThink){
     }
     // oMLX 思考泄漏：content 与 reasoning 逐字相同（omlx#3129），按思考兜底渲染
     if (answer && thinking && answer === thinking) answer = "";
-    // read 块消费：模型请求查看章节，渲染前剥掉协议行（全文注入在 generate 尾部）
-    if (answer)
-      answer = answer.replace(/^```read[ \t]+(.+?)[ \t]*$/gm, (_, t) => { reads.push(t.trim()); return ""; });
+    // read/search 块消费：渲染前剥掉协议行（上下文注入在 generate 尾部）
+    if (answer){
+      answer = answer.replace(/^```read[ \t]+(.+?)[ \t]*$/gm, (_, t) => { reads.push(t.trim()); return ""; })
+                     .replace(/^```search[ \t]+(.+?)[ \t]*$/gm, (_, t) => { searches.push(t.trim()); return ""; });
+    }
     am.text = answer || thinking || "（空响应）";
     // 答案困在思考通道时思考已充当正文，不入 think 字段（防重渲双显）
     am.think = answer ? (thinking || undefined) : undefined;
@@ -3001,18 +3096,36 @@ async function generate(noThink, noRetry, forceThink){
   scrollBottom();
   persistEditor();
   extractMemory();
-  // read 块续跑：载入模型请求的章节并自动继续（链上限 2 跳，防失控递归）
-  if (reads.length && ++readChain <= 2){
+  // read/search 块续跑：载入请求的上下文并自动继续（链上限 2 跳，防失控递归）
+  if ((reads.length || searches.length) && ++readChain <= 2){
     const cur2 = ED.sections[ED.cur];
     const secs = [...new Set(reads)]
       .map(t => ED.sections.find(s => s.title === t) || ED.sections.find(s => !s.bad && s.title.includes(t)))
       .filter(s => s && s !== cur2);
+    let injected = false;
     if (secs.length){
       const um = {role: "user", sys: true, ts: Date.now(),
         text: "（系统已按你的请求载入章节全文，请继续刚才的任务）\n" + secs.map(s =>
           `[《${s.title}》章节全文开始]\n${(s.md || "").slice(0, 12000) || "（空章节）"}\n[全文结束]`).join("\n\n")};
       ED.chat.push(um);
       appendMsg(um);
+      injected = true;
+    }
+    if (searches.length){
+      const um = {role: "user", sys: true, ts: Date.now(), text: "（系统：正在检索文献…）"};
+      ED.chat.push(um);
+      appendMsg(um);
+      injected = true;
+      busy = true;
+      try {
+        const res = await runSearch(searches.join("；"), t => { um.text = "（系统：正在检索文献）\n" + t; renderChat(); });
+        um.text = "（系统检索完成——以下为多库检索与相关性判定结果，只能引用其中列出的文献。请继续刚才的任务）\n" + res;
+      } catch (e) {
+        um.text = `（系统：检索失败——${e.message}）`;
+      } finally { busy = false; }
+      renderChat();
+    }
+    if (injected){
       persistEditor();
       scrollBottom(true);
       setTimeout(() => generate(noThink, true), 50);

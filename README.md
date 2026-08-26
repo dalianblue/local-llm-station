@@ -19,9 +19,10 @@
 - **读进来**：上传 PDF，本地提取全文 + 图表位图 + 图内文字 OCR（扫描版自动整页 OCR），PDF 不出本机
 - **读得懂**：背景/方法/结果/讨论四段解读；图表本地多模态深读；追问走缓存秒回
 - **带得走**：🎨 一图总结海报 PNG · 📊 五段批判性框架汇报 PPT（可编辑 .pptx，逐图页 + 讲稿）
-- **写得顺**：✍️ 写作台分章节写作，[@键] 引文、版本快照、AI 回复一键插入，导出 HTML / Word（引文样式可选）
+- **写得顺**：✍️ 写作台分章节写作，[@键] 引文、版本快照、AI 回复一键插入，导出 HTML / Word（引文样式可选）；写作助手可跨章节直接改稿、整章写入新章节（说「保存到××文件」即可），内置参考文献快速验证页（逐条查证 + Vancouver 格式化，不进导出）
 - **修得回**：📮 投稿标记 → 收到审稿意见一键 fork 修稿版 → 意见逐条结构化（状态追踪 + Response 草稿）→ 🏥 落地体检防"信里说改了稿里没改" → 导出 point-by-point 回复信 + 🖍 高亮修改稿 Word（参考文献不标）
-- **讨得深**：数据体检（GRIM 等确定性检验）· 引文校验 · 文献检索 · 文献库（BibTeX/RIS 互通 Zotero/EndNote）
+- **查得准**：🔬 文献检索一条命令——DeepSeek 生成检索式 → 四源并行（PubMed / OpenAlex / Europe PMC 含预印本 / ClinicalTrials.gov 在研试验）→ 去重 → DeepSeek 逐条相关性判定（✅/🟡/❌ + 理由）；写作助手里说「给这段找点文献支持」同样触发
+- **讨得深**：数据体检（GRIM 等确定性检验）· 引文校验 · 文献库（BibTeX/RIS 互通 Zotero/EndNote）
 
 完整功能清单、实现边界与配置细节见 **[docs/features.md](docs/features.md)**。
 
@@ -170,7 +171,9 @@ LocalLLMServer-oMLX.app（宿主进程）
 ## 致谢
 
 - [Crossref](https://www.crossref.org) / [OpenAlex](https://openalex.org)——引文校验使用的两个免费公开学术元数据 API（排序而非生成，零幻觉查证）
+- [Europe PMC](https://europepmc.org) / [PubMed E-utilities](https://www.ncbi.nlm.nih.gov/books/NBK25501/) / [ClinicalTrials.gov API v2](https://clinicaltrials.gov/data-api/api)——文献检索四源中的三个免费公开 API（Europe PMC 兼覆盖 medRxiv/bioRxiv 预印本）
 - [PaSaMaster: Towards Self-Evolving Agentic Literature Retrieval (arXiv:2605.14306)](https://arxiv.org/abs/2605.14306)——引文校验"查证走数据库排序比对、绝不让模型凭记忆生成"的架构借鉴自它
+- [A PRISMA-Aligned Agentic Framework for Medical Systematic Reviews (medRxiv)](https://www.medrxiv.org/content/10.64898/2026.07.30.26359375v2)——文献检索"逐条三值相关性判定（✅/🟡/❌ + 理由）"的粗筛设计参考自它的分级筛选机制
 - [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)——本项目的"本地宿主进程执行文件操作、浏览器只做纯 UI"分层架构借鉴自它
 - [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)——推理引擎
 - [unsloth](https://unsloth.ai)——高质量动态量化 GGUF
