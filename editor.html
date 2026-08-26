@@ -730,13 +730,18 @@ const EDIT_RULES = `
   - 原文片段必须从正文逐字复制（含标点与换行），并足以在正文中唯一定位；正文里不存在的文字（包括「（空章节）」「（无原文）」这类占位符）绝不能当原文片段用
   - 一次可输出多个 edit 块，各块独立应用；块外只写简短说明，不要复述修改后的全文
   - 用户要求修改其他章节（非当前章节）时同样用 edit 块，原文片段从该章节逐字复制，系统会自动定位并应用到对应章节；若你的上下文中没有该章节全文，先请用户切换到该章节，不要凭记忆编造原文片段
-  - 章节为空或整体重写（无原文可锚定）时一律用整章写入块：\`\`\`edit 章节标题 后换行直接写该章节全文，系统会定位该章节并整体替换其内容——写入块不需要你先看到该章节全文，章节标题照大纲写即可，非当前章节也能直接写。示例（向「回复意见」章节写入全文）：
+  - 章节为空或整体重写（无原文可锚定）时一律用整章写入块：\`\`\`edit 章节标题 后换行直接写该章节全文，系统会定位该章节并整体替换其内容（章节不存在时自动新建章节并写入）；写入块不需要你先看到该章节全文，非当前章节也能直接写。用户说「保存到/写到某文件」而该章节不存在时，直接用写入块新建。示例（向「回复意见」章节写入全文）：
 \`\`\`edit 回复意见
 （该章节的完整新全文）
 \`\`\`
   - 用户说「直接写到/写入/填到某章节」时用 edit 块或整章写入块完成——你可以直接写章节文件，不要回答无法写文件，也不要让用户手动复制粘贴
   - 只改被要求修改的地方，原文片段以外的内容一个字都不要动
   - 答疑、查证、审稿/检查报告等非改稿回复不要用 edit 块；用户说「不要直接改」时只输出建议文字`;
+
+// 章节读取协议：常驻 persona（感知工具，不依赖改稿开关）
+const READ_RULES = `
+- 你可以查看任意章节：需要引用或修改非当前章节而上下文里没有其全文时，输出单独一行 \`\`\`read 章节标题（标题照大纲写），系统会载入该章节全文并自动继续任务；不要凭记忆猜测章节内容`;
+let readChain = 0;   // read 自动续跑链深度（用户发言复位，上限 2 防递归）
 
 let memory = [];
 try { memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]"); } catch {}
@@ -2635,7 +2640,7 @@ async function applyEditBlocks(am){
   };
   const findSec = t => ED.sections.find(s => s.title === t)
     || ED.sections.find(s => !s.bad && s.title.includes(t));
-  let snapped = false, ok = 0; const perSec = {};
+  let snapped = false, ok = 0; const perSec = {}, created = [];
   const ensureSnap = async () => {
     if (snapped) return;
     snapped = true;
@@ -2649,8 +2654,15 @@ async function applyEditBlocks(am){
     if (b.edit && PLACEHOLDER_RE.test((b.old || "").trim()) && !ta.value.trim())
       b = {write: true, to: cur.title, neu: b.neu};
     if (b.write){
-      const sec = findSec(b.to);
-      if (!sec){ am.edits.push({...b, fail: `未找到章节「${b.to}」`}); continue; }
+      let sec = findSec(b.to);
+      if (!sec){   // 未找到即新建：写入块天然兼任建章节工具（快照在前，可删可恢复）
+        await ensureSnap();
+        sec = {id: secGen(), title: b.to, file: "", archetype: null, md: ""};
+        sec.file = `sec-${sec.id}.md`;
+        ED.sections.push(sec);
+        persistEditor();
+        created.push(sec.title);
+      }
       await ensureSnap();
       if (sec === cur){
         ta.focus();
@@ -2685,9 +2697,11 @@ async function applyEditBlocks(am){
   }
   if (ok){
     saveSection(); updateOutline(); updateStatusBar();
+    if (created.length) renderTabs();
     const bad = am.edits.length - ok;
     const cross = Object.entries(perSec).map(([t, n]) => `《${t}》${n} 处`).join("、");
     toast(`✏️ 已直接修改 ${ok} 处（⌘Z 可逐步撤销）`
+      + (created.length ? `；新建章节：${created.map(t => "「" + t + "」").join("")}` : "")
       + (cross ? `；其他章节：${cross}（已自动快照，⌘Z 不含这些，可从历史版本恢复）` : "")
       + (bad ? `，${bad} 处未匹配` : ""));
   } else {
@@ -2736,7 +2750,7 @@ function buildEditorHistory(){
   if (memory.length)
     sys.push("[用户长期记忆——跨对话记住的用户信息，自然使用即可，不必逐条复述]\n"
       + memory.map(m => "- " + m.text).join("\n"));
-  sys.push(EDITOR_PERSONA + (editMode ? EDIT_RULES : ""));
+  sys.push(EDITOR_PERSONA + READ_RULES + (editMode ? EDIT_RULES : ""));
   sys.push("[当前文档大纲]\n" + ED.sections.map((s, i) =>
     `${i + 1}. ${s.title}（${wc(s.md).toLocaleString()} 字）${i === ED.cur ? " ← 当前章节" : ""}`).join("\n"));
   // 引文键清单：AI 写正文时用 [@key] 标注引用，前端渲染为编号引文
@@ -2775,7 +2789,24 @@ function buildEditorHistory(){
       `[聊天记录纪要开始（我在本项目「聊聊文献」里与 AI 的讨论，供了解研究背景；其中「这篇文章/该文献」多指所讨论的文献而非我的草稿）]\n`
       + clip.join("\n") + "\n[纪要结束]"});
   }
-  const msgs = ED.chat.slice(-20).map(m => ({role: m.role, content: m.text}));
+  const msgs = ED.chat.slice(-20).map(m => {
+    const c = {role: m.role, content: m.text};
+    // edit 结果回流：失败原因与写入目标附给模型，供下轮自我纠错（见 kb/features.md）
+    if (m.role === "assistant" && m.edits?.length){
+      const bad = [], wrote = [];
+      m.edits.forEach((e, k) => {
+        if (e.fail) bad.push(`第${k + 1}块 ${e.fail}`);
+        else if (e.write) wrote.push(`《${e.sec || e.to}》`);
+      });
+      if (bad.length || wrote.length){
+        const bits = [];
+        if (wrote.length) bits.push("已写入 " + wrote.join(""));
+        if (bad.length) bits.push("失败：" + bad.join("；") + "——请修正原文片段（逐字复制）或改用整章写入块重新给出");
+        c.content += `\n\n（系统通知·修改应用结果：${bits.join("；")}）`;
+      }
+    }
+    return c;
+  });
   // 点名章节注入：末条用户消息提到其他章节标题时，该章节实时全文拼进该条消息
   //（agent 式定位——模型看得见目标文件才敢直接改；尾部拼接，前缀缓存友好）
   const lu = msgs.length && msgs[msgs.length - 1].role === "user" ? msgs[msgs.length - 1] : null;
@@ -2791,6 +2822,7 @@ function buildEditorHistory(){
 async function send(text){
   text = (text ?? input.value).trim();
   if (!text || busy || !ED.sections.length) return;
+  readChain = 0;   // 用户亲自发言：read 自动续跑链复位
   flushSave();
   const um = {role: "user", text, ts: Date.now()};
   ED.chat.push(um);
@@ -2818,6 +2850,7 @@ async function generate(noThink, noRetry, forceThink){
         thinkBox = bb.querySelector(".think-block");
   const am = {role: "assistant", text: "", ts: Date.now()};
   let lastPaint = 0, answer = "", thinking = "", inThink = false, usage = null;
+  let reads = [];   // read 块请求的章节标题（try 内填充，尾部续跑消费）
   const t0 = performance.now();
   let ttft = null, genTokens = 0, loopHit = false, lastLoopChk = 0;
   ctrl = new AbortController();
@@ -2901,6 +2934,9 @@ async function generate(noThink, noRetry, forceThink){
     }
     // oMLX 思考泄漏：content 与 reasoning 逐字相同（omlx#3129），按思考兜底渲染
     if (answer && thinking && answer === thinking) answer = "";
+    // read 块消费：模型请求查看章节，渲染前剥掉协议行（全文注入在 generate 尾部）
+    if (answer)
+      answer = answer.replace(/^```read[ \t]+(.+?)[ \t]*$/gm, (_, t) => { reads.push(t.trim()); return ""; });
     am.text = answer || thinking || "（空响应）";
     // 答案困在思考通道时思考已充当正文，不入 think 字段（防重渲双显）
     am.think = answer ? (thinking || undefined) : undefined;
@@ -2965,6 +3001,23 @@ async function generate(noThink, noRetry, forceThink){
   scrollBottom();
   persistEditor();
   extractMemory();
+  // read 块续跑：载入模型请求的章节并自动继续（链上限 2 跳，防失控递归）
+  if (reads.length && ++readChain <= 2){
+    const cur2 = ED.sections[ED.cur];
+    const secs = [...new Set(reads)]
+      .map(t => ED.sections.find(s => s.title === t) || ED.sections.find(s => !s.bad && s.title.includes(t)))
+      .filter(s => s && s !== cur2);
+    if (secs.length){
+      const um = {role: "user", sys: true, ts: Date.now(),
+        text: "（系统已按你的请求载入章节全文，请继续刚才的任务）\n" + secs.map(s =>
+          `[《${s.title}》章节全文开始]\n${(s.md || "").slice(0, 12000) || "（空章节）"}\n[全文结束]`).join("\n\n")};
+      ED.chat.push(um);
+      appendMsg(um);
+      persistEditor();
+      scrollBottom(true);
+      setTimeout(() => generate(noThink, true), 50);
+    }
+  }
 }
 
 // 回复完成后后台提取记忆（与 chat.html 共享记忆库）
