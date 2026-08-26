@@ -83,7 +83,6 @@
   /* 右栏变窄（拖拽或小窗）：按钮只留图标、藏标题文字与提示语、下拉收缩 */
   @container (max-width: 360px) {
     #bar .lbl, #chathead .tlabel { display: none; }
-    #bar .hint { display: none; }
     #chathead select { max-width: 92px; text-overflow: ellipsis; }
   }
   .pane { display: flex; flex-direction: column; min-height: 0; }
@@ -217,6 +216,11 @@
     margin-left: auto; background: var(--bg); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 3px 6px; font-size: 12px;
   }
+  #chathead #editbtn {
+    background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
+    font-size: 12px; font-weight: 400; padding: 3px 8px; cursor: pointer;
+  }
+  #chathead #editbtn.on { color: var(--accent); border-color: var(--accent); }
   #chatlog { flex: 1; overflow-y: auto; padding: 16px 0; }
   #chatlog .wrap { max-width: 100%; padding: 0 14px; }
   .msg { margin-bottom: 20px; display: flex; gap: 10px; position: relative; animation: msgin .18s ease-out; }
@@ -300,17 +304,16 @@
   #p { width: 100%; background: none; border: none; outline: none; color: var(--text);
        font: inherit; resize: none; }
   #bar { display: flex; align-items: center; gap: 8px; margin-top: 4; }
-  #bar .hint { font-size: 11.5px; color: var(--dim); margin-right: auto; }
   #send, #stopbtn {
     background: var(--accent); color: #fff; border: none; border-radius: 7px;
     padding: 5px 16px; font-size: 13px; cursor: pointer;
   }
-  #stopbtn { background: #f85149; display: none; }
-  #attbtn, #draftbtn, #genbtn, #histbtn, #editbtn {
+  #stopbtn { background: #f85149; display: none; margin-left: auto; }
+  #attbtn, #draftbtn, #genbtn, #histbtn {
     background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
     font-size: 12px; padding: 3px 8px; cursor: pointer;
   }
-  #attbtn.on, #draftbtn.on, #histbtn.on, #editbtn.on { color: var(--accent); border-color: var(--accent); }
+  #attbtn.on, #draftbtn.on, #histbtn.on { color: var(--accent); border-color: var(--accent); }
   #genbtn { color: var(--accent); }
   /* 选中文字浮动工具条：跟随选区（mouseup 定位，键盘选择按行估算） */
   #selbar {
@@ -512,13 +515,14 @@
         <option value="exact">🎯 精确</option>
         <option value="chat">💬 日常</option>
       </select>
+      <button id="editbtn" class="off" title="改稿模式：AI 的修改以 edit 块直接应用到当前章节（应用前自动快照，⌘Z 可撤销）">✏️ <span class="tlabel">让AI直接改稿</span></button>
       <button class="hbtn foldbtn" id="foldright" title="展开/折叠右栏">»</button>
     </div>
     <div id="chatlog"><div class="wrap" id="msgs"></div></div>
     <div id="ctxbar"><span id="ctxtext">上下文：读取中…</span><div id="ctxtrack"><div id="ctxfill"></div></div></div>
     <div id="inputbox">
       <div id="inpgrip" title="拖动调整输入框高度（双击复位）"></div>
-      <textarea id="p" rows="1" placeholder="问当前章节的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+      <textarea id="p" rows="1" placeholder="问当前章节的问题…（Enter 发送，Shift+Enter 换行；AI 回答可一键插入正文）"></textarea>
       <div id="bar">
         <button id="genbtn" title="按本章节大纲生成初稿（依据：附文献/全文草稿/引文键清单）">✨ <span class="lbl">初稿</span></button>
         <button id="chkbtn" title="跨章节逻辑一致性检查：结果—讨论呼应、术语与数据一致（自动附全文草稿）">🧭 <span class="lbl">检查</span></button>
@@ -533,10 +537,7 @@
         </div>
         <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
         <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
-        <button id="histbtn" class="off" title="把本项目「聊聊文献」里的讨论记录带给论文助手（最近 15 条，截断纪要）">💬 <span class="lbl">聊天记录</span></button>
-        <button id="editbtn" class="off" title="改稿模式：AI 的修改以 edit 块直接应用到当前章节（应用前自动快照，⌘Z 可撤销）">✏️ <span class="lbl">改稿</span></button>
-        <span class="hint">AI 回答可一键插入正文</span>
-        <button id="stopbtn" title="停止生成">■ <span class="lbl">停止</span></button>
+        <button id="histbtn" class="off" title="把本项目「聊聊文献」里的讨论记录带给论文助手（最近 15 条，截断纪要）">💬 <span class="lbl">聊天记录</span></button>        <button id="stopbtn" title="停止生成">■ <span class="lbl">停止</span></button>
         <button id="send">发送</button>
       </div>
     </div>
@@ -691,22 +692,25 @@ const BOUNDARY_RULES = `[能力边界规范——基于本机 benchmark 实测�
 
 const EDITOR_PERSONA = `你是本地写作台的科研写作助手，正在协助用户撰写论文/研究方案。
 原则：
-- 只建议、不擅自改动——你的输出由用户确认后才插入正文
-- 润色/扩写/缩写/改写类请求：直接输出可以整段插入正文的成段中文（Markdown），不要写「以下是修改后的段落」之类的引导语，不要重复原文未改动的部分
+- 新增内容（初稿、扩写整段等）直接输出成段中文（Markdown）插入正文，不要写「以下是修改后的段落」之类的引导语，不要重复原文未改动的部分
 - 讨论/问答/查证类请求：正常回答，结论先行
 - 用户引用的知识卡片内容可作为事实来源，但与当前章节冲突时要指出
 - 上下文中附有文献全文时，引用其中的具体数据要注明出自哪篇文献；文献与用户表述冲突时指出
 - 需要参考其他章节内容时，明确说「请切换到某章节再问」，不要凭空猜测其他章节内容
 - 写正文引用文献时用 [@引文键] 标注（如 [@r1abc]），不要手写编号——前端自动编号并列参考文献；引文键清单见上下文`;
 
-// 改稿模式协议：按需注入当轮 user 消息（见 kb/features.md · 改稿模式）
-const EDIT_PROTOCOL = "[改稿模式] 本轮你可以直接修改我的正文。修改用 edit 块表达，格式严格如下（```edit 围栏，中间单独一行 ---）：\n"
-  + "```edit\n（原文片段）\n---\n（替换后的文本）\n```\n"
-  + "规则：\n"
-  + "- 原文片段必须从正文逐字复制（含标点与换行），并足以在正文中唯一定位\n"
-  + "- 一次可输出多个 edit 块，各块独立应用；块外只写简短说明，不要复述修改后的全文\n"
-  + "- 只改被要求修改的地方，原文片段以外的内容一个字都不要动\n"
-  + "- 本规则优先于系统提示中「只建议、不擅自改动」";
+// 直接改稿协议：随 persona 动态拼接（默认开，全局持久化关闭）
+const EDIT_RULES = `
+- 你可以直接修改我的正文：修改用 edit 块表达，格式严格如下（\`\`\`edit 围栏，中间单独一行 ---）：
+\`\`\`edit
+（原文片段）
+---
+（替换后的文本）
+\`\`\`
+  - 原文片段必须从正文逐字复制（含标点与换行），并足以在正文中唯一定位
+  - 一次可输出多个 edit 块，各块独立应用；块外只写简短说明，不要复述修改后的全文
+  - 只改被要求修改的地方，原文片段以外的内容一个字都不要动
+  - 答疑、查证、审稿/检查报告等非改稿回复不要用 edit 块；用户说「不要直接改」时只输出建议文字`;
 
 let memory = [];
 try { memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]"); } catch {}
@@ -2378,6 +2382,7 @@ function findEdit(hay, old){
   return null;
 }
 async function applyEditBlocks(am){
+  if (!editMode) return;
   const blocks = splitEdits(am.text || "").filter(s => s.edit);
   if (!blocks.length) return;
   const ta = $("#secmd");
@@ -2446,7 +2451,7 @@ function buildEditorHistory(){
   if (memory.length)
     sys.push("[用户长期记忆——跨对话记住的用户信息，自然使用即可，不必逐条复述]\n"
       + memory.map(m => "- " + m.text).join("\n"));
-  sys.push(EDITOR_PERSONA);
+  sys.push(EDITOR_PERSONA + (editMode ? EDIT_RULES : ""));
   sys.push("[当前文档大纲]\n" + ED.sections.map((s, i) =>
     `${i + 1}. ${s.title}（${wc(s.md).toLocaleString()} 字）${i === ED.cur ? " ← 当前章节" : ""}`).join("\n"));
   // 引文键清单：AI 写正文时用 [@key] 标注引用，前端渲染为编号引文
@@ -2485,16 +2490,14 @@ function buildEditorHistory(){
       `[聊天记录纪要开始（我在本项目「聊聊文献」里与 AI 的讨论，供了解研究背景；其中「这篇文章/该文献」多指所讨论的文献而非我的草稿）]\n`
       + clip.join("\n") + "\n[纪要结束]"});
   }
-  for (const m of ED.chat.slice(-20))
-    h.push({role: m.role, content: m.edit && m.role === "user" ? EDIT_PROTOCOL + "\n\n" + m.text : m.text});
+  for (const m of ED.chat.slice(-20)) h.push({role: m.role, content: m.text});
   return h;
 }
-async function send(text, edit){
+async function send(text){
   text = (text ?? input.value).trim();
   if (!text || busy || !ED.sections.length) return;
   flushSave();
   const um = {role: "user", text, ts: Date.now()};
-  if (edit) um.edit = true;
   ED.chat.push(um);
   appendMsg(um);
   input.value = ""; fitInputH();
@@ -2704,20 +2707,25 @@ async function extractMemory(){
 }
 
 // ---------- 事件绑定 ----------
-// 改稿模式开关（会话级，不持久化）
-let editMode = false;
+// 直接改稿默认开启；关闭状态全局持久化（关一次，以后都关）
+let editMode = localStorage.getItem("editor_edit_direct") !== "off";
+function syncEditBtn(){
+  $("#editbtn").classList.toggle("on", editMode);
+  $("#editbtn").querySelector(".tlabel").textContent = editMode ? "直接改稿中" : "让AI直接改稿";
+}
 $("#editbtn").onclick = () => {
   editMode = !editMode;
-  $("#editbtn").classList.toggle("on", editMode);
-  $("#editbtn").querySelector(".lbl").textContent = editMode ? "改稿中" : "改稿";
+  localStorage.setItem("editor_edit_direct", editMode ? "on" : "off");
+  syncEditBtn();
   toast(editMode
-    ? "✏️ 改稿模式：发送的消息里，AI 的修改将直接应用到当前章节（自动快照，⌘Z 可撤销）"
-    : "已退出改稿模式");
+    ? "✏️ 改稿模式：AI 的修改将直接应用到当前章节（自动快照，⌘Z 可撤销）"
+    : "已关闭直接改稿——AI 回复恢复为「插入到光标处」手动应用");
 };
-$("#send").onclick = () => send(null, editMode);
+syncEditBtn();
+$("#send").onclick = () => send();
 $("#stopbtn").onclick = () => ctrl?.abort();
 input.addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(null, editMode); }
+  if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }
 });
 input.addEventListener("input", () => {
   input.style.height = "auto";
@@ -2771,7 +2779,7 @@ selbar.addEventListener("click", e => {
       + "找不到的直接说明，禁止编造文献内容。\n\n论断：「" + sel + "」");
     return;
   }
-  send(`请${op}以下选中的文字，输出一个 edit 块（原文片段必须与下面选中的文字逐字一致）：\n\n${sel}`, true);
+  send(`请${op}以下选中的文字，输出一个 edit 块（原文片段必须与下面选中的文字逐字一致）：\n\n${sel}`);
 });
 // 点工具条与编辑区以外任意处收起（mouseup→click 顺序：编辑区自己的显隐交给 mouseup 处理）
 document.addEventListener("click", e => {
