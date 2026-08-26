@@ -306,11 +306,11 @@
     padding: 5px 16px; font-size: 13px; cursor: pointer;
   }
   #stopbtn { background: #f85149; display: none; }
-  #attbtn, #draftbtn, #genbtn, #histbtn {
+  #attbtn, #draftbtn, #genbtn, #histbtn, #editbtn {
     background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
     font-size: 12px; padding: 3px 8px; cursor: pointer;
   }
-  #attbtn.on, #draftbtn.on, #histbtn.on { color: var(--accent); border-color: var(--accent); }
+  #attbtn.on, #draftbtn.on, #histbtn.on, #editbtn.on { color: var(--accent); border-color: var(--accent); }
   #genbtn { color: var(--accent); }
   /* 选中文字浮动工具条：跟随选区（mouseup 定位，键盘选择按行估算） */
   #selbar {
@@ -534,6 +534,7 @@
         <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
         <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
         <button id="histbtn" class="off" title="把本项目「聊聊文献」里的讨论记录带给论文助手（最近 15 条，截断纪要）">💬 <span class="lbl">聊天记录</span></button>
+        <button id="editbtn" class="off" title="改稿模式：AI 的修改以 edit 块直接应用到当前章节（应用前自动快照，⌘Z 可撤销）">✏️ <span class="lbl">改稿</span></button>
         <span class="hint">AI 回答可一键插入正文</span>
         <button id="stopbtn" title="停止生成">■ <span class="lbl">停止</span></button>
         <button id="send">发送</button>
@@ -606,11 +607,11 @@
 
 <div id="settings">
   <label>推理服务</label>
-  <select id="set-provider"><option value="local">本地（Ollama / llama-server）</option><option value="deepseek">DeepSeek 云端</option></select>
+  <select id="set-provider"><option value="local">本地（oMLX / Ollama / llama-server）</option><option value="deepseek">DeepSeek 云端</option></select>
   <label>本地服务地址</label>
   <input id="set-base" placeholder="http://127.0.0.1:8000">
-  <label>模型名（Ollama 必填）</label>
-  <input id="set-model" placeholder="qwen3.8:27b-mlx">
+  <label>模型名（oMLX 可留空自动探测；Ollama 必填）</label>
+  <input id="set-model" placeholder="Qwen3.8-27B-nvfp4（留空自动探测）">
   <label>DeepSeek API Key</label>
   <input id="set-key" type="password" placeholder="sk-…">
   <div class="row"><button id="setsave">保存（刷新生效）</button></div>
@@ -697,6 +698,15 @@ const EDITOR_PERSONA = `你是本地写作台的科研写作助手，正在协�
 - 上下文中附有文献全文时，引用其中的具体数据要注明出自哪篇文献；文献与用户表述冲突时指出
 - 需要参考其他章节内容时，明确说「请切换到某章节再问」，不要凭空猜测其他章节内容
 - 写正文引用文献时用 [@引文键] 标注（如 [@r1abc]），不要手写编号——前端自动编号并列参考文献；引文键清单见上下文`;
+
+// 改稿模式协议：按需注入当轮 user 消息（见 kb/features.md · 改稿模式）
+const EDIT_PROTOCOL = "[改稿模式] 本轮你可以直接修改我的正文。修改用 edit 块表达，格式严格如下（```edit 围栏，中间单独一行 ---）：\n"
+  + "```edit\n（原文片段）\n---\n（替换后的文本）\n```\n"
+  + "规则：\n"
+  + "- 原文片段必须从正文逐字复制（含标点与换行），并足以在正文中唯一定位\n"
+  + "- 一次可输出多个 edit 块，各块独立应用；块外只写简短说明，不要复述修改后的全文\n"
+  + "- 只改被要求修改的地方，原文片段以外的内容一个字都不要动\n"
+  + "- 本规则优先于系统提示中「只建议、不擅自改动」";
 
 let memory = [];
 try { memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]"); } catch {}
@@ -1532,7 +1542,7 @@ function renderVersionPanel(){
     const d = document.createElement("div");
     d.className = "vrow";
     const totalWc = v.secs.reduce((a, s) => a + wc(s.md), 0);
-    const reasonTxt = {manual: "手动", "pre-insert": "AI 插入前", "pre-restore": "恢复前"}[v.reason] || v.reason;
+    const reasonTxt = {manual: "手动", "pre-insert": "AI 插入前", "pre-edit": "AI 改稿前", "pre-restore": "恢复前"}[v.reason] || v.reason;
     d.innerHTML = `<div class="t">${v.label ? `<span class="lbl">${esc(v.label)}</span> ` : ""}${fmtTime(v.ts)}
       <span class="reason">· ${reasonTxt}</span> <span class="wc">· ${totalWc.toLocaleString()} 字 · ${v.secs.length} 章节</span></div>
       <button class="v-diff">差异</button><button class="v-label">${v.label ? "改名" : "命名"}</button><button class="v-restore">恢复</button>`;
@@ -2282,21 +2292,24 @@ function appendMsg(m, idx){
   el.innerHTML = `<div class="avatar">${m.role === "user" ? "我" : "AI"}</div>
     <div class="bubble">
       ${m.think ? `<details class="think-block"><summary>思考过程</summary><div class="tcontent">${esc(m.think)}</div></details>` : ""}
-      <div class="content">${m.role === "user" ? esc(m.text) : mdChat(m.text || "")}</div>
+      <div class="content">${m.role === "user" ? esc(m.text) : m.edits ? renderAnswerText(m.text, m.edits) : mdChat(m.text || "")}</div>
       ${m.role === "assistant" ? `<div class="acts"></div>` : ""}
     </div>`;
   if (m.role === "assistant"){
     const acts = el.querySelector(".acts");
     acts.classList.add("actson");
-    const ins = document.createElement("button");
-    ins.className = "ins";
-    ins.textContent = m.inserted ? "✓ 已插入" : "⤵ 插入到光标处";
-    if (!m.inserted) ins.onclick = () => insertAnswer(m, ins);
-    acts.appendChild(ins);
+    if (!m.edits?.some(e => e.ok)){
+      const ins = document.createElement("button");
+      ins.className = "ins";
+      ins.textContent = m.inserted ? "✓ 已插入" : "⤵ 插入到光标处";
+      if (!m.inserted) ins.onclick = () => insertAnswer(m, ins);
+      acts.appendChild(ins);
+    }
     const cp = document.createElement("button");
     cp.textContent = "复制";
     cp.onclick = () => copyText(m.text, cp);
     acts.appendChild(cp);
+    addDiffBtn(m, acts);
   }
   $("#msgs").appendChild(el);
   return el;
@@ -2342,6 +2355,92 @@ function insertInline(text){
     t.setRangeText(text, s, e, "end");
   saveSection(); updateOutline(); updateStatusBar();
 }
+// ---------- edit 块：AI 直接改稿（见 kb/features.md · 改稿模式） ----------
+const EDIT_RE = /```edit[ \t]*\n([\s\S]*?)\n[ \t]*---[ \t]*\n([\s\S]*?)\n?```/g;
+function splitEdits(text){
+  const out = []; let last = 0, m;
+  EDIT_RE.lastIndex = 0;
+  while ((m = EDIT_RE.exec(text))){
+    if (m.index > last && text.slice(last, m.index).trim()) out.push({txt: text.slice(last, m.index)});
+    out.push({edit: true, old: m[1], neu: m[2]});
+    last = EDIT_RE.lastIndex;
+  }
+  if (last < text.length && text.slice(last).trim()) out.push({txt: text.slice(last)});
+  return out;
+}
+// 唯一定位：精确匹配 → 首尾 trim 兜底
+function findEdit(hay, old){
+  for (const needle of [old, old.trim()]){
+    if (!needle) continue;
+    const i = hay.indexOf(needle);
+    if (i !== -1 && hay.indexOf(needle, i + 1) === -1) return {i, n: needle.length};
+  }
+  return null;
+}
+async function applyEditBlocks(am){
+  const blocks = splitEdits(am.text || "").filter(s => s.edit);
+  if (!blocks.length) return;
+  const ta = $("#secmd");
+  am.edits = [];
+  if (blocks.some(b => findEdit(ta.value, b.old))){
+    if (previewOn) togglePreview(false);
+    await snapshot("pre-edit");
+    am.diffSnap = versions.list[0]?.id;
+  }
+  let ok = 0;
+  for (const b of blocks){
+    const hit = findEdit(ta.value, b.old);
+    if (!hit){ am.edits.push({...b, fail: "原文未找到或出现多次"}); continue; }
+    ta.focus();
+    ta.setSelectionRange(hit.i, hit.i + hit.n);
+    // execCommand 才能进原生撤销栈（⌘Z 逐块回退），与 insertText 同款
+    if (!(document.execCommand && document.execCommand("insertText", false, b.neu)))
+      ta.setRangeText(b.neu, hit.i, hit.i + hit.n, "end");
+    am.edits.push({...b, ok: true});
+    ok++;
+  }
+  if (ok){
+    saveSection(); updateOutline(); updateStatusBar();
+    const bad = am.edits.length - ok;
+    toast(`✏️ 已直接修改 ${ok} 处（⌘Z 可逐步撤销）` + (bad ? `，${bad} 处未匹配` : ""));
+  } else {
+    am.diffSnap = undefined;
+    toast("⚠ edit 块未匹配到正文，可手动「插入到光标处」");
+  }
+}
+function editBlockHtml(e){
+  const rows = lineDiff((e.old || "").split("\n"), (e.neu || "").split("\n"))
+    .filter(r => r.t !== "=");
+  const head = e.fail
+    ? `<div style="padding:2px 8px;font-size:12px;color:#d29922">⚠ ${esc(e.fail)}</div>`
+    : `<div style="padding:2px 8px;font-size:12px;color:#3fb950">✏️ 已应用到正文</div>`;
+  const lines = rows.map(r =>
+    `<div style="padding:1px 8px;white-space:pre-wrap;${r.t === "-"
+      ? "color:#f85149;background:rgba(248,81,73,.12)"
+      : "color:#3fb950;background:rgba(63,185,80,.12)"}">${esc(r.l) || " "}</div>`).join("");
+  return `<div style="border:1px solid var(--border);border-radius:6px;margin:6px 0;overflow:hidden">${head}${lines}</div>`;
+}
+// 气泡渲染：正文走 mdChat，edit 块走红绿行预览
+function renderAnswerText(text, edits){
+  const segs = splitEdits(text || "");
+  if (!segs.length) return "";
+  let html = "", k = 0;
+  for (const s of segs){
+    if (s.txt != null) html += mdChat(s.txt);
+    else { html += editBlockHtml(edits?.[k] || s); k++; }
+  }
+  return html;
+}
+function addDiffBtn(m, acts){
+  if (!m.diffSnap) return;
+  const b = document.createElement("button");
+  b.textContent = "🕐 查看改动";
+  b.onclick = () => {
+    const v = versions.list.find(x => x.id === m.diffSnap);
+    v ? showVersionDiff(v) : toast("该快照已被清理，可到版本面板找相邻快照对比");
+  };
+  acts.appendChild(b);
+}
 function buildEditorHistory(){
   const sys = [BOUNDARY_RULES];
   if (memory.length)
@@ -2386,14 +2485,16 @@ function buildEditorHistory(){
       `[聊天记录纪要开始（我在本项目「聊聊文献」里与 AI 的讨论，供了解研究背景；其中「这篇文章/该文献」多指所讨论的文献而非我的草稿）]\n`
       + clip.join("\n") + "\n[纪要结束]"});
   }
-  for (const m of ED.chat.slice(-20)) h.push({role: m.role, content: m.text});
+  for (const m of ED.chat.slice(-20))
+    h.push({role: m.role, content: m.edit && m.role === "user" ? EDIT_PROTOCOL + "\n\n" + m.text : m.text});
   return h;
 }
-async function send(text){
+async function send(text, edit){
   text = (text ?? input.value).trim();
   if (!text || busy || !ED.sections.length) return;
   flushSave();
   const um = {role: "user", text, ts: Date.now()};
+  if (edit) um.edit = true;
   ED.chat.push(um);
   appendMsg(um);
   input.value = ""; fitInputH();
@@ -2518,15 +2619,23 @@ async function generate(noThink, noRetry, forceThink){
     scrollBottom(true);
     if (usage){ ctxUsed = (usage.prompt_tokens||0) + (usage.completion_tokens||0); updateCtxBar(); }
     ED.chat.push(am);
+    // 改稿模式：解析并应用 edit 块
+    await applyEditBlocks(am);
+    if (am.edits) contentEl.innerHTML = renderAnswerText(answer, am.edits);
     const acts = document.createElement("div");
     acts.className = "acts actson";
-    const ins = document.createElement("button");
-    ins.className = "ins"; ins.textContent = "⤵ 插入到光标处";
-    ins.onclick = () => insertAnswer(am, ins);
+    const applied = am.edits?.some(e => e.ok);
+    if (!applied){
+      const ins = document.createElement("button");
+      ins.className = "ins"; ins.textContent = "⤵ 插入到光标处";
+      ins.onclick = () => insertAnswer(am, ins);
+      acts.appendChild(ins);
+    }
     const cp = document.createElement("button");
     cp.textContent = "复制";
     cp.onclick = () => copyText(am.text, cp);
-    acts.append(ins, cp);
+    acts.appendChild(cp);
+    addDiffBtn(am, acts);
     bb.querySelector(".bubble").appendChild(acts);
   } catch (e) {
     contentEl.classList.remove("typing");
@@ -2549,7 +2658,7 @@ async function generate(noThink, noRetry, forceThink){
       let msg = e.message || String(e);
       if (/fetch|network|load failed|timeout/i.test(msg))
         msg = usingDeep() ? "无法连接 DeepSeek API——检查网络或代理设置"
-                          : "无法连接本地服务（" + BASE + "）——ollama serve 是否在运行？";
+                          : "无法连接本地服务（" + BASE + "）——服务是否在运行？（omlx / ollama / llama-server）";
       sysCard("请求失败：" + msg);
     }
   }
@@ -2595,10 +2704,20 @@ async function extractMemory(){
 }
 
 // ---------- 事件绑定 ----------
-$("#send").onclick = () => send();
+// 改稿模式开关（会话级，不持久化）
+let editMode = false;
+$("#editbtn").onclick = () => {
+  editMode = !editMode;
+  $("#editbtn").classList.toggle("on", editMode);
+  $("#editbtn").querySelector(".lbl").textContent = editMode ? "改稿中" : "改稿";
+  toast(editMode
+    ? "✏️ 改稿模式：发送的消息里，AI 的修改将直接应用到当前章节（自动快照，⌘Z 可撤销）"
+    : "已退出改稿模式");
+};
+$("#send").onclick = () => send(null, editMode);
 $("#stopbtn").onclick = () => ctrl?.abort();
 input.addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }
+  if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(null, editMode); }
 });
 input.addEventListener("input", () => {
   input.style.height = "auto";
@@ -2652,7 +2771,7 @@ selbar.addEventListener("click", e => {
       + "找不到的直接说明，禁止编造文献内容。\n\n论断：「" + sel + "」");
     return;
   }
-  send(`请${op}以下选中的文字，直接输出可以整段替换原文的成段中文（Markdown），不要引导语、不要解释、不要重复未改动的部分：\n\n${sel}`);
+  send(`请${op}以下选中的文字，输出一个 edit 块（原文片段必须与下面选中的文字逐字一致）：\n\n${sel}`, true);
 });
 // 点工具条与编辑区以外任意处收起（mouseup→click 顺序：编辑区自己的显隐交给 mouseup 处理）
 document.addEventListener("click", e => {
