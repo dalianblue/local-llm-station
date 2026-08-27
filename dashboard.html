@@ -198,6 +198,7 @@
       <div id="newmenu">
         <div class="nopt" id="opt-chat"><b>💬 新对话</b><small>读文献 · 提问 · 日常</small></div>
         <div class="nopt" id="opt-write"><b>✍️ 新写作</b><small>论文 · 方案 · 分章节写作</small></div>
+        <div class="nopt" id="opt-review"><b>🧭 AI综述</b><small>话题 → 检索 → 大纲 → 逐节成稿</small></div>
       </div>
     </div>
   </header>
@@ -328,10 +329,10 @@ async function loadProjects(){
         <button class="tagbtn" title="编辑标签（逗号或空格分隔）">🏷</button>
         <button class="del" title="删除项目（连同笔记与卡片）">🗑</button>
       </span>
-      <span class="ico">${isDoc ? "📄" : "💬"}</span>
+      <span class="ico">${isDoc ? "📄" : c.name.startsWith("🧭") ? "🧭" : "💬"}</span>
       <span class="name" title="${esc(c.name)}">${esc(c.name)}</span>
       <span>${tagHtml(allTags(c))}</span>
-      <span class="meta"><span>${c.docs ? c.docs + " 份资料" : c.name.startsWith("✍️") ? "写作项目" : "纯对话"}</span>${c.stage === "locked" ? '<span style="color:var(--accent)">🔒 投稿版</span>' : c.stage === "submitted" ? "<span>📤 已投稿</span>" : ""}${c.tables ? "<span>📊 " + c.tables + " 表</span>" : ""}${c.figs ? "<span>🖼 " + c.figs + " 图</span>" : ""}${c.notes ? "<span>📝 笔记</span>" : ""}${c.cards ? "<span>🃏 " + c.cards + " 卡</span>" : ""}<span>活跃于 ${ago(c.ts)}</span></span>
+      <span class="meta"><span>${c.docs ? c.docs + " 份资料" : c.name.startsWith("🧭") ? "AI综述" : c.name.startsWith("✍️") ? "写作项目" : "纯对话"}</span>${c.stage === "locked" ? '<span style="color:var(--accent)">🔒 投稿版</span>' : c.stage === "submitted" ? "<span>📤 已投稿</span>" : ""}${c.tables ? "<span>📊 " + c.tables + " 表</span>" : ""}${c.figs ? "<span>🖼 " + c.figs + " 图</span>" : ""}${c.notes ? "<span>📝 笔记</span>" : ""}${c.cards ? "<span>🃏 " + c.cards + " 卡</span>" : ""}<span>活跃于 ${ago(c.ts)}</span></span>
       <div class="entrybar">
         <button class="go-chat" title="进入对话：解读、提问、图表深读">💬 聊聊文献</button>
         <button class="go-write" title="进入写作台：分章节写作与版本管理">✍️ 论文写作</button>
@@ -340,7 +341,7 @@ async function loadProjects(){
     // 锁定投稿版跳转它 fork 出的修稿项目（该干活的地方），修稿项目不存在则原样进
     const target = c.stage === "locked" && c.forkTo && projects.find(x => x.id === c.forkTo) || c;
     d.onclick = () => location.href =
-      (target.name.startsWith("✍️") ? "editor.html" : "chat.html") + "?conv=" + encodeURIComponent(target.id);
+      (["✍️", "🧭"].some(p => target.name.startsWith(p)) ? "editor.html" : "chat.html") + "?conv=" + encodeURIComponent(target.id);
     d.querySelector(".pin").onclick = async e => {
       e.stopPropagation();
       pinned.has(c.id) ? pinned.delete(c.id) : pinned.add(c.id);
@@ -529,6 +530,22 @@ async function createWriteProject(){
   } catch { alert("创建失败：无法连接存档服务 127.0.0.1:8081"); }
 }
 $("#opt-write").onclick = () => { $("#newmenu").classList.remove("open"); createWriteProject(); };
+// AI 综述项目：话题即项目名，进编辑器由综述向导接管（检索 → 勾选入库 → 大纲 → 逐节生成）
+async function createReviewProject(){
+  const topic = prompt("综述话题（具体到干预/人群/结局更准，如：IL-17 抑制剂治疗银屑病的疗效与安全性）：");
+  if (!topic?.trim()) return;
+  const id = "c" + Date.now();
+  const title = "🧭 " + topic.trim();
+  const safe = title.replace(/[\\/:*?"<>|\s]/g, "_").slice(0, 20);
+  try {
+    await fetch(`${ARCH}/archive/${encodeURIComponent(`${id}-${safe}.json`)}`, {
+      method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({id, title, ts: Date.now(), ctxUsed: 0, messages: []}),
+    });
+    location.href = "editor.html?conv=" + id + "&review=1";
+  } catch { alert("创建失败：无法连接存档服务 127.0.0.1:8081"); }
+}
+$("#opt-review").onclick = () => { $("#newmenu").classList.remove("open"); createReviewProject(); };
 
 // ---------- 全局文献库（Zotero 式条目数据，JSON 文件实现） ----------
 // 存 chat_history/library/ 子目录：/projfile 端点现成，且 /list、/projects/list 只扫根目录 .json，零污染

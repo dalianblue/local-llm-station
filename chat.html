@@ -1120,7 +1120,7 @@ async function litSearch(q){
       try {
         const raw = await dsSearchStep(
           `把下面的文献检索需求转成两条英文检索式（PubMed 风格：主题词 + 同义词，OR 连接，每条是一个完整查询字符串；两条各有侧重，如一条偏干预/技术、一条偏结局/人群）。只输出 JSON：{"qs": ["检索式一", "检索式二"]}，不要输出其他文字。\n需求：${q}`, 600);
-        const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || [, "{}"])[1]);
+        const j = JSON.parse((raw.match(/(\{[\s\S]*\})/) || [, "{}"])[1]);
         if (Array.isArray(j.qs) && j.qs.filter(Boolean).length) qs = j.qs.filter(Boolean).slice(0, 2);
       } catch {}
     }

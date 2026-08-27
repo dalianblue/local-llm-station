@@ -523,6 +523,7 @@
       <button id="savebtn" title="保存并快照（⌘S）">💾 <span class="lbl">保存并快照</span></button>
       <button id="subbtn" title="标记为已投稿">📮 <span class="lbl">投稿</span></button>
       <button id="revinbtn" title="粘贴审稿意见，AI 拆成逐条清单">📨 <span class="lbl">审稿意见</span></button>
+      <button id="reviewbtn" title="AI 综述向导（话题 → 检索 → 大纲 → 逐节生成）" style="display:none">🧭 <span class="lbl">综述</span></button>
     </div>
   </main>
   <div class="vsplit" id="vs2" title="拖动调整右栏宽度（双击复位）"></div>
@@ -624,6 +625,11 @@
     <button id="resgrab" title="把右栏最近一条 AI 回复带入编辑（讨论结果改一改就能用）" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 12px;cursor:pointer">🤖 取最近 AI 回复</button>
     <button id="resok" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer">保存</button>
   </div>
+</div></div>
+
+<div id="rvpanel" class="modal"><div class="mbox" style="max-width:760px">
+  <div class="mhead">🧭 AI 综述向导（话题 → 检索 → 大纲 → 逐节生成）<button class="hbtn" id="rvclose">✕</button></div>
+  <div id="rvbody" style="padding:12px 18px;max-height:72vh;overflow:auto;font-size:13px;line-height:1.7"></div>
 </div></div>
 
 <div id="settings">
@@ -1006,7 +1012,7 @@ async function loadProject(){
   ED.projMeta = c;
   ED.convDir = c.file.replace(/\.json$/, "");
   ED.projName = c.name;
-  $("#projname").textContent = /^✍️\s/.test(c.name) ? c.name : "✍️ " + c.name;   // 新写作项目标题自带前缀，防双显
+  $("#projname").textContent = ["✍️ ", "🧭 "].some(p => c.name.startsWith(p)) ? c.name : "✍️ " + c.name;   // 新项目标题自带前缀，防双显（emoji 代理对不能进正则字符类）
   document.title = c.name + " · 写作";
   $("#projname").classList.add("renamable");
   $("#projname").title = "点击改名";
@@ -1091,6 +1097,7 @@ async function loadProject(){
   $("#app").hidden = false;
   renderTabs(); showSection(0); renderResources(); renderChat();
   updateStatusBar();
+  maybeReview();
 }
 
 // ---------- 章节模型 ----------
@@ -1343,22 +1350,22 @@ $("#refin").addEventListener("input", () => {
 $("#refgo").onclick = runRefCheck;
 
 // ---------- 🔍 search 块流水线：DeepSeek 检索式 + 四源检索 + DeepSeek 判定（与 chat.html litSearch 同一套） ----------
-async function dsSearchStep(content, maxTokens){
+async function dsSearchStep(content, maxTokens, temp = 0.2){
   const r = await fetch(DEEPSEEK_API, {method: "POST",
     headers: {"Content-Type": "application/json", Authorization: "Bearer " + S.dskey},
     body: JSON.stringify({model: "deepseek-chat", messages: [{role: "user", content}],
-      stream: false, temperature: 0.2, max_tokens: maxTokens})});
+      stream: false, temperature: temp, max_tokens: maxTokens})});
   if (!r.ok) throw new Error("DeepSeek API " + r.status);
   return (await r.json()).choices?.[0]?.message?.content || "";
 }
-async function runSearch(q, progress){
+async function runSearchData(q, progress){
   let qs = [q];
   if (S.dskey){
     progress("正在构造检索式（DeepSeek）…");
     try {
       const raw = await dsSearchStep(
         `把下面的文献检索需求转成两条英文检索式（PubMed 风格：主题词 + 同义词，OR 连接，每条是一个完整查询字符串；两条各有侧重，如一条偏干预/技术、一条偏结局/人群）。只输出 JSON：{"qs": ["检索式一", "检索式二"]}，不要输出其他文字。\n需求：${q}`, 600);
-      const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || [, "{}"])[1]);
+      const j = JSON.parse((raw.match(/(\{[\s\S]*\})/) || [, "{}"])[1]);
       if (Array.isArray(j.qs) && j.qs.filter(Boolean).length) qs = j.qs.filter(Boolean).slice(0, 2);
     } catch {}
   }
@@ -1382,11 +1389,15 @@ async function runSearch(q, progress){
   const oaSearch = async () => {
     try {
       const j = await (await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(qEn)}&per-page=8&mailto=${MAILTO}`)).json();
-      return (j.results || []).map(it => ({
-        title: it.display_name || "", author: (it.authorships?.[0]?.author?.display_name || "").split(" ").slice(-1)[0],
-        year: it.publication_year || "", journal: it.primary_location?.source?.display_name || "",
-        doi: (it.doi || "").replace("https://doi.org/", ""), pdf: it.best_oa_location?.pdf_url || "",
-        src: "OpenAlex"}));
+      return (j.results || []).map(it => {
+        const inv = it.abstract_inverted_index || {}, words = [];
+        for (const [w, pos] of Object.entries(inv)) for (const p of pos) words[p] = w;
+        return {
+          title: it.display_name || "", author: (it.authorships?.[0]?.author?.display_name || "").split(" ").slice(-1)[0],
+          year: it.publication_year || "", journal: it.primary_location?.source?.display_name || "",
+          doi: (it.doi || "").replace("https://doi.org/", ""), pdf: it.best_oa_location?.pdf_url || "",
+          abs: words.join(" ").slice(0, 4000), src: "OpenAlex"};
+      });
     } catch { return []; }
   };
   const epSearch = async () => {
@@ -1395,7 +1406,7 @@ async function runSearch(q, progress){
       return (j.resultList?.result || []).map(it => ({
         title: it.title || "", author: (it.authorString || "").split(",")[0]?.trim().split(" ").slice(-1)[0] || "",
         year: it.pubYear || "", journal: it.journalTitle || "", pmid: it.pmid || "", doi: it.doi || "",
-        preprint: /RXIV|PREPRINT/i.test(it.source || ""),
+        abs: String(it.abstractText || "").slice(0, 4000), preprint: /RXIV|PREPRINT/i.test(it.source || ""),
         src: it.source === "MED" ? "EuropePMC" : (it.source || "EuropePMC")}));
     } catch { return []; }
   };
@@ -1425,12 +1436,316 @@ async function runSearch(q, progress){
         `用户检索需求：「${q}」。下面是四库合并去重后的 ${all.length} 条候选文献（编号|标题|期刊|年份|来源，末列有「预印本」标记的是未同行评审版本）。逐条判定相关性：✅ 高相关（直接回答或支撑需求，附一句为什么值得读）；🟡 中相关（部分相关或背景价值）；❌ 低相关（主题偏移）。输出 markdown：按 ✅→🟡→❌ 排列的清单（编号 + 判定 + 理由，✅ 的理由必填），末尾一段「检索建议」。不要复述标题全文。\n\n${all.map((x, i) => `${i + 1}|${(x.title || "").slice(0, 120)}|${x.journal || ""}|${x.year || ""}|${x.src}${x.preprint ? "|预印本" : ""}`).join("\n")}`, 2500);
     } catch (e) { verdict = "⚠ 判定步骤失败：" + e.message + "（下面为未判定列表）"; }
   }
+  return {qs, all, ct, verdict};
+}
+function rvVerdictMap(verdict){
+  // 判定文本是 markdown 编号清单（编号 + ✅/🟡/❌），尽力解析出 编号→判定 供勾选预选
+  const m = {};
+  for (const [, n, v] of verdict.matchAll(/(\d+)\s*[|｜.、:：)]?\s*(✅|🟡|❌)/g)) m[+n] = v;
+  return m;
+}
+async function runSearch(q, progress){
+  const {all, ct, verdict} = await runSearchData(q, progress);
   const card = x => `**· ${esc((x.title || "").slice(0, 140))}**${x.preprint ? " 🧪预印本" : ""}\n   ${x.src}${x.author ? " · " + esc(x.author) + " et al." : ""}${x.year ? " · " + x.year : ""}${x.journal ? " · " + esc(x.journal) : ""}` +
     `${x.pmid ? ` · [PubMed](https://pubmed.ncbi.nlm.nih.gov/${x.pmid}/)` : ""}${x.doi ? ` · [doi](https://doi.org/${x.doi})` : ""}${x.pdf ? ` · [📄 OA 全文](${x.pdf})` : ""}`;
   return (verdict ? `## 🤖 相关性判定（DeepSeek）\n\n${verdict}\n\n---\n` : "")
     + `## 候选文献（四源去重 ${all.length} 条）\n\n${all.length ? all.map(card).join("\n\n") : "（无结果或网络不可达）"}\n\n`
     + (ct.length ? `## 🧪 在研试验（ClinicalTrials.gov）\n\n${ct.map(x => `**· ${esc((x.title || "").slice(0, 140))}**\n   ${x.status}${x.phase && x.phase !== "NA" ? " · " + x.phase : ""} · [${x.nct}](https://clinicaltrials.gov/study/${x.nct})`).join("\n\n")}\n\n` : "");
 }
+
+// ---------- 🧭 AI 综述向导（A 阶段，设计口径见 kb/features.md） ----------
+let RV = null;
+const LIB_URL = () => `${ARCH}/projfile/library/library.json`;
+function refKey(name, used){
+  let h = 5381;
+  for (const c of name) h = (h * 33 + c.codePointAt(0)) >>> 0;
+  let k = "r" + h.toString(36), i = 2;
+  while (used.has(k)) k = "r" + h.toString(36) + "-" + i++;
+  used.add(k);
+  return k;
+}
+let rvSaveQ = Promise.resolve();
+function saveReview(){
+  if (!RV) return;
+  const data = JSON.stringify(RV);   // 串行 PUT：fire-and-forget 乱序会旧盖新
+  rvSaveQ = rvSaveQ.then(() =>
+    fetch(pf("review.json"), {method: "PUT", headers: {"Content-Type": "application/json"}, body: data})
+      .catch(() => {}));
+}
+async function maybeReview(){
+  const isRv = (ED.projName || "").startsWith("🧭 ");
+  $("#reviewbtn").style.display = isRv ? "" : "none";
+  if (!isRv) return;
+  let j = null;
+  try { const r = await fetch(pf("review.json")); if (r.ok) j = await r.json(); } catch {}
+  if (j && j.topic){ RV = j; RV.gen ||= {done: [], errs: []}; }
+  else if (new URLSearchParams(location.search).get("review") === "1"){
+    RV = {schema: 1, topic: ED.projName.replace(/^🧭 /, ""), qs: [], stage: "topic",
+      items: [], picked: [], outline: null, gen: {done: [], errs: []}};
+    saveReview();
+  } else return;
+  if (RV.stage !== "done") openReviewPanel();
+}
+function openReviewPanel(){ $("#rvpanel").classList.add("open"); rvRender(); }
+const rvBtn = (id, label, primary) =>
+  `<button id="${id}" style="${primary ? "background:var(--accent);" : "background:var(--panel);"}color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 14px;cursor:pointer">${label}</button>`;
+function rvRender(){
+  if (!RV) return;
+  const b = $("#rvbody");
+  if (RV.stage === "topic"){
+    b.innerHTML = `
+      ${S.dskey ? "" : `<div style="background:rgba(210,153,34,.12);border:1px solid #d29922;border-radius:8px;padding:8px 12px;margin-bottom:12px">⚠ 未配置 DeepSeek API Key——判定/大纲/逐节生成需要云端模型（⚙️ 设置里填写），四源检索本身可先跑</div>`}
+      <div style="color:var(--dim);margin-bottom:6px">综述话题（建议具体到干预+人群+结局）</div>
+      <input id="rvtopic" value="${esc(RV.topic || "")}" placeholder="如：IL-17 抑制剂治疗银屑病的疗效与安全性" style="width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font:inherit">
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        ${rvBtn("rvsearch", "🔍 四源检索 + 相关性判定", true)}
+        <span id="rvprog" style="color:var(--dim)"></span>
+      </div>`;
+    $("#rvsearch").onclick = rvSearch;
+    return;
+  }
+  if (RV.stage === "select"){
+    const nOk = RV.items.filter(x => x.v === "✅").length;
+    b.innerHTML = `
+      <div style="margin-bottom:8px">话题：<b>${esc(RV.topic)}</b> · 候选 ${RV.items.length} 篇（判定 ✅${nOk}）——勾选入文献库作为综述原料</div>
+      ${RV.verdict ? `<details style="margin-bottom:10px"><summary style="cursor:pointer;color:var(--dim)">🤖 DeepSeek 相关性判定</summary><div class="mdbody">${mdChat(RV.verdict)}</div></details>` : ""}
+      <div id="rvlist">${RV.items.map((x, i) => `
+        <label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid var(--border);cursor:pointer">
+          <input type="checkbox" data-i="${i}" ${(!S.dskey || x.v === "✅") ? "checked" : ""} style="margin-top:3px">
+          <span>${x.v ? x.v + " " : ""}<b>${esc((x.title || "").slice(0, 130))}</b><br>
+            <span style="color:var(--dim)">${esc(String(x.author || ""))}${x.author ? " et al. · " : ""}${x.year || ""} · ${esc(x.journal || "")} · ${x.src}${x.abs ? "" : " · 无摘要"}</span></span>
+        </label>`).join("")}</div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        ${rvBtn("rvback", "⬅ 换话题")}
+        ${rvBtn("rvmore", "🔍 追加检索")}
+        ${rvBtn("rvpick", "📚 入库并生成论点大纲", true)}
+        <span id="rvprog" style="color:var(--dim)"></span>
+      </div>
+      ${RV.items.length < 8 ? `<div style="margin-top:8px;color:#d29922">候选偏少——点「🔍 追加检索」换个角度/同义词补一轮，或换更宽的话题表述</div>` : ""}`;
+    $("#rvback").onclick = () => { RV.stage = "topic"; saveReview(); rvRender(); };
+    $("#rvmore").onclick = rvSearchMore;
+    $("#rvpick").onclick = rvPick;
+    return;
+  }
+  if (RV.stage === "outline" && RV.outline){
+    b.innerHTML = `
+      <div style="margin-bottom:8px">大纲共 ${RV.outline.sections.length} 节（论点式，每节绑定文献白名单）——确认后逐节生成初稿</div>
+      ${RV.outline.sections.map((s, i) => `
+        <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+          <b>${i + 1}. ${esc(s.title)}</b><br>
+          <span style="color:var(--dim)">${esc(s.claim)}</span><br>
+          <span style="font-size:12px;color:var(--dim)">绑定 ${s.keys.length} 篇：${s.keys.map(k => "[@" + k + "]").join(" ")}</span>
+        </div>`).join("")}
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        ${rvBtn("rvedit", "✏️ 让 AI 改大纲")}
+        ${rvBtn("rvre", "⬅ 重新勾选")}
+        ${rvBtn("rvgo", `✅ 按此生成（${RV.outline.sections.length} 节）`, true)}
+        <span id="rvprog" style="color:var(--dim)"></span>
+      </div>`;
+    $("#rvedit").onclick = async () => {
+      const fb = prompt("要怎么改？如：论点 2 拆成两节；补一节安全性；调整顺序");
+      if (!fb) return;
+      $("#rvprog").textContent = "AI 正在改大纲…";
+      try { await rvOutline(fb); }
+      catch { toast("⚠ 改纲失败，保留原大纲"); }
+      rvRender();
+    };
+    $("#rvre").onclick = () => { RV.stage = "select"; saveReview(); rvRender(); };
+    $("#rvgo").onclick = rvGenerate;
+    return;
+  }
+  if (RV.stage === "generating" || (RV.stage === "done" && RV.outline)){
+    const secs = RV.outline?.sections || [];
+    const pend = secs.filter(s => !RV.gen.done.includes(s.title));
+    b.innerHTML = `
+      ${RV.stage === "generating" ? `<div style="margin-bottom:8px">逐节生成中——每节完成即写盘，可随时关页面，重进后从断点续跑</div>` : `<div style="margin-bottom:8px">✅ 生成结束：${RV.gen.done.length}/${secs.length} 节完成${RV.gen.errs.length ? `，${RV.gen.errs.length} 节失败` : ""}</div>`}
+      ${secs.map((s, i) => {
+        const st = RV.gen.done.includes(s.title) ? "✅" : (RV.gen.errs.find(e => e.title === s.title) ? "❌" : "⏳");
+        return `<div style="padding:4px 0">${st} ${i + 1}. ${esc(s.title)}</div>`;
+      }).join("")}
+      ${RV.gen.errs.length ? `<details style="margin:6px 0"><summary style="cursor:pointer;color:#d29922">失败明细</summary>${RV.gen.errs.map(e => `<div style="padding:2px 0">❌ ${esc(e.title)}：${esc(e.msg)}</div>`).join("")}</details>` : ""}
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        ${pend.length && RV.stage === "generating" ? rvBtn("rvstop", "⏹ 停止（不再提示）") : ""}
+        ${pend.length ? rvBtn("rvrun", `▶ ${RV.stage === "generating" ? "继续" : "重跑"}剩余 ${pend.length} 节`, true) : ""}
+        <span id="rvprog" style="color:var(--dim)"></span>
+      </div>`;
+    if ($("#rvstop")) $("#rvstop").onclick = () => { RV.stage = "done"; saveReview(); rvRender(); };
+    if ($("#rvrun")) $("#rvrun").onclick = async e => {
+      e.target.disabled = true;
+      if (RV.stage !== "generating"){ RV.stage = "generating"; RV.gen.errs = []; saveReview(); }
+      await rvRun();
+      rvRender();
+    };
+    return;
+  }
+  if (RV.stage === "done" && !RV.outline){ b.innerHTML = `<div>本综述已完成或中止。</div>`; return; }
+}
+async function rvSearch(){
+  const topic = $("#rvtopic").value.trim();
+  if (!topic) return toast("请先填写话题");
+  RV.topic = topic; RV.qs = []; RV.items = []; RV.outline = null; RV.gen = {done: [], errs: []};
+  const btn = $("#rvsearch"); btn.disabled = true;
+  try {
+    const {qs, all, verdict} = await runSearchData(topic, s => { $("#rvprog").textContent = s; });
+    RV.qs = qs; RV.verdict = verdict || "";
+    const vm = rvVerdictMap(verdict);
+    RV.items = all.map((x, i) => ({...x, v: vm[i + 1] || ""}));
+    RV.stage = RV.items.length ? "select" : "topic";
+    saveReview();
+    if (!RV.items.length) toast("四源检索无结果——换个话题表述或检查网络");
+  } catch (e){ toast("检索失败：" + e.message); }
+  btn.disabled = false;
+  rvRender();
+}
+function rvSuggest(){
+  // 判定末尾自带「检索建议」段，抠出来当追加检索的预填
+  const m = (RV.verdict || "").split(/检索建议/).pop() || "";
+  return m.replace(/[#*`>\-]/g, "").replace(/\s+/g, " ").trim().slice(0, 160);
+}
+async function rvSearchMore(){
+  const q = (prompt("追加检索的需求或角度（换同义词/人群/结局，如：secukinumab psoriasis randomized）：", rvSuggest()) || "").trim();
+  if (!q) return;
+  const btn = $("#rvmore"); if (btn) btn.disabled = true;
+  try {
+    const {all, verdict} = await runSearchData(q, s => { const p = $("#rvprog"); if (p) p.textContent = s; });
+    const seen = new Set(RV.items.map(x => x.doi || (x.pmid ? "p:" + x.pmid : "t:" + normTitle(x.title).slice(0, 60))));
+    const vm = rvVerdictMap(verdict);
+    const fresh = [];
+    for (const x of all){
+      if (!x.title) continue;
+      const k = x.doi || (x.pmid ? "p:" + x.pmid : "t:" + normTitle(x.title).slice(0, 60));
+      if (seen.has(k)) continue;
+      seen.add(k); fresh.push(x);
+    }
+    fresh.forEach((x, i) => RV.items.push({...x, v: vm[i + 1] || ""}));
+    if (verdict) RV.verdict = [RV.verdict, "【追加检索判定】\n" + verdict].filter(Boolean).join("\n\n---\n");
+    saveReview();
+    toast(`🔍 追加检索：新增 ${fresh.length} 篇（去重后），现候选 ${RV.items.length} 篇`);
+  } catch (e){ toast("追加检索失败：" + e.message); }
+  if (btn) btn.disabled = false;
+  rvRender();
+}
+async function rvPick(){
+  const sel = [...document.querySelectorAll("#rvlist input:checked")].map(i => +i.dataset.i);
+  if (sel.length < 4) return toast("至少勾选 4 篇——原料太少撑不起综述");
+  RV.picked = sel;
+  $("#rvprog").textContent = "入库中…";
+  try { await rvImport(); }
+  catch (e){ toast("入库失败：" + e.message); return; }
+  $("#rvprog").textContent = "生成论点大纲中…";
+  RV.stage = "outline"; saveReview();
+  try { await rvOutline(); }
+  catch {
+    toast("大纲生成失败，重试一次…");
+    try { await rvOutline(); }
+    catch (e){ toast("⚠ 大纲仍失败：" + e.message + "——可点「让 AI 改大纲」重试或换话题"); RV.stage = "select"; }
+  }
+  saveReview();
+  rvRender();
+}
+async function rvImport(){
+  const lib = await (await fetch(LIB_URL())).json().catch(() => ({items: []}));
+  const items = Array.isArray(lib.items) ? lib.items : [];
+  const used = new Set(items.map(i => i.key));
+  let added = 0, dup = 0;
+  for (const i of RV.picked){
+    const x = RV.items[i];
+    const exist = (x.doi && items.find(t => t.doi === x.doi))
+      || items.find(t => normTitle(t.title) === normTitle(x.title));
+    if (exist){
+      dup++;
+      if (!exist.collections?.includes(RV.topic)) (exist.collections ||= []).push(RV.topic);
+      x.key = exist.key;
+      continue;
+    }
+    x.key = refKey(x.doi || x.title, used);
+    items.push({key: x.key, name: (x.title || "").slice(0, 80) + ".pdf", title: x.title || "",
+      authors: x.author || "", year: x.year || "", journal: x.journal || "", doi: x.doi || "", pmid: x.pmid || "",
+      pages: 0, text: x.abs || "", tags: ["AI综述"], collections: [RV.topic], source: ED.convId, ts: Date.now()});
+    added++;
+  }
+  await fetch(LIB_URL(), {method: "PUT", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({schema: 1, updated: Date.now(), items})});
+  ED.lib = items;   // 本地同步，[@key] 引用立即可用
+  toast(`📚 入库：新增 ${added} 篇，已有 ${dup} 篇`);
+}
+async function rvOutline(feedback){
+  const picked = RV.picked.map(i => RV.items[i]);
+  const list = picked.map(x =>
+    `${x.key}|${(x.title || "").slice(0, 120)}|${x.journal || ""}|${x.year || ""}|${(x.abs || "无摘要，仅按题录归类").slice(0, 600)}`).join("\n");
+  const p = `你是综述大纲设计助手。话题：「${RV.topic}」。\n下面是已入库的文献清单（引用键|标题|期刊|年份|摘要）。\n任务：把综述组织成 4-7 个「论点式」章节——标题要陈述一个可论证的观点，不用「XX 研究进展」这类空题。每章给：title（论点式标题）、claim（一句话论点：该节论证什么、各文献立场如何组织）、keys（支撑文献的引用键，3-8 个，只能从清单里选）。要求：每篇文献至少归入一节；观点冲突的文献放进同一节做对比。\n${feedback ? `用户对上一版大纲的修改意见：「${feedback}」，据此调整。\n` : ""}只输出 JSON：{"sections":[{"title":"","claim":"","keys":[]}]}，不要其他文字。\n\n${list}`;
+  const raw = await dsSearchStep(p, 4000);
+  let j;
+  try { j = JSON.parse((raw.match(/(\{[\s\S]*\})/) || [, "{}"])[1]); } catch {}
+  if (!Array.isArray(j?.sections) || !j.sections.length) throw new Error("大纲解析失败");
+  const valid = new Set(picked.map(x => x.key));
+  RV.outline = {sections: j.sections.map(s => ({
+    title: String(s.title || "").trim(), claim: String(s.claim || "").trim(),
+    keys: (Array.isArray(s.keys) ? s.keys : []).map(String).filter(k => valid.has(k)),
+  })).filter(s => s.title && s.keys.length)};
+  if (!RV.outline.sections.length) throw new Error("大纲章节为空");
+}
+async function rvGenerate(){
+  const secs = RV.outline.sections;
+  if (!confirm(`逐节生成 ${secs.length} 节，每节一次云端调用（合计约 ${secs.length}×8K tokens）。继续？`)) return;
+  // 清掉新建项目自带的空模板章节
+  const keep = ED.sections.filter(s => (s.md || "").trim());
+  if (keep.length < ED.sections.length){
+    ED.sections = keep;
+    if (ED.cur >= keep.length) ED.cur = 0;
+    persistEditor(); renderTabs();
+    if (keep.length) showSection(ED.cur);   // 全空的全新项目无可切章节
+  }
+  RV.stage = "generating"; RV.gen = {done: [], errs: []};
+  saveReview();
+  rvRender();
+  await rvRun();
+  rvRender();
+}
+async function rvRun(){
+  const secs = RV.outline.sections;
+  for (let i = 0; i < secs.length; i++){
+    const s = secs[i];
+    if (RV.gen.done.includes(s.title)) continue;
+    const prog = $("#rvprog"); if (prog) prog.textContent = `第 ${i + 1}/${secs.length} 节：${s.title}…`;
+    try {
+      const mdv = await rvSection(s);
+      await rvWriteSection(s.title, mdv);
+      RV.gen.done.push(s.title);
+    } catch (e){ RV.gen.errs.push({title: s.title, msg: e.message}); }
+    saveReview();
+  }
+  RV.stage = "done";
+  saveReview();
+  toast(`🧭 综述初稿完成：${RV.gen.done.length}/${secs.length} 节` + (RV.gen.errs.length ? `，${RV.gen.errs.length} 节失败（可重开向导重跑）` : ""));
+  showSection(0);
+}
+async function rvSection(s){
+  const picked = RV.picked.map(i => RV.items[i]);
+  const wl = s.keys.map(k => {
+    const x = picked.find(p => p.key === k); if (!x) return "";
+    return `- ${k}：${(x.title || "").slice(0, 120)}（${x.journal || ""} ${x.year || ""}）\n  摘要：${(x.abs || "（无摘要——只能按题录引用，不得虚构方法、数据或结论）").slice(0, 1200)}`;
+  }).filter(Boolean).join("\n");
+  const p = `你是科研综述写作助手，为综述《${RV.topic}》撰写一节。\n本节论点：「${s.claim || s.title}」\n【唯一可用文献】本节只能引用下列引用键，每个事实性陈述句末必须标注引用，禁止引用清单外的文献，禁止编造数据或结论：\n${wl}\n\n已生成的章节标题（保持衔接、不重复展开）：${RV.gen.done.join("、") || "（本节是首节）"}\n\n写作要求：\n1. 800-1500 字中文，学术书面语，围绕论点组织（对比/递进/转折），不做文献逐篇罗列\n2. 引用标注用 Pandoc 语法 [@键]，多条并列写成 [@键1; @键2]；纯综合推论句可不标\n3. 不写参考文献表（系统按引用键自动生成）、不写本节标题\n4. 只输出正文 markdown，不要任何围栏代码块和说明文字`;
+  const out = await dsSearchStep(p, 3500, 0.7);
+  return out.trim().replace(/^```(?:markdown)?\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
+}
+async function rvWriteSection(title, mdv){
+  await snapshot("rv-gen");
+  let sec = ED.sections.find(x => x.title === title);
+  if (!sec){
+    const sid = secGen();
+    sec = {id: sid, title, file: `sec-${sid}.md`, archetype: null, md: ""};
+    ED.sections.push(sec);
+    persistEditor();
+  }
+  sec.md = mdv;
+  await fetch(pf(sec.file), {method: "PUT", body: sec.md}).catch(() => {});
+  if (ED.sections[ED.cur] === sec) $("#secmd").value = mdv;   // 当前打开章节同步编辑框，防后续保存覆盖
+  renderTabs(); updateOutline(); updateStatusBar();
+}
+$("#rvclose").onclick = () => $("#rvpanel").classList.remove("open");
+$("#reviewbtn").onclick = openReviewPanel;
 
 // 防抖保存：调度时快照目标与内容，防抖期间切章节不写错文件
 let saveTimer = null, saveReq = 0;

@@ -413,7 +413,9 @@ final class ArchiveServer {
 
 // 只读文件头 512KB 正则抠 title/ts/资料数；资料数按 "pages": 计数
 extension ArchiveServer {
-    // 原子写 + 滚动备份（name~ / .tmp → rename）
+    // 原子写 + 滚动备份（name~ / 唯一 .tmp → rename）
+    // tmp 必须唯一：并发写同一文件时共享 tmp 会让 replaceItemAt 拿到别人已消费的文件，
+    // 兜底 removeItem(url) 会把正文删掉
     static func safeWrite(_ data: Data, to url: URL) {
         let fm = FileManager.default
         let bak = url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + "~")
@@ -421,12 +423,12 @@ extension ArchiveServer {
             try? fm.removeItem(at: bak)
             try? fm.copyItem(at: url, to: bak)
         }
-        let tmp = url.appendingPathExtension("tmp")
+        let tmp = url.appendingPathExtension("tmp-" + UUID().uuidString)
         guard (try? data.write(to: tmp)) != nil else { return }
         if (try? fm.replaceItemAt(url, withItemAt: tmp)) == nil {
             // replaceItemAt 失败兜底走 move
             try? fm.removeItem(at: url)
-            try? fm.moveItem(at: tmp, to: url)
+            if (try? fm.moveItem(at: tmp, to: url)) == nil { try? fm.removeItem(at: tmp) }
         }
     }
 
