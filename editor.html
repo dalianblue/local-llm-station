@@ -20,57 +20,65 @@
     font: 15px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
     height: 100vh; display: flex; flex-direction: column; overflow: hidden;
   }
+  .spacer { flex: 1; }
+  .hint { color: var(--dim); font-size: 12px; }
+  .dim { color: var(--dim); }
+  .warn-text { color: #d29922; }
+  .ok-text { color: #3fb950; }
+  .err-text { color: #f85149; }
 
   /* ---------- 顶栏 ---------- */
   header {
     padding: 8px 16px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 10px; background: var(--panel);
+    display: flex; align-items: center; gap: 12px; background: var(--panel);
     flex: none; z-index: 30;
   }
-  .hbtn { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 16px; padding: 2px 6px; }
+  .hbtn { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 16px; padding: 4px 8px; }
   .hbtn:hover { color: var(--text); }
-  #projname { font-weight: 600; font-size: 14.5px; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #projname.renamable { cursor: pointer; }
-  #projname.renamable:hover { color: var(--accent); }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: #f85149; flex: none; }
+  .hbtn.lg { font-size: 20px; }
+  .projname { font-weight: 600; font-size: 14.5px; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .projname.renamable { cursor: pointer; }
+  .projname.renamable:hover { color: var(--accent); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #f85149; flex: none; }
   .dot.on { background: #3fb950; }
-  #statustext { font-size: 12.5px; color: var(--dim); }
+  .statustext { font-size: 12.5px; color: var(--dim); }
   /* 本地离线时的知情同意入口：点按钮+确认才切云端，不自动切换（数据出本机需明示） */
-  #cloudbtn {
+  .cloudbtn {
     display: none; background: none; border: 1px solid var(--border); border-radius: 6px;
-    color: var(--accent); font-size: 11.5px; padding: 2px 8px; cursor: pointer; flex: none;
+    color: var(--accent); font-size: 11.5px; padding: 4px 8px; cursor: pointer; flex: none;
   }
-  #cloudbtn:hover { border-color: var(--accent); }
-  #toast {
+  .cloudbtn:hover { border-color: var(--accent); }
+  .toast {
     position: fixed; top: 52px; right: 16px; z-index: 80; max-width: 320px;
     background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
-    padding: 8px 14px; font-size: 13px; box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    padding: 8px 16px; font-size: 13px; box-shadow: 0 4px 20px rgba(0,0,0,.5);
     display: none;
   }
 
   /* ---------- 项目选择页 ---------- */
-  #picker { flex: 1; overflow-y: auto; padding: 40px 20px; }
-  #picker .wrap { max-width: 860px; margin: 0 auto; }
-  #picker h1 { font-size: 22px; margin-bottom: 6px; }
-  #picker .sub { color: var(--dim); font-size: 13.5px; margin-bottom: 24px; }
+  .picker { flex: 1; overflow-y: auto; padding: 40px 20px; }
+  .picker .wrap { max-width: 860px; margin: 0 auto; }
+  .picker h1 { font-size: 22px; margin-bottom: 8px; }
+  .picker .sub { color: var(--dim); font-size: 13.5px; margin-bottom: 24px; }
   .pcard {
     background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 14px 18px; margin-bottom: 10px; cursor: pointer; display: flex; align-items: center; gap: 12px;
+    padding: 16px 20px; margin-bottom: 12px; cursor: pointer; display: flex; align-items: center; gap: 12px;
   }
   .pcard:hover { border-color: var(--accent); }
   .pcard .t { flex: 1; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pcard .meta { color: var(--dim); font-size: 12px; display: flex; gap: 10px; flex: none; }
+  .pcard .meta { color: var(--dim); font-size: 12px; display: flex; gap: 12px; flex: none; }
 
   /* ---------- 三栏 ---------- */
-  #app { flex: 1; display: grid; grid-template-columns: 250px 5px minmax(0,1fr) 5px 400px; min-height: 0; }
+  .workspace { flex: 1; display: grid; grid-template-columns: 250px 4px minmax(0,1fr) 4px 400px; min-height: 0; }
+  .workspace[hidden] { display: none; }   /* 类样式 display:grid 压过 UA [hidden]，守卫必须留 */
   /* 显式轨道：面板折叠(display:none)后不再是 grid item，
      自动排列会把中栏塞进 0 宽的第一轨道导致整栏消失 */
-  #left { grid-column: 1; }
-  #vs1 { grid-column: 2; }
-  #mid { grid-column: 3; }
-  #vs2 { grid-column: 4; }
-  #right { grid-column: 5; }
-  /* 栏间拖拽分隔条：5px 命中区，中间 1px 视觉线 */
+  .col-left { grid-column: 1; }
+  .col-vs1 { grid-column: 2; }
+  .col-mid { grid-column: 3; }
+  .col-vs2 { grid-column: 4; }
+  .col-right { grid-column: 5; }
+  /* 栏间拖拽分隔条：4px 命中区，中间 1px 视觉线 */
   .vsplit { cursor: col-resize; position: relative; }
   .vsplit::after {
     content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 1px;
@@ -78,187 +86,192 @@
   }
   .vsplit:hover::after, .vsplit.dragging::after { background: var(--accent); }
   aside { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
-  #left { border-right: 1px solid var(--border); }
-  #right { border-left: 1px solid var(--border); container-type: inline-size; }
+  .col-left { border-right: 1px solid var(--border); }
+  .col-right { border-left: 1px solid var(--border); container-type: inline-size; }
   /* 右栏变窄（拖拽或小窗）：按钮只留图标、藏标题文字与提示语、下拉收缩 */
   @container (max-width: 360px) {
-    #bar .lbl, #chathead .tlabel { display: none; }
-    #chathead select { max-width: 92px; text-overflow: ellipsis; }
+    .inputbar .lbl, .chathead .tlabel { display: none; }
+    .chathead select { max-width: 92px; text-overflow: ellipsis; }
   }
   .pane { display: flex; flex-direction: column; min-height: 0; }
-  #outlinepane { flex: none; min-height: 100px; }
-  #respane { flex: 1; min-height: 100px; }
+  .outlinepane { flex: none; min-height: 100px; }
+  .respane { flex: 1; min-height: 100px; }
   /* 左栏横向分隔条：拖拽调大纲/资源高度（与 vsplit 同款视觉） */
-  .hsplit { cursor: row-resize; position: relative; flex: none; height: 5px; }
+  .hsplit { cursor: row-resize; position: relative; flex: none; height: 4px; }
   .hsplit::after {
     content: ""; position: absolute; left: 0; right: 0; top: 2px; height: 1px;
     background: var(--border); transition: background .15s;
   }
   .hsplit:hover::after, .hsplit.dragging::after { background: var(--accent); }
   .ptitle {
-    padding: 10px 14px 6px; font-size: 12px; color: var(--dim); letter-spacing: 1px;
+    padding: 12px 16px 8px; font-size: 12px; color: var(--dim); letter-spacing: 1px;
     display: flex; align-items: center;
   }
   .ptitle .fold { margin-left: auto; background: none; border: 1px solid var(--border); border-radius: 6px;
-    color: var(--dim); cursor: pointer; font-size: 13px; font-weight: 700; padding: 1px 7px; line-height: 1.3; }
+    color: var(--dim); cursor: pointer; font-size: 13px; font-weight: 700; padding: 1px 8px; line-height: 1.3; }
   .ptitle .fold:hover { color: var(--text); border-color: var(--accent); }
-  #chathead .hbtn.foldbtn { border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
-    font-size: 13px; font-weight: 700; padding: 1px 7px; }
-  #chathead .hbtn.foldbtn:hover { color: var(--text); border-color: var(--accent); }
-  .ptitle .fold:hover { color: var(--text); }
-  #outline, #resources { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
+  .chathead .hbtn.foldbtn { border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
+    font-size: 13px; font-weight: 700; padding: 1px 8px; }
+  .chathead .hbtn.foldbtn:hover { color: var(--text); border-color: var(--accent); }
+  .treepane { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
   .oitem {
-    padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
     color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .oitem:hover { background: #1f2630; }
   .oitem.sec { font-weight: 700; }
-  .oitem.h1 { padding-left: 22px; font-weight: 600; }
-  .oitem.h2 { padding-left: 34px; color: var(--dim); }
+  .oitem.h1 { padding-left: 24px; font-weight: 600; }
+  .oitem.h2 { padding-left: 36px; color: var(--dim); }
   .oitem.cur { color: var(--accent); }
-  .rsec { margin-bottom: 14px; }
-  .rhead { font-size: 12.5px; color: var(--accent); padding: 0 6px 4px; }
+  .rsec { margin-bottom: 16px; }
+  .rhead { font-size: 12.5px; color: var(--accent); padding: 0 8px 4px; }
+  .rhead-s { padding: 8px 8px 4px; }
   .ritem {
-    display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 13px;
+    display: flex; align-items: center; gap: 8px; padding: 8px; font-size: 13px;
     border-radius: 6px;
   }
   .ritem:hover { background: #1f2630; }
   .ritem .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ritem .t.plainbtn { cursor: pointer; }
+  .ritem .t.selclamp { cursor: pointer; white-space: normal; display: -webkit-box; -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical; overflow: hidden; }
   .ritem small { color: var(--dim); font-size: 11.5px; flex: none; }
   .ritem button {
-    background: none; border: 1px solid var(--border); border-radius: 5px; color: var(--dim);
-    font-size: 11px; padding: 1px 6px; cursor: pointer; flex: none;
+    background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--dim);
+    font-size: 11px; padding: 1px 8px; cursor: pointer; flex: none;
   }
   .ritem button:hover { color: var(--text); border-color: var(--dim); }
   .ritem button.att-on { color: var(--accent); border-color: var(--accent); }
-  #left.folded, #right.folded { display: none; }
+  .col-left.folded, .col-right.folded { display: none; }
 
   /* ---------- 中栏：章节 tab + 编辑区 + 状态条 ---------- */
-  #mid { display: flex; flex-direction: column; min-height: 0; position: relative; }
+  .col-mid { display: flex; flex-direction: column; min-height: 0; position: relative; }
   /* 栏折叠后的展开把手（栏内按钮随栏一起消失，把手挂在中栏边缘常驻） */
   .edge {
     position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
     background: var(--panel); border: 1px solid var(--border); color: var(--dim);
-    border-radius: 6px; padding: 12px 3px; cursor: pointer; font-size: 12px; display: none;
+    border-radius: 6px; padding: 12px 4px; cursor: pointer; font-size: 12px; display: none;
   }
   .edge.left { left: 0; border-left: none; }
   .edge.right { right: 0; border-right: none; }
   .edge:hover { color: var(--text); border-color: var(--accent); }
-  #tabs { display: flex; align-items: center; gap: 2px; padding: 8px 12px 0; flex-wrap: wrap; flex: none; }
+  .tabs { display: flex; align-items: center; gap: 4px; padding: 8px 12px 0; flex-wrap: wrap; flex: none; }
   .tab {
-    padding: 5px 12px; border: 1px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0;
+    padding: 4px 12px; border: 1px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0;
     background: var(--panel); color: var(--dim); font-size: 13px; cursor: pointer;
-    display: flex; align-items: center; gap: 6px; max-width: 180px;
+    display: flex; align-items: center; gap: 8px; max-width: 180px;
   }
   .tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tab.active { background: var(--bg); color: var(--text); border-color: var(--accent); }
   .tab[draggable="true"] { cursor: grab; }
   .tab.over { border-color: var(--accent); box-shadow: -2px 0 0 var(--accent); }
-  .tab .x { color: var(--dim); font-size: 11px; padding: 0 2px; opacity: 0; transition: opacity .12s; }
+  .tab .x { color: var(--dim); font-size: 11px; padding: 0 4px; opacity: 0; transition: opacity .12s; }
   .tab:hover .x { opacity: 1; }
   .tab .x:hover { color: #f85149; }
   .tab .add { color: var(--dim); font-size: 14px; }
   /* markdown 格式工具栏：所有按钮只做"往 textarea 插语法符号" */
-  #mdbar {
+  .mdbar {
     flex: none; display: flex; align-items: center; gap: 4px;
-    padding: 6px 14px; border-bottom: 1px solid var(--border); background: var(--panel);
+    padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
   }
-  #mdbar select {
+  .mdbar[hidden] { display: none; }
+  .mdbar select {
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 3px 6px; font-size: 12.5px; cursor: pointer;
+    border-radius: 6px; padding: 4px 8px; font-size: 12.5px; cursor: pointer;
   }
-  #mdbar button {
+  .mdbar button {
     background: none; border: 1px solid transparent; border-radius: 6px; color: var(--dim);
-    font-size: 13px; padding: 3px 9px; cursor: pointer; min-width: 30px;
+    font-size: 13px; padding: 4px 8px; cursor: pointer; min-width: 32px;
   }
-  #mdbar button:hover { color: var(--text); border-color: var(--border); background: var(--bg); }
-  #mdbar .sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
-  #editwrap { flex: 1; min-height: 0; display: flex; justify-content: center; padding: 20px 24px; }
-  #secmd {
+  .mdbar button:hover { color: var(--text); border-color: var(--border); background: var(--bg); }
+  .mdbar .sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+  .editwrap { flex: 1; min-height: 0; display: flex; justify-content: center; padding: 20px 24px; }
+  .editwrap[hidden] { display: none; }
+  .secmd {
     width: 100%; max-width: 46em; height: 100%; background: none; border: none; outline: none;
     color: var(--text); resize: none; font: 16px/1.9 Georgia, "Songti SC", "Noto Serif SC", serif;
     caret-color: var(--accent);
   }
-  #secpreview { width: 100%; max-width: 46em; height: 100%; overflow-y: auto; }
+  .secpreview { width: 100%; max-width: 46em; height: 100%; overflow-y: auto; }
   /* 📚 参考文献验证（伪章节工具页：不进 ED.sections，导出与 AI 上下文天然隔离） */
-  #refwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 20px 24px; }
-  #refwrap[hidden] { display: none; }
-  #refin {
+  .refwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 20px 24px; }
+  .refwrap[hidden] { display: none; }
+  .refin {
     flex: none; height: 24%; width: 100%; max-width: 46em; margin: 0 auto; resize: vertical;
-    background: none; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
+    background: none; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px;
     color: var(--text); outline: none; font: 13px/1.8 var(--mono); caret-color: var(--accent);
   }
-  #refbar { flex: none; display: flex; align-items: center; gap: 12px; width: 100%; max-width: 46em; margin: 0 auto; font-size: 12px; color: var(--dim); }
-  #refgo { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 14px; cursor: pointer; }
-  #refgo:hover { border-color: var(--dim); }
-  #refout { flex: 1; min-height: 0; width: 100%; max-width: 46em; margin: 0 auto; overflow-y: auto; }
-  #statusbar {
+  .refbar { flex: none; display: flex; align-items: center; gap: 12px; width: 100%; max-width: 46em; margin: 0 auto; font-size: 12px; color: var(--dim); }
+  .refgo { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 16px; cursor: pointer; }
+  .refgo:hover { border-color: var(--dim); }
+  .refout { flex: 1; min-height: 0; width: 100%; max-width: 46em; margin: 0 auto; overflow-y: auto; }
+  .statusbar {
     flex: none; border-top: 1px solid var(--border); background: var(--panel);
-    padding: 5px 16px; display: flex; align-items: center; gap: 16px;
+    padding: 4px 16px; display: flex; align-items: center; gap: 16px;
     font-size: 12px; color: var(--dim); font-family: var(--mono);
   }
-  #statusbar .spacer { flex: 1; }
-  #statusbar button {
+  .statusbar button {
     background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
-    font-size: 12px; padding: 2px 10px; cursor: pointer;
+    font-size: 12px; padding: 4px 12px; cursor: pointer;
   }
-  #statusbar button:hover { color: var(--text); border-color: var(--dim); }
-  /* 导出菜单（statusbar 内，样式比照 dashboard 的 newmenu）；审稿视角菜单同款 */
-  #expmenu, #revmenu {
-    display: none; position: absolute; bottom: calc(100% + 6px); z-index: 50;
+  .statusbar button:hover { color: var(--text); border-color: var(--dim); }
+  .expwrap, .revwrap { position: relative; }
+  /* 导出/审稿弹出菜单（statusbar 内，样式比照 dashboard 的 newmenu） */
+  .expmenu {
+    display: none; position: absolute; bottom: calc(100% + 8px); z-index: 50;
     background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 6px; min-width: 220px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    padding: 8px; min-width: 220px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
   }
-  #expmenu { right: 0; }
-  #revmenu { left: 0; }
-  #expmenu.open, #revmenu.open { display: block; }
-  #expmenu .nopt, #revmenu .nopt { padding: 9px 12px; border-radius: 8px; cursor: pointer; }
-  #expmenu .nopt:hover, #revmenu .nopt:hover { background: var(--bg); }
-  #expmenu .nopt b, #revmenu .nopt b { display: block; font-size: 13.5px; }
-  #expmenu .nopt small, #revmenu .nopt small { color: var(--dim); font-size: 11.5px; }
-  #snapcount { cursor: pointer; }
-  #snapcount:hover { color: var(--accent); }
+  .expmenu { right: 0; }
+  .expmenu.anch-l { left: 0; right: auto; }
+  .expmenu.open { display: block; }
+  .expmenu .nopt { padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+  .expmenu .nopt:hover { background: var(--bg); }
+  .expmenu .nopt b { display: block; font-size: 13.5px; }
+  .expmenu .nopt small { color: var(--dim); font-size: 11.5px; }
+  .snapcount { cursor: pointer; }
+  .snapcount:hover { color: var(--accent); }
 
   /* ---------- 右栏：AI 对话 ---------- */
-  #chathead {
-    flex: none; padding: 10px 14px; border-bottom: 1px solid var(--border);
+  .chathead {
+    flex: none; padding: 12px 16px; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600;
   }
-  #chathead select {
+  .chathead select {
     margin-left: auto; background: var(--bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 3px 6px; font-size: 12px;
+    border-radius: 6px; padding: 4px 8px; font-size: 12px;
   }
-  #chathead #editbtn {
+  .chathead .editbtn {
     background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
-    font-size: 12px; font-weight: 400; padding: 3px 8px; cursor: pointer;
+    font-size: 12px; font-weight: 400; padding: 4px 8px; cursor: pointer;
   }
-  #chathead #editbtn.on { color: var(--accent); border-color: var(--accent); }
-  #chatlog { flex: 1; overflow-y: auto; padding: 16px 0; }
-  #chatlog .wrap { max-width: 100%; padding: 0 14px; }
-  .msg { margin-bottom: 20px; display: flex; gap: 10px; position: relative; animation: msgin .18s ease-out; }
+  .chathead .editbtn.on { color: var(--accent); border-color: var(--accent); }
+  .chatlog { flex: 1; overflow-y: auto; padding: 16px 0; }
+  .chatlog .wrap { max-width: 100%; padding: 0 16px; }
+  .msg { margin-bottom: 20px; display: flex; gap: 12px; position: relative; animation: msgin .18s ease-out; }
   @keyframes msgin { from { opacity: 0; transform: translateY(4px); } }
   .msg .avatar {
-    width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
+    width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
   }
   .msg.user .avatar { background: var(--accent); color: #fff; }
   .msg.bot  .avatar { background: linear-gradient(135deg,#6a5cff,#4f8cf7); color: #fff; }
-  .bubble { max-width: calc(100% - 38px); word-break: break-word; flex: 1; }
+  .bubble { max-width: calc(100% - 40px); word-break: break-word; flex: 1; }
   .msg.user .bubble .content { background: var(--user-bubble); padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; }
   .think-block { margin-bottom: 8px; }
   .think-block summary { color: var(--think); font-size: 12.5px; cursor: pointer; user-select: none; list-style: none; }
   .think-block summary::before { content: "💭 "; }
   .think-block .tcontent {
     color: var(--think); font-size: 12.5px; border-left: 2px solid var(--border);
-    padding-left: 10px; margin-top: 6px; white-space: pre-wrap;
+    padding-left: 12px; margin-top: 8px; white-space: pre-wrap;
   }
   .content pre {
     background: #0a0d12; border: 1px solid var(--border); border-radius: 8px;
     padding: 12px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; margin: 8px 0;
   }
   .content code { font-family: var(--mono); font-size: 13px; }
-  .content :not(pre) > code { background: #21262d; padding: 2px 6px; border-radius: 4px; }
-  .content p { margin: 6px 0; } .content ul, .content ol { margin: 6px 0 6px 22px; }
+  .content :not(pre) > code { background: #21262d; padding: 4px 8px; border-radius: 4px; }
+  .content p { margin: 8px 0; } .content ul, .content ol { margin: 8px 0 8px 24px; }
   .content blockquote {
     border-left: 3px solid var(--accent); padding: 4px 12px; margin: 8px 0;
     color: var(--dim); background: rgba(255,255,255,.02); border-radius: 0 8px 8px 0;
@@ -268,12 +281,12 @@
   .content input[type=checkbox] { accent-color: var(--accent); margin-right: 4px; }
   /* 引文上标与参考文献列表（[@key] 渲染产物） */
   .cite { color: var(--accent); }
-  ol.refs { margin: 8px 0 4px 22px; font-size: 12.5px; color: var(--dim); line-height: 1.9; }
+  ol.refs { margin: 8px 0 4px 24px; font-size: 12.5px; color: var(--dim); line-height: 1.9; }
   ol.refs a { color: var(--accent); }
   .content table { border-collapse: collapse; margin: 8px 0; font-size: 13px; display: block; overflow-x: auto; }
-  .content th, .content td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
+  .content th, .content td { border: 1px solid var(--border); padding: 4px 12px; text-align: left; }
   .content th { background: #21262d; }
-  .content .katex-display { overflow-x: auto; overflow-y: hidden; margin: 10px 0; }
+  .content .katex-display { overflow-x: auto; overflow-y: hidden; margin: 12px 0; }
   .typing::after { content: "▍"; animation: blink 1s step-start infinite; color: var(--accent); }
   @keyframes blink { 50% { opacity: 0; } }
   .syscard {
@@ -281,11 +294,11 @@
     font-size: 13px; color: var(--dim); margin-bottom: 16px; background: rgba(255,255,255,.02);
     white-space: pre-wrap;
   }
-  .acts { display: flex; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity .12s; flex-wrap: wrap; }
+  .acts { display: flex; gap: 4px; margin-top: 8px; opacity: 0; transition: opacity .12s; flex-wrap: wrap; }
   .msg:hover .acts, .acts.actson { opacity: 1; }
   .acts button {
     background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
-    font-size: 12px; padding: 2px 8px; cursor: pointer;
+    font-size: 12px; padding: 4px 8px; cursor: pointer;
   }
   .acts button:hover { color: var(--text); border-color: var(--dim); }
   .acts button.ins { color: var(--accent); border-color: var(--accent); }
@@ -293,85 +306,86 @@
   .codewrap .ccopy {
     position: absolute; right: 8px; top: 8px; z-index: 2; opacity: 0;
     background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
-    color: var(--dim); font-size: 11.5px; padding: 2px 8px; cursor: pointer;
+    color: var(--dim); font-size: 11.5px; padding: 4px 8px; cursor: pointer;
   }
   .codewrap:hover .ccopy { opacity: 1; }
   .askq { color: var(--accent); }
-  #ctxbar { flex: none; padding: 4px 14px; font-size: 11.5px; color: var(--dim); font-family: var(--mono); }
-  #ctxtrack { height: 3px; background: var(--border); border-radius: 2px; margin-top: 3px; overflow: hidden; }
-  #ctxfill { height: 100%; width: 0; background: var(--accent); border-radius: 2px; }
-  #ctxfill.warn { background: #d29922; } #ctxfill.danger { background: #f85149; }
-  #inputbox {
+  .ctxbar { flex: none; padding: 4px 16px; font-size: 11.5px; color: var(--dim); font-family: var(--mono); }
+  .ctxtrack { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+  .ctxfill { height: 100%; width: 0; background: var(--accent); border-radius: 2px; }
+  .ctxfill.warn { background: #d29922; } .ctxfill.danger { background: #f85149; }
+  .inputbox {
     flex: none; margin: 0 12px 12px; border: 1px solid var(--border); border-radius: 12px;
-    background: var(--bg); padding: 8px 10px; transition: border-color .15s;
+    background: var(--bg); padding: 8px 12px; transition: border-color .15s;
   }
   /* 输入框顶边拖拽把手：上调增高输入框（高度存 editor_layout.inpH） */
-  #inpgrip { height: 6px; margin: -8px -10px 4px; cursor: row-resize; position: relative; }
-  #inpgrip::after {
-    content: ""; position: absolute; left: 30%; right: 30%; top: 3px; height: 1px;
+  .inpgrip { height: 8px; margin: -8px -12px 4px; cursor: row-resize; position: relative; }
+  .inpgrip::after {
+    content: ""; position: absolute; left: 30%; right: 30%; top: 4px; height: 1px;
     background: var(--border); transition: background .15s, left .15s, right .15s;
   }
-  #inpgrip:hover::after, #inpgrip.dragging::after { background: var(--accent); left: 20%; right: 20%; }
-  #inputbox:focus-within { border-color: var(--accent); }
-  #p { width: 100%; background: none; border: none; outline: none; color: var(--text);
+  .inpgrip:hover::after, .inpgrip.dragging::after { background: var(--accent); left: 20%; right: 20%; }
+  .inputbox:focus-within { border-color: var(--accent); }
+  .ptext { width: 100%; background: none; border: none; outline: none; color: var(--text);
        font: inherit; resize: none; }
-  #bar { display: flex; align-items: center; gap: 8px; margin-top: 4; }
-  #send, #stopbtn {
-    background: var(--accent); color: #fff; border: none; border-radius: 7px;
-    padding: 5px 16px; font-size: 13px; cursor: pointer;
+  .inputbar { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .ibtn {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 4px 16px; font-size: 13px; cursor: pointer;
   }
-  #stopbtn { background: #f85149; display: none; margin-left: auto; }
-  #attbtn, #draftbtn, #genbtn, #histbtn {
+  .ibtn.stop { background: #f85149; display: none; margin-left: auto; }
+  /* 开关按钮类：新开关加 class="togbtn" 即得样式（id 列表是漏样式之源） */
+  .togbtn {
     background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
-    font-size: 12px; padding: 3px 8px; cursor: pointer;
+    font-size: 12px; padding: 4px 8px; cursor: pointer;
   }
-  #attbtn.on, #draftbtn.on, #histbtn.on { color: var(--accent); border-color: var(--accent); }
-  #genbtn { color: var(--accent); }
+  .togbtn.on { color: var(--accent); border-color: var(--accent); }
+  .togbtn.gen { color: var(--accent); }
   /* 选中文字浮动工具条：跟随选区（mouseup 定位，键盘选择按行估算） */
-  #selbar {
+  .selbar {
     position: fixed; z-index: 70; display: flex; align-items: center; gap: 4px;
-    padding: 4px 6px; background: var(--panel); border: 1px solid var(--border);
+    padding: 4px 8px; background: var(--panel); border: 1px solid var(--border);
     border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.45);
   }
-  #selbar[hidden] { display: none; }
-  #selbar span { font-size: 11px; color: var(--dim); margin-right: 2px; }
-  #selbar button {
+  .selbar[hidden] { display: none; }
+  .selbar span { font-size: 11px; color: var(--dim); margin-right: 4px; }
+  .selbar button {
     background: none; border: 1px solid transparent; border-radius: 6px; color: var(--accent);
-    font-size: 12px; padding: 2px 8px; cursor: pointer;
+    font-size: 12px; padding: 4px 8px; cursor: pointer;
   }
-  #selbar button:hover { border-color: var(--accent); background: var(--bg); }
+  .selbar button:hover { border-color: var(--accent); background: var(--bg); }
   /* @ 自动补全弹层：编辑区敲 @ 唤起，卡片/文献混合列表 */
-  #atmenu {
+  .atmenu {
     position: fixed; z-index: 70; min-width: 260px; max-width: 400px; max-height: 260px;
     overflow-y: auto; background: var(--panel); border: 1px solid var(--border);
     border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.45); padding: 4px;
   }
-  #atmenu[hidden] { display: none; }
-  #atmenu .aitem { padding: 5px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; }
-  #atmenu .aitem small { color: var(--dim); margin-left: 6px; font-size: 11px; }
-  #atmenu .aitem.on { background: var(--bg); }
+  .atmenu[hidden] { display: none; }
+  .atmenu .aitem { padding: 4px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  .atmenu .aitem small { color: var(--dim); margin-left: 8px; font-size: 11px; }
+  .atmenu .aitem.on { background: var(--bg); }
   /* 窄窗口：中栏状态栏按钮只留图标（右栏走上面的容器查询） */
   @media (max-width: 1100px) {
-    #statusbar button .lbl { display: none; }
+    .statusbar button .lbl { display: none; }
   }
   /* 知识卡片引用 [[概念]] 的渲染产物 */
   .cardchip {
     background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-    padding: 0 5px; font-size: .85em; color: var(--accent); cursor: help;
+    padding: 0 4px; font-size: .85em; color: var(--accent); cursor: help;
   }
   /* 文献选择弹层条目 */
-  .attrow { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .attrow { display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--border); font-size: 13px; cursor: pointer; }
   .attrow:last-child { border-bottom: none; }
   .attrow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .attrow small { color: var(--dim); font-size: 11.5px; flex: none; }
   .attrow input { accent-color: var(--accent); }
   .attrow .c-cite {
-    background: none; border: 1px solid var(--border); border-radius: 5px; color: var(--dim);
-    font-size: 11px; padding: 1px 7px; cursor: pointer; flex: none;
+    background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--dim);
+    font-size: 11px; padding: 1px 8px; cursor: pointer; flex: none;
   }
   .attrow .c-cite:hover { color: var(--accent); border-color: var(--accent); }
 
-  /* ---------- 版本面板 / 设置 ---------- */
+  /* ---------- 版本面板 / 设置 / 弹窗公共件 ---------- */
   .modal {
     position: fixed; inset: 0; z-index: 60; display: none;
     align-items: center; justify-content: center; background: rgba(0,0,0,.5);
@@ -382,12 +396,24 @@
     width: min(560px, 92vw); max-height: 80vh; display: flex; flex-direction: column;
     box-shadow: 0 8px 40px rgba(0,0,0,.6);
   }
-  .mhead { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; font-weight: 600; }
+  .mbox.narrow { max-width: 760px; }
+  .mhead { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; font-weight: 600; }
   .mhead .hbtn { margin-left: auto; }
-  #verlist { overflow-y: auto; padding: 8px 12px; }
-  #attlist { overflow-y: auto; padding: 8px 12px; min-height: 0; }
+  .mfoot { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+  .mfoot.mt { margin-top: 12px; }
+  .mfoot .fsum { font-size: 12px; color: var(--dim); align-self: center; }
+  .mfoot button { background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--dim); font-size: 12px; padding: 4px 12px; cursor: pointer; }
+  .mfoot button:hover { color: var(--text); }
+  .mfoot button.go, .mfoot button.go:hover { background: var(--accent); color: #fff; border: none; font-weight: 500; padding: 4px 16px; }
+  .mfoot button.danger:hover { color: #f85149; border-color: #f85149; }
+  .mtextarea { width: calc(100% - 40px); min-height: 220px; margin: 12px 20px 0;
+    background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; font: inherit; font-size: 13px; line-height: 1.6; resize: vertical; }
+  .mlist { overflow-y: auto; padding: 8px 12px; min-height: 0; }
+  .rvbody { padding: 12px 20px; max-height: 72vh; overflow: auto; font-size: 13px; line-height: 1.7; }
   .vrow {
-    display: flex; align-items: center; gap: 8px; padding: 8px 8px;
+    display: flex; align-items: center; gap: 8px; padding: 8px;
     border-bottom: 1px solid var(--border); font-size: 13px;
   }
   .vrow:last-child { border-bottom: none; }
@@ -397,18 +423,20 @@
   .vrow .wc { color: var(--dim); font-size: 11.5px; font-family: var(--mono); }
   .vrow button {
     background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
-    font-size: 12px; padding: 2px 8px; cursor: pointer; flex: none;
+    font-size: 12px; padding: 4px 8px; cursor: pointer; flex: none;
   }
   .vrow button:hover { color: var(--text); }
-  #verfoot { padding: 10px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+  .vrow button.hasresp { color: var(--accent); }
+  .vrow .vst { cursor: pointer; }
+  .ghostlink { float: right; cursor: pointer; border: none; background: none; color: var(--dim); font-size: 13px; }
+  .ghostlink.mr8 { margin-right: 8px; }
   /* 快照差异视图：双向行号 + 点击行跳转编辑区 */
-  #difflist { overflow-y: auto; padding: 8px 12px; }
-  .dsec { margin-bottom: 10px; }
-  .dsec .dhead { font-size: 13px; font-weight: 600; padding: 4px 6px; }
+  .dsec { margin-bottom: 12px; }
+  .dsec .dhead { font-size: 13px; font-weight: 600; padding: 4px 8px; }
   .dl {
-    display: grid; grid-template-columns: 3em 3em 1fr; gap: 6px; padding: 0 4px;
+    display: grid; grid-template-columns: 3em 3em 1fr; gap: 8px; padding: 0 4px;
     font: 12px/1.7 var(--mono); white-space: pre-wrap; word-break: break-all;
-    cursor: pointer; border-radius: 3px;
+    cursor: pointer; border-radius: 4px;
   }
   .dl .no { color: var(--dim); text-align: right; user-select: none; }
   .dl.d-del { background: rgba(248,81,73,.14); }
@@ -418,64 +446,91 @@
   .dl.d-ctx { color: var(--dim); }
   .dl.d-ctx:hover { background: var(--bg); }
   .dl.d-skip { color: var(--dim); cursor: default; font-size: 11.5px; }
-  #verfoot button { background: none; border: 1px solid var(--border); border-radius: 6px;
-    color: var(--dim); font-size: 12px; padding: 3px 10px; cursor: pointer; }
-  #verfoot button:hover { color: #f85149; border-color: #f85149; }
-  #settings {
-    position: absolute; top: 44px; right: 10px; z-index: 50; width: 300px;
+  .diffhint { font-size: 12.5px; color: var(--dim); padding: 4px 8px 8px; }
+  .diffline { padding: 4px 8px; white-space: pre-wrap; }
+  .diffline.d-del { color: #f85149; background: rgba(248,81,73,.12); }
+  .diffline.d-add { color: #3fb950; background: rgba(63,185,80,.12); }
+  .diffbox { border: 1px solid var(--border); border-radius: 6px; margin: 8px 0; overflow: hidden; }
+  .attcol { font-size: 12px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; max-width: 150px; }
+  .rvstat { padding: 4px 8px; font-size: 12px; }
+  .rvstat.warn { color: #d29922; }
+  .rvstat.ok { color: #3fb950; }
+  .p4 { padding: 4px 0; }
+  .fw4 { font-weight: 400; }
+  .rvrow { margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .rvbtn { color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 16px; cursor: pointer; background: var(--panel); }
+  .rvbtn.go { background: var(--accent); }
+  .qinput { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font: inherit; }
+  .alertbox { background: rgba(210,153,34,.12); border: 1px solid #d29922; border-radius: 8px;
+    padding: 8px 12px; margin-bottom: 12px; }
+  .rvsub { margin-bottom: 8px; color: var(--dim); }
+  .rvwarn { margin-top: 8px; color: #d29922; }
+  .rvh { margin-bottom: 8px; }
+  .rvsec { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .rvlabel { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0;
+    border-bottom: 1px solid var(--border); cursor: pointer; }
+  .rvlabel input { margin-top: 4px; }
+  .msum { cursor: pointer; color: var(--dim); }
+  .msum.warn { color: #d29922; }
+  .rvdet { margin: 8px 0; }
+  .settings {
+    position: absolute; top: 44px; right: 12px; z-index: 50; width: 300px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 14px; display: none; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    padding: 16px; display: none; box-shadow: 0 8px 30px rgba(0,0,0,.5);
   }
-  #settings.open { display: block; }
-  #settings label { display: block; font-size: 12.5px; color: var(--dim); margin: 10px 0 4px; }
-  #settings input, #settings select {
+  .settings.open { display: block; }
+  .settings label { display: block; font-size: 12.5px; color: var(--dim); margin: 12px 0 4px; }
+  .settings input, .settings select {
     width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 8px; padding: 6px 10px; font-size: 13px;
+    border-radius: 8px; padding: 8px 12px; font-size: 13px;
   }
-  #settings .row { display: flex; gap: 8px; margin-top: 14px; }
-  #settings .row button {
+  .settings .row { display: flex; gap: 8px; margin-top: 16px; }
+  .settings .row button {
     flex: 1; background: var(--accent); color: #fff; border: none; border-radius: 8px;
-    padding: 7px; font-size: 13px; cursor: pointer;
+    padding: 8px; font-size: 13px; cursor: pointer;
   }
 </style>
 </head>
 <body>
 <header>
-  <button class="hbtn" id="homebtn" title="项目总览" style="font-size:19px">🏠</button>
+  <button class="hbtn lg" id="homebtn" title="项目总览">🏠</button>
   <button class="hbtn" id="chatbtn" title="打开本项目对话">💬</button>
-  <div id="projname">科研写作</div>
-  <span class="dot off" id="dot"></span><span id="statustext">连接中…</span>
-  <button id="cloudbtn" title="本地服务离线——切换到 DeepSeek 云端（数据将出本机，需确认）">☁️ 切到云端</button>
-  <span style="flex:1"></span>
+  <div id="projname" class="projname">科研写作</div>
+  <span class="dot off" id="dot"></span><span id="statustext" class="statustext">连接中…</span>
+  <button id="cloudbtn" class="cloudbtn" title="本地服务离线——切换到 DeepSeek 云端（数据将出本机，需确认）">☁️ 切到云端</button>
+  <span class="spacer"></span>
   <button class="hbtn" id="verbtn" title="版本管理（快照与恢复）">🕐 版本</button>
   <button class="hbtn" id="setbtn" title="设置">⚙️</button>
 </header>
 
-<div id="picker"><div class="wrap">
+<div id="picker" class="picker"><div class="wrap">
   <h1>✍️ 选择要写作的项目</h1>
   <div class="sub">每个对话即一个项目——章节、版本与写作对话存放在该项目文件夹内（本地磁盘，不出本机）</div>
   <div id="plist"></div>
 </div></div>
 
-<div id="app" hidden>
-  <aside id="left">
-    <div class="pane" id="outlinepane">
+<div id="app" class="workspace" hidden>
+  <aside id="left" class="col-left">
+    <div class="pane outlinepane" id="outlinepane">
       <div class="ptitle">大纲<button class="fold" id="foldleft" title="折叠左栏">«</button></div>
-      <div id="outline"></div>
+      <div id="outline" class="treepane"></div>
     </div>
     <div class="hsplit" id="hs1" title="拖动调整大纲高度（双击复位）"></div>
-    <div class="pane" id="respane">
+    <div class="pane respane" id="respane">
       <div class="ptitle">项目资源</div>
-      <div id="resources"></div>
+      <div id="resources" class="treepane"></div>
     </div>
   </aside>
-  <div class="vsplit" id="vs1" title="拖动调整左栏宽度（双击复位）"></div>
+  <div class="vsplit col-vs1" id="vs1" title="拖动调整左栏宽度（双击复位）"></div>
 
-  <main id="mid">
+  <main id="mid" class="col-mid">
     <button class="edge left" id="expandleft" title="展开大纲与资源">»</button>
     <button class="edge right" id="expandright" title="展开写作助手">«</button>
-    <div id="tabs"></div>
-    <div id="mdbar">
+    <div id="tabs" class="tabs"></div>
+    <div id="mdbar" class="mdbar">
       <select id="t-head" title="标题">
         <option value="" selected disabled>标题</option>
         <option value="1">标题 1</option><option value="2">标题 2</option><option value="3">标题 3</option>
@@ -494,78 +549,78 @@
       <button data-fmt="cite" title="插入文献引文 [@键]（来自全局文献库）">[@]</button>
       <button data-fmt="table" title="插入表格">▦</button>
     </div>
-    <div id="editwrap">
-      <textarea id="secmd" spellcheck="false" placeholder="用 Markdown 写这一章节……（⌘S 保存并快照）"></textarea>
-      <div id="secpreview" class="content" hidden></div>
+    <div id="editwrap" class="editwrap">
+      <textarea id="secmd" class="secmd" spellcheck="false" placeholder="用 Markdown 写这一章节……（⌘S 保存并快照）"></textarea>
+      <div id="secpreview" class="content secpreview" hidden></div>
     </div>
-    <div id="refwrap" hidden>
-      <textarea id="refin" spellcheck="false" placeholder="把论文助手给出的参考文献列表粘贴到这里（任意格式、任意语言）——验证通过后转为 Vancouver 格式"></textarea>
-      <div id="refbar">
-        <button id="refgo">✅ 验证</button>
+    <div id="refwrap" class="refwrap" hidden>
+      <textarea id="refin" class="refin" spellcheck="false" placeholder="把论文助手给出的参考文献列表粘贴到这里（任意格式、任意语言）——验证通过后转为 Vancouver 格式"></textarea>
+      <div id="refbar" class="refbar">
+        <button id="refgo" class="refgo">✅ 验证</button>
         <span id="refstate">查证链 Crossref → OpenAlex → PubMed · 此栏不进导出，仅快速核验用</span>
       </div>
-      <div id="refout" class="content"></div>
+      <div id="refout" class="content refout"></div>
     </div>
-    <div id="statusbar">
+    <div id="statusbar" class="statusbar">
       <span id="wordcount">0 字</span>
       <span id="savestate"></span>
-      <span id="snapcount"></span>
+      <span id="snapcount" class="snapcount"></span>
       <span class="spacer"></span>
       <button id="previewbtn" title="预览">👁 <span class="lbl">预览</span></button>
-      <div id="expwrap" style="position:relative">
+      <div id="expwrap" class="expwrap">
         <button id="expbtn" title="导出">📤 <span class="lbl">导出</span></button>
-        <div id="expmenu">
+        <div id="expmenu" class="expmenu">
           <div class="nopt" id="exp-html"><b>📄 HTML</b><small>自包含单文件 · 可打印为 PDF</small></div>
           <div class="nopt" id="exp-docx"><b>📝 Word (.docx)</b><small>宿主机 pandoc 转换 · 可直接编辑</small></div>
-          <div class="nopt" id="exp-mark" style="display:none"><b>🖍 高亮修改稿 (.docx)</b><small>与投稿基线 diff · 改动行黄底（参考文献除外）</small></div>
+          <div class="nopt" id="exp-mark" hidden><b>🖍 高亮修改稿 (.docx)</b><small>与投稿基线 diff · 改动行黄底（参考文献除外）</small></div>
         </div>
       </div>
       <button id="savebtn" title="保存并快照（⌘S）">💾 <span class="lbl">保存并快照</span></button>
       <button id="subbtn" title="标记为已投稿">📮 <span class="lbl">投稿</span></button>
       <button id="revinbtn" title="粘贴审稿意见，AI 拆成逐条清单">📨 <span class="lbl">审稿意见</span></button>
-      <button id="reviewbtn" title="AI 综述向导（话题 → 检索 → 大纲 → 逐节生成）" style="display:none">🧭 <span class="lbl">综述</span></button>
+      <button id="reviewbtn" title="AI 综述向导（话题 → 检索 → 大纲 → 逐节生成）" hidden>🧭 <span class="lbl">综述</span></button>
     </div>
   </main>
-  <div class="vsplit" id="vs2" title="拖动调整右栏宽度（双击复位）"></div>
+  <div class="vsplit col-vs2" id="vs2" title="拖动调整右栏宽度（双击复位）"></div>
 
-  <aside id="right">
-    <div id="chathead">✍️ <span class="tlabel">论文助手</span>
+  <aside id="right" class="col-right">
+    <div id="chathead" class="chathead">✍️ <span class="tlabel">论文助手</span>
       <select id="mode" title="智能：按内容自动选择；精确适合润色改写">
         <option value="auto">⚡ 智能</option>
         <option value="think">💭 深度推理</option>
         <option value="exact">🎯 精确</option>
         <option value="chat">💬 日常</option>
       </select>
-      <button id="editbtn" class="off" title="改稿模式：AI 的修改以 edit 块直接应用到当前章节（应用前自动快照，⌘Z 可撤销）">✏️ <span class="tlabel">让AI直接改稿</span></button>
+      <button id="editbtn" class="editbtn" title="改稿模式：AI 的修改以 edit 块直接应用到当前章节（应用前自动快照，⌘Z 可撤销）">✏️ <span class="tlabel">让AI直接改稿</span></button>
       <button class="hbtn foldbtn" id="foldright" title="展开/折叠右栏">»</button>
     </div>
-    <div id="chatlog"><div class="wrap" id="msgs"></div></div>
-    <div id="ctxbar"><span id="ctxtext">上下文：读取中…</span><div id="ctxtrack"><div id="ctxfill"></div></div></div>
-    <div id="inputbox">
-      <div id="inpgrip" title="拖动调整输入框高度（双击复位）"></div>
-      <textarea id="p" rows="1" placeholder="问当前章节的问题…（Enter 发送，Shift+Enter 换行；AI 回答可一键插入正文）"></textarea>
-      <div id="bar">
-        <button id="genbtn" title="按本章节大纲生成初稿（依据：附文献/全文草稿/引文键清单）">✨ <span class="lbl">初稿</span></button>
+    <div id="chatlog" class="chatlog"><div class="wrap" id="msgs"></div></div>
+    <div id="ctxbar" class="ctxbar"><span id="ctxtext">上下文：读取中…</span><div id="ctxtrack" class="ctxtrack"><div id="ctxfill" class="ctxfill"></div></div></div>
+    <div id="inputbox" class="inputbox">
+      <div id="inpgrip" class="inpgrip" title="拖动调整输入框高度（双击复位）"></div>
+      <textarea id="p" class="ptext" rows="1" placeholder="问当前章节的问题…（Enter 发送，Shift+Enter 换行；AI 回答可一键插入正文）"></textarea>
+      <div id="bar" class="inputbar">
+        <button id="genbtn" class="togbtn gen" title="按本章节大纲生成初稿（依据：附文献/全文草稿/引文键清单）">✨ <span class="lbl">初稿</span></button>
         <button id="chkbtn" title="跨章节逻辑一致性检查：结果—讨论呼应、术语与数据一致（自动附全文草稿）">🧭 <span class="lbl">检查</span></button>
-        <div id="revwrap" style="position:relative">
+        <div id="revwrap" class="revwrap">
           <button id="revbtn" title="模拟期刊审稿：选择审稿人视角通读全文，输出 Major/Minor 意见供逐条讨论">🕵️ <span class="lbl">审稿</span></button>
-          <div id="revmenu">
+          <div id="revmenu" class="expmenu anch-l">
             <div class="nopt" data-rev="general"><b>🧑‍⚖️ 综合审稿人</b><small>新颖性 · 设计 · 可靠性 · 写作全维度</small></div>
             <div class="nopt" data-rev="method"><b>🔬 方法学审稿人</b><small>设计 · 偏倚 · 混杂 · 盲法 · 终点</small></div>
             <div class="nopt" data-rev="stat"><b>📊 统计审稿人</b><small>方法选择 · 样本量 · 多重比较 · 数据自洽</small></div>
             <div class="nopt" data-rev="clin"><b>🩺 临床审稿人</b><small>临床意义 · 外推性 · 患者安全</small></div>
           </div>
         </div>
-        <button id="draftbtn" class="off" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
-        <button id="attbtn" class="off" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
-        <button id="histbtn" class="off" title="把本项目「聊聊文献」里的讨论记录带给论文助手（最近 15 条，截断纪要）">💬 <span class="lbl">聊天记录</span></button>        <button id="stopbtn" title="停止生成">■ <span class="lbl">停止</span></button>
-        <button id="send">发送</button>
+        <button id="draftbtn" class="togbtn" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
+        <button id="attbtn" class="togbtn" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
+        <button id="histbtn" class="togbtn" title="把本项目「聊聊文献」里的讨论记录带给论文助手（最近 15 条，截断纪要）">💬 <span class="lbl">聊天记录</span></button>        <button id="stopbtn" class="ibtn stop" title="停止生成">■ <span class="lbl">停止</span></button>
+        <button id="send" class="ibtn">发送</button>
       </div>
     </div>
   </aside>
 </div>
 
-<div id="selbar" hidden>
+<div id="selbar" class="selbar" hidden>
   <span id="selinfo"></span>
   <button data-op="润色">✨ 润色</button>
   <button data-op="扩写">✍️ 扩写</button>
@@ -573,66 +628,66 @@
   <button data-op="查证据">🔍 证据</button>
 </div>
 
-<div id="atmenu" hidden></div>
+<div id="atmenu" class="atmenu" hidden></div>
 
 <div id="verpanel" class="modal"><div class="mbox">
   <div class="mhead">🕐 版本快照<button class="hbtn" id="verclose">✕</button></div>
-  <div id="verlist"></div>
-  <div id="verfoot"><button id="verclean">清空未命名快照</button></div>
+  <div id="verlist" class="mlist"></div>
+  <div id="verfoot" class="mfoot"><button id="verclean" class="danger">清空未命名快照</button></div>
 </div></div>
 
 <div id="diffpanel" class="modal"><div class="mbox">
   <div class="mhead"><span id="difftitle">🕐 快照差异</span><button class="hbtn" id="diffclose">✕</button></div>
-  <div id="difflist"></div>
+  <div id="difflist" class="mlist"></div>
 </div></div>
 
 <div id="attpanel" class="modal"><div class="mbox">
   <div class="mhead">📎 附文献全文（论文助手将看到所选文献）<button class="hbtn" id="attclose">✕</button></div>
-  <div id="attlist"></div>
-  <div id="attfoot" style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px">
-    <span id="attsum" style="font-size:12px;color:var(--dim);align-self:center"></span>
-    <button id="attok" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer">附所选文献</button>
+  <div id="attlist" class="mlist"></div>
+  <div id="attfoot" class="mfoot">
+    <span id="attsum" class="fsum"></span>
+    <button id="attok" class="go">附所选文献</button>
   </div>
 </div></div>
 
 <div id="citepanel" class="modal"><div class="mbox">
   <div class="mhead">[@] 插入引文到光标处<button class="hbtn" id="citeclose">✕</button></div>
-  <div id="citelist" style="overflow-y:auto;padding:8px 12px"></div>
+  <div id="citelist" class="mlist"></div>
 </div></div>
 
 <div id="cslpanel" class="modal"><div class="mbox">
   <div class="mhead">📝 选择引文样式（影响 Word 导出的引文与参考文献格式）<button class="hbtn" id="cslclose">✕</button></div>
-  <div id="csllist" style="overflow-y:auto;padding:8px 12px"></div>
-  <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px">
-    <span id="cslhint" style="font-size:12px;color:var(--dim);align-self:center"></span>
-    <button id="cslok" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer">导出 Word</button>
+  <div id="csllist" class="mlist"></div>
+  <div class="mfoot">
+    <span id="cslhint" class="fsum"></span>
+    <button id="cslok" class="go">导出 Word</button>
   </div>
 </div></div>
 
 <div id="revinpanel" class="modal"><div class="mbox">
   <div class="mhead">📨 粘贴审稿意见（整封 decision letter 一次贴入）<button class="hbtn" id="revinclose">✕</button></div>
-  <textarea id="revinraw" placeholder="Reviewer 1: …&#10;Reviewer 2: …" style="width:calc(100% - 36px);min-height:220px;margin:12px 18px 0;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font:inherit;font-size:13px;line-height:1.6;resize:vertical"></textarea>
-  <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px;margin-top:12px">
-    <span id="revinhint" style="font-size:12px;color:var(--dim);align-self:center"></span>
-    <button id="revinok" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer">🤖 解析成条目</button>
+  <textarea id="revinraw" class="mtextarea" placeholder="Reviewer 1: …&#10;Reviewer 2: …"></textarea>
+  <div class="mfoot mt">
+    <span id="revinhint" class="fsum"></span>
+    <button id="revinok" class="go">🤖 解析成条目</button>
   </div>
 </div></div>
 
 <div id="respanel" class="modal"><div class="mbox">
   <div class="mhead"><span id="reshead">📝 Response</span><button class="hbtn" id="resclose">✕</button></div>
-  <textarea id="restext" style="width:calc(100% - 36px);min-height:220px;margin:12px 18px 0;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font:inherit;font-size:13px;line-height:1.6;resize:vertical"></textarea>
-  <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:8px;margin-top:12px">
-    <button id="resgrab" title="把右栏最近一条 AI 回复带入编辑（讨论结果改一改就能用）" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 12px;cursor:pointer">🤖 取最近 AI 回复</button>
-    <button id="resok" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer">保存</button>
+  <textarea id="restext" class="mtextarea"></textarea>
+  <div class="mfoot mt">
+    <button id="resgrab" title="把右栏最近一条 AI 回复带入编辑（讨论结果改一改就能用）">🤖 取最近 AI 回复</button>
+    <button id="resok" class="go">保存</button>
   </div>
 </div></div>
 
-<div id="rvpanel" class="modal"><div class="mbox" style="max-width:760px">
+<div id="rvpanel" class="modal"><div class="mbox narrow">
   <div class="mhead">🧭 AI 综述向导（话题 → 检索 → 大纲 → 逐节生成）<button class="hbtn" id="rvclose">✕</button></div>
-  <div id="rvbody" style="padding:12px 18px;max-height:72vh;overflow:auto;font-size:13px;line-height:1.7"></div>
+  <div id="rvbody" class="rvbody"></div>
 </div></div>
 
-<div id="settings">
+<div id="settings" class="settings">
   <label>推理服务</label>
   <select id="set-provider"><option value="local">本地（oMLX / Ollama / llama-server）</option><option value="deepseek">DeepSeek 云端</option></select>
   <label>本地服务地址</label>
@@ -644,7 +699,7 @@
   <div class="row"><button id="setsave">保存（刷新生效）</button></div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" class="toast"></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -1034,7 +1089,7 @@ async function loadProject(){
   if (!ej) persistEditor();   // 首次初始化即落盘章节清单
   ED.stage = ej?.stage || "draft"; ED.forkOf = ej?.forkOf || ""; ED.forkTo = ej?.forkTo || "";
   updateStageBtn();
-  $("#exp-mark").style.display = ED.forkOf ? "" : "none";   // 高亮修改稿只对修稿版有意义
+  $("#exp-mark").hidden = !ED.forkOf;   // 高亮修改稿只对修稿版有意义
   if (ED.stage === "locked") toast("这是锁定的投稿版——修改请在修稿项目进行", 5000);
   await Promise.all(ED.sections.map(async s => {
     // 加载失败（非 404）标记 bad：正文没读进来就 PUT 会用空串抹掉磁盘原文
@@ -1093,7 +1148,7 @@ async function loadProject(){
   try { ED.attachChat = !!JSON.parse(localStorage.getItem("editor_chats") || "{}")[ED.convId]; } catch {}
   updateChatBtn();
 
-  $("#picker").style.display = "none";
+  $("#picker").hidden = true;
   $("#app").hidden = false;
   renderTabs(); showSection(0); renderResources(); renderChat();
   updateStatusBar();
@@ -1136,8 +1191,8 @@ function showSection(i){
   $("#selbar").hidden = true;   // 切章节后原选区失义，收起浮动工具条
   refTab = false;
   $("#refwrap").hidden = true;
-  $("#mdbar").style.display = "";
-  $("#editwrap").style.display = "";
+  $("#mdbar").hidden = false;
+  $("#editwrap").hidden = false;
   if (previewOn) togglePreview(false);
   renderTabs(); updateOutline(); updateStatusBar();
   if (ED.sections[i].bad) toast("⚠ 该章节正文加载失败，编辑不会保存——请确认存档服务在运行后刷新", 6000);
@@ -1196,8 +1251,8 @@ function openRefTab(){
   flushSave();
   refTab = true;
   $("#refwrap").hidden = false;
-  $("#mdbar").style.display = "none";
-  $("#editwrap").style.display = "none";
+  $("#mdbar").hidden = true;
+  $("#editwrap").hidden = true;
   renderTabs();
   $("#refin").focus();
 }
@@ -1474,7 +1529,7 @@ function saveReview(){
 }
 async function maybeReview(){
   const isRv = (ED.projName || "").startsWith("🧭 ");
-  $("#reviewbtn").style.display = isRv ? "" : "none";
+  $("#reviewbtn").hidden = !isRv;
   if (!isRv) return;
   let j = null;
   try { const r = await fetch(pf("review.json")); if (r.ok) j = await r.json(); } catch {}
@@ -1488,18 +1543,18 @@ async function maybeReview(){
 }
 function openReviewPanel(){ $("#rvpanel").classList.add("open"); rvRender(); }
 const rvBtn = (id, label, primary) =>
-  `<button id="${id}" style="${primary ? "background:var(--accent);" : "background:var(--panel);"}color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 14px;cursor:pointer">${label}</button>`;
+  `<button id="${id}" class="rvbtn${primary ? " go" : ""}">${label}</button>`;
 function rvRender(){
   if (!RV) return;
   const b = $("#rvbody");
   if (RV.stage === "topic"){
     b.innerHTML = `
-      ${S.dskey ? "" : `<div style="background:rgba(210,153,34,.12);border:1px solid #d29922;border-radius:8px;padding:8px 12px;margin-bottom:12px">⚠ 未配置 DeepSeek API Key——判定/大纲/逐节生成需要云端模型（⚙️ 设置里填写），四源检索本身可先跑</div>`}
-      <div style="color:var(--dim);margin-bottom:6px">综述话题（建议具体到干预+人群+结局）</div>
-      <input id="rvtopic" value="${esc(RV.topic || "")}" placeholder="如：IL-17 抑制剂治疗银屑病的疗效与安全性" style="width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font:inherit">
-      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      ${S.dskey ? "" : `<div class="alertbox">⚠ 未配置 DeepSeek API Key——判定/大纲/逐节生成需要云端模型（⚙️ 设置里填写），四源检索本身可先跑</div>`}
+      <div class="rvsub">综述话题（建议具体到干预+人群+结局）</div>
+      <input id="rvtopic" value="${esc(RV.topic || "")}" placeholder="如：IL-17 抑制剂治疗银屑病的疗效与安全性" class="qinput">
+      <div class="rvrow">
         ${rvBtn("rvsearch", "🔍 四源检索 + 相关性判定", true)}
-        <span id="rvprog" style="color:var(--dim)"></span>
+        <span id="rvprog" class="dim"></span>
       </div>`;
     $("#rvsearch").onclick = rvSearch;
     return;
@@ -1507,21 +1562,21 @@ function rvRender(){
   if (RV.stage === "select"){
     const nOk = RV.items.filter(x => x.v === "✅").length;
     b.innerHTML = `
-      <div style="margin-bottom:8px">话题：<b>${esc(RV.topic)}</b> · 候选 ${RV.items.length} 篇（判定 ✅${nOk}）——勾选入文献库作为综述原料</div>
-      ${RV.verdict ? `<details style="margin-bottom:10px"><summary style="cursor:pointer;color:var(--dim)">🤖 DeepSeek 相关性判定</summary><div class="mdbody">${mdChat(RV.verdict)}</div></details>` : ""}
+      <div class="rvh">话题：<b>${esc(RV.topic)}</b> · 候选 ${RV.items.length} 篇（判定 ✅${nOk}）——勾选入文献库作为综述原料</div>
+      ${RV.verdict ? `<details class="rvdet"><summary class="msum">🤖 DeepSeek 相关性判定</summary><div class="mdbody">${mdChat(RV.verdict)}</div></details>` : ""}
       <div id="rvlist">${RV.items.map((x, i) => `
-        <label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid var(--border);cursor:pointer">
-          <input type="checkbox" data-i="${i}" ${(!S.dskey || x.v === "✅") ? "checked" : ""} style="margin-top:3px">
+        <label class="rvlabel">
+          <input type="checkbox" data-i="${i}" ${(!S.dskey || x.v === "✅") ? "checked" : ""}>
           <span>${x.v ? x.v + " " : ""}<b>${esc((x.title || "").slice(0, 130))}</b><br>
-            <span style="color:var(--dim)">${esc(String(x.author || ""))}${x.author ? " et al. · " : ""}${x.year || ""} · ${esc(x.journal || "")} · ${x.src}${x.abs ? "" : " · 无摘要"}</span></span>
+            <span class="dim">${esc(String(x.author || ""))}${x.author ? " et al. · " : ""}${x.year || ""} · ${esc(x.journal || "")} · ${x.src}${x.abs ? "" : " · 无摘要"}</span></span>
         </label>`).join("")}</div>
-      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      <div class="rvrow">
         ${rvBtn("rvback", "⬅ 换话题")}
         ${rvBtn("rvmore", "🔍 追加检索")}
         ${rvBtn("rvpick", "📚 入库并生成论点大纲", true)}
-        <span id="rvprog" style="color:var(--dim)"></span>
+        <span id="rvprog" class="dim"></span>
       </div>
-      ${RV.items.length < 8 ? `<div style="margin-top:8px;color:#d29922">候选偏少——点「🔍 追加检索」换个角度/同义词补一轮，或换更宽的话题表述</div>` : ""}`;
+      ${RV.items.length < 8 ? `<div class="rvwarn">候选偏少——点「🔍 追加检索」换个角度/同义词补一轮，或换更宽的话题表述</div>` : ""}`;
     $("#rvback").onclick = () => { RV.stage = "topic"; saveReview(); rvRender(); };
     $("#rvmore").onclick = rvSearchMore;
     $("#rvpick").onclick = rvPick;
@@ -1529,18 +1584,18 @@ function rvRender(){
   }
   if (RV.stage === "outline" && RV.outline){
     b.innerHTML = `
-      <div style="margin-bottom:8px">大纲共 ${RV.outline.sections.length} 节（论点式，每节绑定文献白名单）——确认后逐节生成初稿</div>
+      <div class="rvh">大纲共 ${RV.outline.sections.length} 节（论点式，每节绑定文献白名单）——确认后逐节生成初稿</div>
       ${RV.outline.sections.map((s, i) => `
-        <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div class="rvsec">
           <b>${i + 1}. ${esc(s.title)}</b><br>
-          <span style="color:var(--dim)">${esc(s.claim)}</span><br>
-          <span style="font-size:12px;color:var(--dim)">绑定 ${s.keys.length} 篇：${s.keys.map(k => "[@" + k + "]").join(" ")}</span>
+          <span class="dim">${esc(s.claim)}</span><br>
+          <span class="hint">绑定 ${s.keys.length} 篇：${s.keys.map(k => "[@" + k + "]").join(" ")}</span>
         </div>`).join("")}
-      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      <div class="rvrow">
         ${rvBtn("rvedit", "✏️ 让 AI 改大纲")}
         ${rvBtn("rvre", "⬅ 重新勾选")}
         ${rvBtn("rvgo", `✅ 按此生成（${RV.outline.sections.length} 节）`, true)}
-        <span id="rvprog" style="color:var(--dim)"></span>
+        <span id="rvprog" class="dim"></span>
       </div>`;
     $("#rvedit").onclick = async () => {
       const fb = prompt("要怎么改？如：论点 2 拆成两节；补一节安全性；调整顺序");
@@ -1558,16 +1613,16 @@ function rvRender(){
     const secs = RV.outline?.sections || [];
     const pend = secs.filter(s => !RV.gen.done.includes(s.title));
     b.innerHTML = `
-      ${RV.stage === "generating" ? `<div style="margin-bottom:8px">逐节生成中——每节完成即写盘，可随时关页面，重进后从断点续跑</div>` : `<div style="margin-bottom:8px">✅ 生成结束：${RV.gen.done.length}/${secs.length} 节完成${RV.gen.errs.length ? `，${RV.gen.errs.length} 节失败` : ""}</div>`}
+      ${RV.stage === "generating" ? `<div class="rvh">逐节生成中——每节完成即写盘，可随时关页面，重进后从断点续跑</div>` : `<div class="rvh">✅ 生成结束：${RV.gen.done.length}/${secs.length} 节完成${RV.gen.errs.length ? `，${RV.gen.errs.length} 节失败` : ""}</div>`}
       ${secs.map((s, i) => {
         const st = RV.gen.done.includes(s.title) ? "✅" : (RV.gen.errs.find(e => e.title === s.title) ? "❌" : "⏳");
-        return `<div style="padding:4px 0">${st} ${i + 1}. ${esc(s.title)}</div>`;
+        return `<div class="p4">${st} ${i + 1}. ${esc(s.title)}</div>`;
       }).join("")}
-      ${RV.gen.errs.length ? `<details style="margin:6px 0"><summary style="cursor:pointer;color:#d29922">失败明细</summary>${RV.gen.errs.map(e => `<div style="padding:2px 0">❌ ${esc(e.title)}：${esc(e.msg)}</div>`).join("")}</details>` : ""}
-      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      ${RV.gen.errs.length ? `<details class="rvdet"><summary class="msum warn">失败明细</summary>${RV.gen.errs.map(e => `<div class="p4">❌ ${esc(e.title)}：${esc(e.msg)}</div>`).join("")}</details>` : ""}
+      <div class="rvrow">
         ${pend.length && RV.stage === "generating" ? rvBtn("rvstop", "⏹ 停止（不再提示）") : ""}
         ${pend.length ? rvBtn("rvrun", `▶ ${RV.stage === "generating" ? "继续" : "重跑"}剩余 ${pend.length} 节`, true) : ""}
-        <span id="rvprog" style="color:var(--dim)"></span>
+        <span id="rvprog" class="dim"></span>
       </div>`;
     if ($("#rvstop")) $("#rvstop").onclick = () => { RV.stage = "done"; saveReview(); rvRender(); };
     if ($("#rvrun")) $("#rvrun").onclick = async e => {
@@ -1897,7 +1952,7 @@ function renderResources(){
   ED.projDocs.forEach(d => {
     const row = document.createElement("div");
     row.className = "ritem";
-    row.innerHTML = `<span class="t" style="cursor:pointer" title="打开对话中的全文解读">📄 ${esc(d.title)}</span>
+    row.innerHTML = `<span class="t plainbtn" title="打开对话中的全文解读">📄 ${esc(d.title)}</span>
       <button class="d-att" title="附全文给写作助手（不经文献库）">📎</button>`;
     row.querySelector(".t").onclick = () => location.href = "chat.html?conv=" + encodeURIComponent(ED.convId);
     const btn = row.querySelector(".d-att");
@@ -1913,7 +1968,7 @@ function renderResources(){
   if (ED.notes){
     const nrow = document.createElement("div");
     nrow.className = "ritem";
-    nrow.innerHTML = `<span class="t" style="cursor:pointer;white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden" title="打开对话中的笔记">${esc(ED.notes.slice(0, 200))}…</span>
+    nrow.innerHTML = `<span class="t selclamp" title="打开对话中的笔记">${esc(ED.notes.slice(0, 200))}…</span>
       <button class="n-ins" title="笔记全文插入到光标处">⤵</button>`;
     nrow.querySelector(".t").onclick = () => location.href = "chat.html?conv=" + encodeURIComponent(ED.convId);
     nrow.querySelector(".n-ins").onclick = () => insertText(ED.notes);
@@ -1926,8 +1981,8 @@ function renderResources(){
     const vsec = document.createElement("div");
     vsec.className = "rsec";
     vsec.innerHTML = `<div class="rhead">📨 审稿意见（${ED.reviews.items.length} 条 · ${pend} 待处理）
-      <button class="v-exp" title="核对 Response 声称的修改是否真实落地在当前稿中（防 AI 幻觉声称）" style="float:right;cursor:pointer;border:none;background:none;color:var(--dim);font-size:13px;margin-right:6px">🏥 体检</button>
-      <button class="v-exp" title="组装 point-by-point 回复信并导出 Word（未写 Response 的条目留占位）" style="float:right;cursor:pointer;border:none;background:none;color:var(--dim);font-size:13px">📤 回复信</button></div>`;
+      <button class="v-exp" title="核对 Response 声称的修改是否真实落地在当前稿中（防 AI 幻觉声称）" class="ghostlink mr8">🏥 体检</button>
+      <button class="v-exp" title="组装 point-by-point 回复信并导出 Word（未写 Response 的条目留占位）" class="ghostlink">📤 回复信</button></div>`;
     const vbtns = vsec.querySelectorAll(".v-exp");
     vbtns[0].onclick = verifyResponses;
     vbtns[1].onclick = exportResponseLetter;
@@ -1935,9 +1990,9 @@ function renderResources(){
       const row = document.createElement("div");
       row.className = "ritem";
       const badge = it.severity === "minor" ? "🟡" : "🔴";
-      row.innerHTML = `<span class="vst" title="点击轮换状态" style="cursor:pointer">${REV_ST[it.status] || "⏳"}</span>
+      row.innerHTML = `<span class="vst" title="点击轮换状态">${REV_ST[it.status] || "⏳"}</span>
         <span class="t" title="${esc(it.comment)}">${badge} ${esc(it.id)} ${esc((it.comment || "").slice(0, 38))}…</span>
-        <button class="v-res" title="${it.response ? "编辑 Response（已有草稿）" : "撰写该条的 Response"}"${it.response ? ' style="color:var(--accent)"' : ""}>📝</button>
+        <button class="v-res" title="${it.response ? "编辑 Response（已有草稿）" : "撰写该条的 Response"}"${it.response ? ' class="hasresp"' : ""}>📝</button>
         <button class="v-rev" title="把这条意见发给 AI：定位章节 + 修改方案/反驳论点">💬</button>`;
       row.querySelector(".vst").onclick = async () => {
         const seq = ["待处理", "已修改", "已反驳"];
@@ -2119,8 +2174,8 @@ function showVersionDiff(v){
     sec.className = "dsec";
     sec.innerHTML = `<div class="dhead">${esc(cur.title)}`
       + (nAdd || nDel
-        ? ` <span style="color:#3fb950;font-weight:400">+${nAdd}</span> <span style="color:#f85149;font-weight:400">-${nDel}</span></div>`
-        : ` <span style="color:var(--dim);font-weight:400">（无差异）</span></div>`);
+        ? ` <span class="ok-text fw4">+${nAdd}</span> <span class="err-text fw4">-${nDel}</span></div>`
+        : ` <span class="dim fw4">（无差异）</span></div>`);
     if (nAdd || nDel){
       // 只保留变更行 ±2 行上下文，其余折叠
       const keep = new Set();
@@ -2146,7 +2201,7 @@ function showVersionDiff(v){
     el.appendChild(sec);
   }
   el.insertAdjacentHTML("afterbegin",
-    `<div style="font-size:12.5px;color:var(--dim);padding:2px 6px 8px">快照 → 当前：<span style="color:#3fb950">+${totAdd} 行</span> <span style="color:#f85149">-${totDel} 行</span>（左列＝快照行号，右列＝当前行号；点击行跳到编辑区）</div>`);
+    `<div class="diffhint">快照 → 当前：<span class="ok-text">+${totAdd} 行</span> <span class="err-text">-${totDel} 行</span>（左列＝快照行号，右列＝当前行号；点击行跳到编辑区）</div>`);
   $("#diffpanel").classList.add("open");
 }
 $("#diffclose").onclick = () => $("#diffpanel").classList.remove("open");
@@ -2271,7 +2326,7 @@ async function exportDocx(){
     : styles.includes("american-medical-association-brackets") ? "american-medical-association-brackets" : styles[0];
   const el = $("#csllist"); el.innerHTML = "";
   for (const s of styles)
-    el.insertAdjacentHTML("beforeend", `<label class="attrow" style="cursor:pointer">
+    el.insertAdjacentHTML("beforeend", `<label class="attrow">
       <input type="radio" name="csl" value="${esc(s)}" ${s === def ? "checked" : ""}>
       <span class="t">${esc(CSL_LABEL[s] || s)}</span><small>${esc(s)}</small></label>`);
   $("#cslhint").textContent = "更多样式：往 ~/Qwen38/csl/ 放 .csl 文件（citation-style-language/styles 仓库）";
@@ -2455,14 +2510,14 @@ function renderAttPanel(){
     el.appendChild(d);
   };
   if (ED.projDocs.length){
-    el.insertAdjacentHTML("beforeend", `<div class="rhead" style="padding:6px 8px 2px">本项目文献</div>`);
+    el.insertAdjacentHTML("beforeend", `<div class="rhead rhead-s">本项目文献</div>`);
     ED.projDocs.forEach(it => addRow(it, true));
   }
   if (ED.lib.length){
     // 分类下拉：dashboard 扫描入库按来源项目自动归类，这里按分类过滤全局库
     const cols = [...new Set(ED.lib.flatMap(i => i.collections || []))];
-    let head = `<div class="rhead" style="padding:6px 8px 2px">全局文献库`;
-    if (cols.length) head += ` <select id="attcol" style="font-size:12px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:1px 4px;max-width:150px">
+    let head = `<div class="rhead rhead-s">全局文献库`;
+    if (cols.length) head += ` <select id="attcol" class="attcol">
       <option value="">全部分类</option>${cols.map(c => `<option ${ED.attCol === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
     head += `</div>`;
     el.insertAdjacentHTML("beforeend", head);
@@ -3122,15 +3177,13 @@ function editBlockHtml(e){
     ? (e.neu || "").split("\n").map(l => ({t: "+", l}))
     : lineDiff((e.old || "").split("\n"), (e.neu || "").split("\n")).filter(r => r.t !== "=");
   const head = e.fail
-    ? `<div style="padding:2px 8px;font-size:12px;color:#d29922">⚠ ${esc(e.fail)}</div>`
+    ? `<div class="rvstat warn">⚠ ${esc(e.fail)}</div>`
     : e.write
-      ? `<div style="padding:2px 8px;font-size:12px;color:#3fb950">✏️ 已写入${e.sec ? "《" + esc(e.sec) + "》" : ""}</div>`
-      : `<div style="padding:2px 8px;font-size:12px;color:#3fb950">✏️ 已应用到正文</div>`;
+      ? `<div class="rvstat ok">✏️ 已写入${e.sec ? "《" + esc(e.sec) + "》" : ""}</div>`
+      : `<div class="rvstat ok">✏️ 已应用到正文</div>`;
   const lines = rows.map(r =>
-    `<div style="padding:1px 8px;white-space:pre-wrap;${r.t === "-"
-      ? "color:#f85149;background:rgba(248,81,73,.12)"
-      : "color:#3fb950;background:rgba(63,185,80,.12)"}">${esc(r.l) || " "}</div>`).join("");
-  return `<div style="border:1px solid var(--border);border-radius:6px;margin:6px 0;overflow:hidden">${head}${lines}</div>`;
+    `<div class="diffline ${r.t === "-" ? "d-del" : "d-add"}">${esc(r.l) || " "}</div>`).join("");
+  return `<div class="diffbox">${head}${lines}</div>`;
 }
 // 气泡渲染：正文走 mdChat，edit 块走红绿行预览
 function renderAnswerText(text, edits){
@@ -3357,7 +3410,7 @@ async function generate(noThink, noRetry, forceThink){
       return generate(useThink, true, !useThink);
     }
     contentEl.innerHTML = mdChat(answer || thinking) ||
-      `<p style="color:#d29922">⚠ 模型未返回内容，可重试</p>`;
+      `<p class="warn-text">⚠ 模型未返回内容，可重试</p>`;
     thinkBox.open = false;
     contentEl.classList.remove("typing");
     scrollBottom(true);
@@ -3395,7 +3448,7 @@ async function generate(noThink, noRetry, forceThink){
       if (answer || thinking){
         ED.chat.push(am);
         contentEl.innerHTML = mdChat(answer || thinking);
-        contentEl.insertAdjacentHTML("beforeend", `<p style="color:#d29922">⏹ 已手动停止</p>`);
+        contentEl.insertAdjacentHTML("beforeend", `<p class="warn-text">⏹ 已手动停止</p>`);
       } else bb.remove();
     } else {
       bb.remove();
