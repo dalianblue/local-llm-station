@@ -8,7 +8,7 @@
 
 <img src="assets/architecture-overview.jpg" alt="架构总览：dashboard / chat.html / editor.html / 宿主 app 分层" width="760">
 
-读一篇文献 → 讲清楚一篇文献 → 讨论它。离线可用 · 数据不出本机 · API 兼容 OpenAI。
+读一篇文献 → 讲清楚一篇文献 → 讨论它。离线可用 · 数据不出本机 · API 兼容 OpenAI。医学口开箱即用，其他学科可整体换肤。
 
 [快速开始](#快速开始) · [5 分钟上手](#新手指南5-分钟跑通第一条文献工作流) · [功能详情](docs/features.md) · [FAQ](FAQ.md) · [跑不动本地模型？走云端](#零本地模型方案deepseek-云端-api旧电脑--无-mac-均可用)
 
@@ -23,6 +23,7 @@
 - **修得回**：📮 投稿标记 → 收到审稿意见一键 fork 修稿版 → 意见逐条结构化（状态追踪 + Response 草稿）→ 🏥 落地体检防"信里说改了稿里没改" → 导出 point-by-point 回复信 + 🖍 高亮修改稿 Word（参考文献不标）
 - **查得准**：🔬 文献检索一条命令——DeepSeek 生成检索式 → 四源并行（PubMed / OpenAlex / Europe PMC 含预印本 / ClinicalTrials.gov 在研试验）→ 去重 → DeepSeek 逐条相关性判定（✅/🟡/❌ + 理由）；写作助手里说「给这段找点文献支持」同样触发
 - **讨得深**：数据体检（GRIM 等确定性检验）· 引文校验 · 文献库（BibTeX/RIS 互通 Zotero/EndNote）
+- **换学科**：🎓 学科皮肤——AI 身份、提取/解读模板、审稿视角、专属检索源（PubMed/Europe PMC/ClinicalTrials.gov）随学科整体切换；医学口内置，其他学科复制 `disciplines/template.js` 三步 DIY，面向综合性大学各专业
 
 完整功能清单、实现边界与配置细节见 **[docs/features.md](docs/features.md)**。
 
@@ -60,6 +61,8 @@ Ollama 路线（`brew install ollama && ollama pull qwen3.8:27b-mlx`，`build_lo
 ```
 🏠 我的桌面（dashboard.html）—— 一切的入口，做完的事都变成一张卡片
 ```
+
+首次打开会先弹「🎓 选择学科方向」（决定 AI 身份与模板，之后可从顶栏「🎓 学科」随时切换）。
 
 **① 读一篇文献**
 托盘 →「🌐 开始新对话」→ 输入框旁 📎 上传 PDF → 等提取完成，自动出**四段解读**（背景 / 方法 / 结果 / 讨论）。PDF 只在本机解析，不出网。想为综述攒原料？敲 `/` 选「证据提取」（RCT/Meta）或「观点提取」（论著），提取结果自动存进项目笔记。
@@ -144,7 +147,8 @@ LocalLLMServer-oMLX.app（宿主进程）
 |------|------|
 | `chat.html` | 网页对话界面 |
 | `editor.html` | ✍️ 写作台：分章节写作 + 版本快照 + AI 辅助三栏工作台 |
-| `dashboard.html` | 我的桌面：项目仪表盘门户页（项目总览 + 全局状态 + 文献库） |
+| `dashboard.html` | 我的桌面：项目仪表盘门户页（项目总览 + 全局状态 + 文献库 + 学科选择） |
+| `disciplines/` | 学科皮肤：medicine.js（医学口）+ template.js（DIY 模板）+ index.js（清单），见 [docs/discipline.md](docs/discipline.md) |
 | `LocalLLMServer.swift` | 控制台 + 存档/PDF/图表提取/导出服务源码（oMLX/Ollama 双后端共用，编译开关区分） |
 | `QwenServer.swift` | 旧 llama.cpp 路线源码（`build.sh` 构建），功能基线保留 |
 | `pptxgen.bundle.js` | PptxGenJS 单文件本地包（汇报 PPT 渲染，离线零 CDN） |
