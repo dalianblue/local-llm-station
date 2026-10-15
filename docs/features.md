@@ -90,6 +90,8 @@ README 只保留主干速览；本章是完整功能清单、实现边界与配�
 
 细节与 DIY 指南见 [discipline.md](discipline.md)。
 
+**📦 示例项目自动装载**：首次打开 dashboard 时 `POST /examples/install` 把 `examples/`（迷你论文 + AI 改稿演示 + 模拟审稿报告 + 版本快照）拷入存档区——每浏览器只装一次（localStorage 旗标），服务端幂等跳过已存在文件，用户删除后不复活；存档服务离线（纯云端用户）则静默跳过、下次在线再装。
+
 产品定位与常见疑问见 [FAQ.md](../FAQ.md)。
 
 ## 生态搭配：数据探索推荐 quelmap

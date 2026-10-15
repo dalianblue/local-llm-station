@@ -383,6 +383,19 @@ final class ArchiveServer {
                 if ok { body = Data("{\"ok\":true,\"id\":\"\(id)\"}".utf8) }
                 else { status = "500 Internal Server Error"; body = Data("{\"error\":\"write failed\"}".utf8) }
             } else { status = "400 Bad Request"; body = Data("{\"error\":\"bad id or js\"}".utf8) }
+        case ("POST", "/examples/install"):
+            // 首启自动装载示例项目：examples/ → chat_history/（已存在跳过；前端每浏览器只调一次，用户删除后不复活）
+            let src = URL(fileURLWithPath: AppRoot.path + "/examples")
+            var installed = 0
+            if let items = try? FileManager.default.contentsOfDirectory(at: src, includingPropertiesForKeys: nil) {
+                for item in items {
+                    let to = dir.appendingPathComponent(item.lastPathComponent)
+                    if !FileManager.default.fileExists(atPath: to.path),
+                       (try? FileManager.default.copyItem(at: item, to: to)) != nil { installed += 1 }
+                }
+            }
+            body = (try? JSONSerialization.data(withJSONObject: ["ok": true, "installed": installed]))
+                ?? Data("{\"ok\":true,\"installed\":0}".utf8)
         case ("GET", "/version"):
             // git SHA 版本标识
             let p = Process()

@@ -1213,6 +1213,14 @@ $("#pptbtn").onclick = () => location.href = "chat.html?ppt=1";
 // 引文校验：新会话 + 粘贴引文列表（工作流在 chat.html ?refs=1 模式内）
 $("#refsbtn").onclick = () => location.href = "chat.html?refs=1";
 loadPinned().then(loadProjects);
+// 首启自动装载示例项目：examples/ 拷入存档区（每浏览器仅调一次成功即记账，删除示例不会复活；服务不在线则下次再试）
+if (!localStorage.getItem("qwen_example_done")){
+  fetch(ARCH + "/examples/install", {method: "POST"}).then(r => r.ok ? r.json() : null).then(j => {
+    if (!j) return;
+    localStorage.setItem("qwen_example_done", "1");
+    if (j.installed) loadPinned().then(loadProjects);
+  }).catch(() => {});
+}
 loadStatus();
 setInterval(loadStatus, 5000);
 setInterval(loadProjects, 20000);
