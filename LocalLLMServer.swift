@@ -8,15 +8,22 @@ import Vision
 import Compression
 import ServiceManagement
 import UserNotifications
+import SQLite3
+
+// Swift 的 SQLite3 模块不暴露 SQLITE_TRANSIENT 宏，等价定义
+let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 // 微型存档服务：读写 ~/Qwen38/chat_history，供 chat.html 调用（含 CORS）
 final class ArchiveServer {
     static let shared = ArchiveServer()
     private var listener: NWListener?
+    private let memQueue = DispatchQueue(label: "mem.db")
+    private var memDB: OpaquePointer?
     let dir = URL(fileURLWithPath: NSHomeDirectory() + "/Qwen38/chat_history")
 
     func start() {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        openMemDB()
         // 只绑 loopback
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = NWEndpoint.hostPort(host: NWEndpoint.Host.ipv4(.loopback),
@@ -402,12 +409,137 @@ final class ArchiveServer {
             let obj = FileSummarizer.summarize(req.body, name: name)
             if obj["error"] != nil { status = "400 Bad Request" }
             body = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
+        case ("GET", "/mem/items"):
+            if let rows = memQuery("SELECT id, text, score, pinned, ts FROM mem ORDER BY pinned DESC, score DESC, ts DESC") {
+                body = (try? JSONSerialization.data(withJSONObject: rows)) ?? Data("[]".utf8)
+            } else { status = "503 Service Unavailable"; body = Data("{\"error\":\"db\"}".utf8) }
+        case ("POST", "/mem/items"):
+            // {action:"add",text,score} / {action:"del",id} / {action:"pin",id,on} / {action:"clear"}
+            switch memMutate(req.body) {
+            case .some(let rows):
+                body = (try? JSONSerialization.data(withJSONObject: rows)) ?? Data("[]".utf8)
+            case .none:
+                status = "503 Service Unavailable"; body = Data("{\"error\":\"db\"}".utf8)
+            }
+        case ("GET", "/mem/ledger"):
+            body = memKVGet("ledger") ?? Data("{\"summary\":\"\",\"ts\":0}".utf8)
+        case ("PUT", "/mem/ledger"):
+            if !memKVPut("ledger", req.body) { status = "503 Service Unavailable" }
         default:
             status = "404 Not Found"
         }
 
         let head = "HTTP/1.1 \(status)\r\nContent-Type: \(respType)\r\nContent-Length: \(body.count)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, PUT, POST, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n"
         conn.send(content: Data(head.utf8) + body, completion: .contentProcessed { _ in conn.cancel() })
+    }
+}
+
+// 记忆库（SQLite，WAL；handler 在全局并发队列跑，全部经 memQueue 串行）
+extension ArchiveServer {
+    func openMemDB() {
+        memQueue.sync {
+            let path = dir.appendingPathComponent("memory.db").path
+            guard sqlite3_open_v2(path, &memDB, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else { memDB = nil; return }
+            sqlite3_exec(memDB, "PRAGMA journal_mode=WAL;", nil, nil, nil)
+            sqlite3_exec(memDB, "CREATE TABLE IF NOT EXISTS mem(id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL UNIQUE, score INTEGER DEFAULT 3, pinned INTEGER DEFAULT 0, ts INTEGER NOT NULL DEFAULT 0);", nil, nil, nil)
+            sqlite3_exec(memDB, "CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);", nil, nil, nil)
+            migrateMemoryJSON()
+        }
+    }
+
+    // 旧 memory.json（[{text,ts}] 数组）一次性导入后改名，后缀非 .json 不再入 /list
+    private func migrateMemoryJSON() {
+        let src = dir.appendingPathComponent("memory.json")
+        guard let d = try? Data(contentsOf: src),
+              let arr = (try? JSONSerialization.jsonObject(with: d)) as? [[String: Any]] else { return }
+        for m in arr {
+            let text = m["text"] as? String ?? ""
+            guard !text.isEmpty else { continue }
+            exec("INSERT OR IGNORE INTO mem(text, score, pinned, ts) VALUES(?1, 3, 0, ?2)",
+                 [.str(text), .int(m["ts"] as? Int ?? 0)])
+        }
+        try? FileManager.default.moveItem(at: src, to: dir.appendingPathComponent("memory.json.migrated"))
+    }
+
+    private enum Val { case str(String), int(Int) }
+    @discardableResult
+    private func exec(_ sql: String, _ args: [Val] = []) -> Bool {
+        guard let db = memDB else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        for (i, a) in args.enumerated() {
+            switch a {
+            case .str(let s): sqlite3_bind_text(stmt, Int32(i + 1), s, -1, SQLITE_TRANSIENT)
+            case .int(let n): sqlite3_bind_int64(stmt, Int32(i + 1), Int64(n))
+            }
+        }
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    func memQuery(_ sql: String) -> [[String: Any]]? {
+        memQueue.sync {
+            guard let db = memDB else { return nil }
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+            var rows: [[String: Any]] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let c1 = sqlite3_column_text(stmt, 1) else { continue }
+                rows.append(["id": Int(sqlite3_column_int64(stmt, 0)),
+                             "text": String(cString: c1),
+                             "score": Int(sqlite3_column_int64(stmt, 2)),
+                             "pinned": Int(sqlite3_column_int64(stmt, 3)),
+                             "ts": Int(sqlite3_column_int64(stmt, 4))])
+            }
+            sqlite3_finalize(stmt)
+            return rows
+        }
+    }
+
+    func memMutate(_ body: Data) -> [[String: Any]]? {
+        guard let obj = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return nil }
+        let ok: Bool = memQueue.sync {
+            guard memDB != nil else { return false }
+            switch obj["action"] as? String {
+            case "add":
+                let text = (obj["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return false }
+                let score = min(max(obj["score"] as? Int ?? 3, 1), 5)
+                return exec("INSERT OR IGNORE INTO mem(text, score, pinned, ts) VALUES(?1, ?2, 0, ?3)",
+                            [.str(text), .int(score), .int(Int(Date().timeIntervalSince1970 * 1000))])
+            case "del":
+                return exec("DELETE FROM mem WHERE id = ?1 AND pinned = 0", [.int(obj["id"] as? Int ?? -1)])
+            case "delmany":
+                // 动态占位符逐条绑定（ids 上限 500 防滥用）
+                guard let ids = (obj["ids"] as? [Any])?.compactMap({ $0 as? Int }), !ids.isEmpty, ids.count <= 500 else { return false }
+                let marks = ids.map { _ in "?" }.joined(separator: ",")
+                return exec("DELETE FROM mem WHERE pinned = 0 AND id IN (\(marks))", ids.map { .int($0) })
+            case "pin":
+                let on = (obj["on"] as? Bool ?? false) ? 1 : 0
+                return exec("UPDATE mem SET pinned = ?1 WHERE id = ?2", [.int(on), .int(obj["id"] as? Int ?? -1)])
+            case "clear":
+                return exec("DELETE FROM mem WHERE pinned = 0")
+            default: return false
+            }
+        }
+        guard ok else { return nil }
+        return memQuery("SELECT id, text, score, pinned, ts FROM mem ORDER BY pinned DESC, score DESC, ts DESC")
+    }
+
+    func memKVGet(_ k: String) -> Data? {
+        guard let db = memDB else { return nil }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT v FROM kv WHERE k = ?1", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        _ = k.withCString { sqlite3_bind_text(stmt, 1, $0, -1, SQLITE_TRANSIENT) }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW, let c = sqlite3_column_text(stmt, 0) else { return nil }
+        return Data(String(cString: c).utf8)
+    }
+
+    func memKVPut(_ k: String, _ v: Data) -> Bool {
+        guard let s = String(data: v, encoding: .utf8) else { return false }
+        return memQueue.sync { exec("INSERT OR REPLACE INTO kv(k, v) VALUES(?1, ?2)", [.str(k), .str(s)]) }
     }
 }
 

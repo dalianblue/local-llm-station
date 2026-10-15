@@ -42,6 +42,6 @@ fi
 # 菜单栏托盘图标（矢量 template，存在时复制进 Resources，TrayIcon 运行时加载）
 [ -f assets/iconTemplate.pdf ] && cp assets/iconTemplate.pdf $APP/Contents/Resources/iconTemplate.pdf
 
-swiftc -O -parse-as-library -D OMLX -o $APP/Contents/MacOS/LocalLLMServer-oMLX LocalLLMServer.swift
+swiftc -O -parse-as-library -D OMLX -o $APP/Contents/MacOS/LocalLLMServer-oMLX LocalLLMServer.swift -lsqlite3
 touch $APP
 echo "构建完成: $APP"

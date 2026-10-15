@@ -765,7 +765,7 @@ function autoMode(t){
 // ---------- 能力边界规范与长期记忆（与 chat.html 共享 qwen_memory） ----------
 const BOUNDARY_RULES = `[能力边界规范——基于本机 benchmark 实测，必须遵守]
 - 长尾事实（冷门人名、书目细节、历史日期等）：凡没有把握，必须明说"这点我可能记不准，请核实"，禁止自信编造
-- 训练截止后的时事、新知识（新指南/新版本/获奖者等）：直接回答不知道，禁止推测冒充
+- 训练截止后的时事、新知识（新指南/新版本/获奖者等）：直接回答不知道，禁止推测冒充；但用户当次提供的材料（文献/粘贴文本/数据）中的内容不属此列——基于材料本身作答并注明出自哪份材料
 - 医学：可以讲教科书概念与原理；涉及具体用药剂量、换药时机、临床决策时，只做方向性说明并明确提醒"以权威指南和主治医师为准"，不确定的细节要明说
 - 专业领域固定译名（法律/医学文献术语）：给出译法的同时提示用户核对标准译名
 - 代码/翻译等指令性任务：直接输出结果本身，不加多余解释
@@ -808,15 +808,18 @@ const SEARCH_RULES = `
 - 你可以联网检索文献：用户要求「找文献支持／补充文献／找证据／查查有没有类似研究」时，输出单独一行 \`\`\`search 检索需求（提炼出的检索主题，可中文），系统会多库检索（PubMed／OpenAlex／Europe PMC／ClinicalTrials.gov）并判定相关性后自动继续——你只能引用检索结果中列出的文献，严禁编造结果里没有的文献`;
 
 let memory = [];
-try { memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]"); } catch {}
+let ledger = null;
+try {
+  memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]")
+    .map((m, i) => m && typeof m === "object" ? {   // 旧格式归一化（与 chat.html 同款）
+      id: m.id ?? -(i + 1), text: String(m.text || ""), ts: m.ts || Date.now(),
+      score: m.score ?? 3, pinned: m.pinned ? 1 : 0
+    } : null).filter(Boolean);
+} catch {}
+try { ledger = JSON.parse(localStorage.getItem("qwen_ledger") || "null"); } catch {}
 let memCtrl = null;
-function saveMemory(){
+function saveMemory(){   // 镜像 localStorage；服务端同步由 /mem/items 走（与 chat.html 共库）
   try { localStorage.setItem("qwen_memory", JSON.stringify(memory)); } catch {}
-  if (archOK)
-    fetch(ARCH + "/archive/memory.json", {
-      method: "PUT", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(memory)
-    }).catch(() => {});
 }
 
 // ---------- 通用 ----------
@@ -3210,9 +3213,17 @@ function addDiffBtn(m, acts){
 }
 function buildEditorHistory(){
   const sys = [BOUNDARY_RULES];
-  if (memory.length)
-    sys.push("[用户长期记忆——跨对话记住的用户信息，自然使用即可，不必逐条复述]\n"
-      + memory.map(m => "- " + m.text).join("\n"));
+  // 账本注入（与 chat.html 同口径）：画像 + 置顶 + top-8，token 恒定
+  const pins = memory.filter(m => m.pinned);
+  const top8 = [...memory].filter(m => !m.pinned)
+    .sort((a, b) => (b.score - a.score) || (b.ts - a.ts)).slice(0, 8);
+  const memParts = [];
+  if (ledger?.summary) memParts.push("画像：" + ledger.summary);
+  if (pins.length) memParts.push("置顶：\n" + pins.map(m => "- " + m.text).join("\n"));
+  if (top8.length) memParts.push("要点：\n" + top8.map(m => "- " + m.text).join("\n"));
+  if (memParts.length)
+    sys.push("[用户长期记忆账本——跨对话记住的用户信息，自然使用即可，不必逐条复述。画像与要点由历史对话自动归纳，可能过时或有误：与用户当前自述冲突时，一律以用户当前自述为准，禁止基于画像预设用户身份或职业]\n"
+      + memParts.join("\n"));
   sys.push(EDITOR_PERSONA + READ_RULES + SEARCH_RULES + (editMode ? EDIT_RULES : ""));
   sys.push("[当前文档大纲]\n" + ED.sections.map((s, i) =>
     `${i + 1}. ${s.title}（${wc(s.md).toLocaleString()} 字）${i === ED.cur ? " ← 当前章节" : ""}`).join("\n"));
@@ -3544,15 +3555,17 @@ async function generate(noThink, noRetry, forceThink){
   }
 }
 
-// 回复完成后后台提取记忆（与 chat.html 共享记忆库）
+// 回复完成后后台提取记忆（与 chat.html 同一套门控：稳定事实 + 打分）
 async function extractMemory(){
   const lastUser = [...ED.chat].reverse().find(m => m.role === "user");
   const lastBot = ED.chat[ED.chat.length - 1];
   if (!lastUser || lastBot?.role !== "assistant" || !lastUser.text) return;
   memCtrl?.abort(); memCtrl = new AbortController();
-  const sys = "从下面的对话中提取值得跨对话长期记住的用户信息（称呼、职业、偏好、背景、长期目标等）。\n" +
-    "已有记忆（不要重复）：\n" + (memory.map(m => "- " + m.text).join("\n") || "（无）") +
-    "\n\n只输出新增记忆的 JSON 字符串数组（中文、每条一句话），没有新信息则输出 []。不要输出其他内容。";
+  const known = memory.filter(m => m.pinned || m.score >= 4).map(m => "- " + m.text).join("\n");
+  const sys = "提取标准——只记跨对话长期有效的稳定用户事实：称呼、职业、研究方向、明确的回答/格式偏好、教育或临床背景、长期目标、已确认的设备型号与技术参数。\n" +
+    "排除：一次性任务指令、当前稿件/审稿的临时上下文、对话内容本身、能从常识推断的信息。不确定就不记，宁缺毋滥。\n" +
+    (known ? "已有记忆（不要重复）：\n" + known + "\n" : "") +
+    "只输出新增记忆的 JSON 数组 [{\"text\":\"一句话（中文）\",\"score\":1到5}]，没有新信息则输出 []。不要输出其他内容。";
   try {
     const r = await apiPost({
         messages: [
@@ -3568,13 +3581,20 @@ async function extractMemory(){
     if (mm) txt = mm[0];
     const items = JSON.parse(txt);
     let added = 0;
-    for (const t of items){
-      if (typeof t === "string" && t.trim() && !memory.some(x => x.text === t.trim())){
-        memory.push({text: t.trim(), ts: Date.now()});
+    for (const it of items){
+      const text = (typeof it === "string" ? it : it?.text || "").trim();
+      const score = typeof it === "object" && it?.score ? Math.min(Math.max(it.score, 1), 5) : 3;
+      if (text && score >= 3 && !memory.some(x => x.text === text)){
+        memory.push({id: -Date.now(), text, ts: Date.now(), score, pinned: 0});
         added++;
+        if (archOK)
+          fetch(ARCH + "/mem/items", {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({action: "add", text, score})
+          }).catch(() => {});
       }
     }
-    if (added){ saveMemory(); toast("🧠 已记住 " + added + " 条新记忆"); }
+    if (added){ saveMemory(); toast("已记住 " + added + " 条新记忆"); }
   } catch {}
 }
 

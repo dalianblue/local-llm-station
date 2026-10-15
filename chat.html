@@ -102,8 +102,11 @@
           border-bottom: 1px solid var(--border); }
   .mrow:last-child { border-bottom: none; }
   .mrow .t { flex: 1; }
-  .mrow .del { color: var(--dim); border: none; background: none; cursor: pointer; font-size: 12px; }
+  .mrow .mscore { color: var(--dim); font-size: 11px; }
+  .mrow.ledger .t { color: var(--dim); }
+  .mrow .pin, .mrow .del { color: var(--dim); border: none; background: none; cursor: pointer; font-size: 12px; }
   .mrow .del:hover { color: #f85149; }
+  .mrow .pin:hover, .mrow .pin.on { color: var(--accent); }
   .memempty { color: var(--dim); font-size: 12.5px; padding: 16px 0; text-align: center; }
   .bdetails { margin: 8px 0; font-size: 12.5px; color: var(--dim); }
   .bdetails summary { cursor: pointer; }
@@ -657,7 +660,7 @@ document.addEventListener("click", e => {
 // ---------- 跨对话长期记忆（DeepSeek 式：所有会话共享，回复后后台提取） ----------
 const BOUNDARY_RULES = `[能力边界规范——基于本机 benchmark 实测，必须遵守]
 - 长尾事实（冷门人名、书目细节、历史日期等）：凡没有把握，必须明说"这点我可能记不准，请核实"，禁止自信编造
-- 训练截止后的时事、新知识（新指南/新版本/获奖者等）：直接回答不知道，禁止推测冒充
+- 训练截止后的时事、新知识（新指南/新版本/获奖者等）：直接回答不知道，禁止推测冒充；但用户当次提供的材料（文献/粘贴文本/数据）中的内容不属此列——基于材料本身作答并注明出自哪份材料
 - 医学：可以讲教科书概念与原理；涉及具体用药剂量、换药时机、临床决策时，只做方向性说明并明确提醒"以权威指南和主治医师为准"，不确定的细节要明说
 - 专业领域固定译名（法律/医学文献术语）：给出译法的同时提示用户核对标准译名
 - 代码/翻译等指令性任务：直接输出结果本身，不加多余解释
@@ -699,33 +702,112 @@ const PAPER_DEFAULT_Q = "请用中文按固定四段结构总结这篇论文，�
   + "最后单列一节「### 建议追问」，给出 3 个针对这篇文献最值得深入追问的问题。每条必须简短（不超过 15 字）、像读者好奇发问的口吻（如\"安慰剂组脱落率有多高？\"），禁止长句、禁止一条里挤多个问题；指向该文献独特的机制/方法/数据/结论。";
 const INPUT_PLACEHOLDER = input.placeholder;
 
+// 记忆条目 {id, text, ts, score(1-5), pinned(0/1)}；账本 ledger {summary, ts}
 let memory = [];
-try { memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]"); } catch {}
+let ledger = null;
 let memCtrl = null;
+try {
+  memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]")
+    .map((m, i) => m && typeof m === "object" ? {   // 旧格式 {text,ts} 归一化补 id/score/pinned
+      id: m.id ?? -(i + 1), text: String(m.text || ""), ts: m.ts || Date.now(),
+      score: m.score ?? 3, pinned: m.pinned ? 1 : 0
+    } : null).filter(Boolean);
+} catch {}
+try { ledger = JSON.parse(localStorage.getItem("qwen_ledger") || "null"); } catch {}
 
-function saveMemory(){
-  try { localStorage.setItem("qwen_memory", JSON.stringify(memory)); } catch {}
+const MEM_CAP = 200;   // 上限+裁剪：超限删最低分最旧非置顶条
+function mirrorMem(){
+  try {
+    localStorage.setItem("qwen_memory", JSON.stringify(memory));
+    if (ledger) localStorage.setItem("qwen_ledger", JSON.stringify(ledger));
+  } catch {}
+}
+// 服务端权威加载（archOK 时）；无服务端时沿用 localStorage 镜像
+async function loadMem(){
+  if (!archOK) return;
+  try {
+    const items = await (await fetch(ARCH + "/mem/items")).json();
+    if (Array.isArray(items)) memory = items;
+    ledger = await (await fetch(ARCH + "/mem/ledger")).json();
+    mirrorMem(); renderMemory(); scheduleLedger();
+  } catch {}
+}
+// add/del/pin/clear：本地即时改 + 服务端异步同步（返回是否真的有变化）
+async function memMutate(action, extra = {}){
+  let changed = false;
+  if (action === "add"){
+    const text = (extra.text || "").trim();
+    const score = Math.min(Math.max(extra.score ?? 3, 1), 5);
+    if (text && !memory.some(x => x.text === text)){
+      memory.push({id: -Date.now(), text, ts: Date.now(), score, pinned: 0});
+      changed = true;
+    }
+  } else if (action === "del"){
+    changed = memory.some(x => x.id === extra.id);
+    memory = memory.filter(x => x.id !== extra.id);
+  } else if (action === "pin"){
+    const m = memory.find(x => x.id === extra.id);
+    if (m){ m.pinned = extra.on ? 1 : 0; changed = true; }
+  } else if (action === "clear"){
+    const n = memory.length;
+    memory = memory.filter(x => x.pinned);
+    changed = memory.length !== n;
+  }
+  if (!changed) return false;
+  if (memory.length > MEM_CAP){
+    const cut = new Set(memory.filter(x => !x.pinned)
+      .sort((a, b) => (a.score - b.score) || (a.ts - b.ts)).slice(0, memory.length - MEM_CAP).map(x => x.id));
+    memory = memory.filter(x => !cut.has(x.id));
+  }
+  mirrorMem(); renderMemory(); scheduleLedger();
   if (archOK)
-    fetch(ARCH + "/archive/memory.json", {
-      method: "PUT", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(memory)
-    }).catch(() => {});
-  renderMemory();
+    fetch(ARCH + "/mem/items", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({action, ...extra})
+    }).then(r => r.ok ? r.json() : null)
+      .then(rows => { if (Array.isArray(rows)){ memory = rows; mirrorMem(); renderMemory(); } })
+      .catch(() => {});
+  return true;
 }
 function renderMemory(){
   $("#boundaryview").textContent = BOUNDARY_RULES;
-  $("#membtn").title = `长期记忆：已记住 ${memory.length} 条（点击查看管理）`;
+  $("#membtn").title = `长期记忆：${memory.length} 条明细（点击查看账本与管理）`;
   $("#memcount").textContent = memory.length ? `${memory.length} 条` : "";
   const el = $("#memlist"); el.innerHTML = "";
+  if (ledger?.summary){
+    const d = document.createElement("div");
+    d.className = "mrow ledger";
+    d.innerHTML = `<span class="t">账本画像（自动注入，有误可改）：<br>${esc(ledger.summary)}</span>` +
+      `<button class="pin" title="修正画像（清空则重新生成）">✎</button>`;
+    d.querySelector(".pin").onclick = () => {
+      const t = prompt("修正画像（留空 = 清除，下次自动重新生成）：", ledger.summary);
+      if (t === null) return;
+      const s = t.trim();
+      ledger = s ? {summary: s, ts: Date.now()} : {summary: "", ts: 0};
+      mirrorMem(); renderMemory();
+      if (archOK)
+        fetch(ARCH + "/mem/ledger", {
+          method: "PUT", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(ledger)
+        }).catch(() => {});
+    };
+    el.appendChild(d);
+  }
   if (!memory.length){
-    el.innerHTML = `<div id="memempty">暂无记忆。对话中提到的个人信息、偏好会自动记到这里。</div>`;
+    const d = document.createElement("div");
+    d.className = "memempty";
+    d.textContent = "暂无记忆。对话中提到的稳定个人信息会自动记到这里。";
+    el.appendChild(d);
     return;
   }
-  for (const m of memory){
+  for (const m of [...memory].sort((a, b) => (b.pinned - a.pinned) || (b.score - a.score) || (b.ts - a.ts))){
     const d = document.createElement("div");
     d.className = "mrow";
-    d.innerHTML = `<span class="t">${esc(m.text)}</span><button class="del">✕</button>`;
-    d.querySelector(".del").onclick = () => { memory = memory.filter(x => x !== m); saveMemory(); };
+    d.innerHTML = `<span class="t">${esc(m.text)} <small class="mscore">${m.score ?? 3}</small></span>` +
+      `<button class="pin${m.pinned ? " on" : ""}" title="${m.pinned ? "取消置顶" : "置顶（恒入账本）"}">★</button>` +
+      `<button class="del" title="删除">✕</button>`;
+    d.querySelector(".pin").onclick = () => memMutate("pin", {id: m.id, on: !m.pinned});
+    d.querySelector(".del").onclick = () => memMutate("del", {id: m.id});
     el.appendChild(d);
   }
 }
@@ -742,10 +824,10 @@ document.addEventListener("click", e => {
 });
 $("#memadd").onclick = () => {
   const t = prompt("新增一条记忆：");
-  if (t?.trim()){ memory.push({text: t.trim(), ts: Date.now()}); saveMemory(); }
+  if (t?.trim()) memMutate("add", {text: t.trim(), score: 4});
 };
 $("#memclear").onclick = () => {
-  if (memory.length && confirm("清空全部跨对话记忆？")){ memory = []; saveMemory(); }
+  if (memory.some(x => !x.pinned) && confirm("清空全部未置顶记忆？")) memMutate("clear");
 };
 
 // ---------- 项目面板：会话笔记（<id>.notes.md 经 /archive 任意文件名存取，零服务端改动） + 资料清单 ----------
@@ -1339,16 +1421,19 @@ async function genCards(){
 }
 $("#gencards").onclick = genCards;
 
-// 回复完成后后台提取记忆（fire-and-forget，不阻塞 UI）
+// 提取门控：只记稳定用户事实 + 打分，低分丢弃（fire-and-forget，不阻塞 UI）
+const MEM_CRITERIA = "提取标准——只记跨对话长期有效的稳定用户事实：称呼、职业、研究方向、明确的回答/格式偏好、教育或临床背景、长期目标、已确认的设备型号与技术参数。\n" +
+  "排除：一次性任务指令（「这次用表格输出」类）、当前稿件/审稿/数据分析的临时上下文、对话内容本身、能从常识推断的信息。不确定就不记，宁缺毋滥。";
 async function extractMemory(){
   const lastUser = [...messages].reverse().find(m => m.role === "user");
   const lastBot = messages[messages.length - 1];
   if (!lastUser || lastBot?.role !== "assistant" || !lastUser.text) return;
   if (lastUser.text.startsWith("[此前对话摘要")) return;   // 压缩摘要不是用户输入，不提取记忆
   memCtrl?.abort(); memCtrl = new AbortController();
-  const sys = "从下面的对话中提取值得跨对话长期记住的用户信息（称呼、职业、偏好、背景、长期目标等）。\n" +
-    "已有记忆（不要重复）：\n" + (memory.map(m => "- " + m.text).join("\n") || "（无）") +
-    "\n\n只输出新增记忆的 JSON 字符串数组（中文、每条一句话），没有新信息则输出 []。不要输出其他内容。";
+  const known = memory.filter(m => m.pinned || m.score >= 4).map(m => "- " + m.text).join("\n");
+  const sys = MEM_CRITERIA + "\n" +
+    (known ? "已有记忆（不要重复）：\n" + known + "\n" : "") +
+    "只输出新增记忆的 JSON 数组 [{\"text\":\"一句话（中文）\",\"score\":1到5}]，score：5=核心长期事实，4=稳定背景，3=一般偏好。没有新信息则输出 []。不要输出其他内容。";
   try {
     const r = await apiPost({
         messages: [
@@ -1364,15 +1449,92 @@ async function extractMemory(){
     if (mm) txt = mm[0];
     const items = JSON.parse(txt);
     let added = 0;
-    for (const t of items){
-      if (typeof t === "string" && t.trim() && !memory.some(x => x.text === t.trim())){
-        memory.push({text: t.trim(), ts: Date.now()});
-        added++;
-      }
+    for (const it of items){
+      const text = (typeof it === "string" ? it : it?.text || "").trim();
+      const score = typeof it === "object" && it?.score ? Math.min(Math.max(it.score, 1), 5) : 3;
+      if (text && score >= 3 && await memMutate("add", {text, score})) added++;
     }
-    if (added){ saveMemory(); toast("🧠 已记住 " + added + " 条新记忆"); }
+    if (added) toast("已记住 " + added + " 条新记忆");
   } catch {}
 }
+
+// 一次性存量清账：旧记忆全是 score=3 且无账本时，让模型逐条重打分，<3 删除
+async function cleanupMem(){
+  try { localStorage.setItem("qwen_mem_cleaned", "1"); } catch {}
+  memCtrl?.abort(); memCtrl = new AbortController();
+  const list = memory.map((m, i) => `${i + 1}. ${m.text}`).join("\n");
+  const sys = MEM_CRITERIA + "\n给下面每条已有记忆打分（1-5）：5=跨对话长期有效的用户事实；4=稳定背景；3=一般偏好；1-2=一次性任务指令、临时上下文、对话内容本身、常识可推断。\n" +
+    "只输出 JSON 数组 [{\"i\":编号,\"s\":分数}]，逐条都要打分。不要输出其他内容。";
+  try {
+    const r = await apiPost({
+        messages: [
+          {role: "system", content: sys},
+          {role: "user", content: list}
+        ],
+        max_tokens: 2000, temperature: 0,
+        chat_template_kwargs: {enable_thinking: false},
+      }, memCtrl.signal);
+    const j = await r.json();
+    let txt = (j.choices?.[0]?.message?.content || "[]").trim();
+    const mm = txt.match(/\[[\s\S]*\]/);
+    if (mm) txt = mm[0];
+    const scores = new Map();
+    for (const it of JSON.parse(txt)) scores.set(it.i, it.s);
+    const drop = memory.filter((m, i) => (scores.get(i + 1) ?? 3) < 3).map(m => m.id);
+    if (drop.length){
+      memory = memory.filter(m => !drop.includes(m.id));
+      mirrorMem(); renderMemory(); scheduleLedger();
+      if (archOK)
+        fetch(ARCH + "/mem/items", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({action: "delmany", ids: drop})
+        }).then(r => r.ok ? r.json() : null)
+          .then(rows => { if (Array.isArray(rows)){ memory = rows; mirrorMem(); renderMemory(); } })
+          .catch(() => {});
+      toast("记忆清账：删除 " + drop.length + " 条临时性记忆");
+    }
+  } catch {}
+}
+
+// 账本：明细 >20 条且摘要过期（>24h）才重新生成画像；其余时候注入纯拼装
+let ledgerTimer = null;
+function scheduleLedger(){
+  clearTimeout(ledgerTimer);
+  ledgerTimer = setTimeout(regenLedger, 4000);
+}
+async function regenLedger(){
+  if (memory.length <= 20) return;
+  if (ledger?.summary && Date.now() - (ledger.ts || 0) < 86400e3) return;
+  memCtrl?.abort(); memCtrl = new AbortController();
+  const src = [...memory].sort((a, b) => (b.pinned - a.pinned) || (b.score - a.score) || (b.ts - a.ts))
+    .slice(0, 40).map(m => "- " + m.text).join("\n");
+  const sys = "把下面的用户记忆条目压缩成一段不超过 150 字的用户画像（第三人称、中文），只保留跨对话稳定的事实（职业、方向、偏好、背景、目标），合并重复，不保留任务性细节。只输出画像正文。";
+  try {
+    const r = await apiPost({
+        messages: [
+          {role: "system", content: sys},
+          {role: "user", content: src}
+        ],
+        max_tokens: 200, temperature: 0,
+        chat_template_kwargs: {enable_thinking: false},
+      }, memCtrl.signal);
+    const j = await r.json();
+    const summary = (j.choices?.[0]?.message?.content || "").trim().replace(/^["「]|["」]$/g, "");
+    if (!summary) return;
+    ledger = {summary, ts: Date.now()};
+    mirrorMem(); renderMemory();
+    if (archOK)
+      fetch(ARCH + "/mem/ledger", {
+        method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(ledger)
+      }).catch(() => {});
+  } catch {}
+}
+// 启动清账检查（仅一次，延迟到数据源稳定——服务端条目带真 id，本地旧格式已归一化）
+setTimeout(() => {
+  if (!ledger?.summary && memory.length && !localStorage.getItem("qwen_mem_cleaned"))
+    cleanupMem();
+}, 5000);
 renderMemory();
 
 // ---------- 会话管理（持久化） ----------
@@ -1526,6 +1688,7 @@ async function connectArch(){
     await fetch(ARCH + "/health");
     archOK = true; updateArchBtn();
     await importArchives();
+    loadMem();   // 记忆库（SQLite）服务端权威加载
     return true;
   } catch { archOK = false; updateArchBtn(); return false; }
 }
@@ -1555,13 +1718,6 @@ async function importArchives(){
   try {
     const names = await (await fetch(ARCH + "/list")).json();
     for (const n of names){
-      if (n === "memory.json"){   // 记忆文件单独导入
-        try {
-          const j = await (await fetch(ARCH + "/archive/memory.json")).json();
-          if (Array.isArray(j) && j.length > memory.length){ memory = j; saveMemory(); }
-        } catch {}
-        continue;
-      }
       try {
         const j = await (await fetch(ARCH + "/archive/" + encodeURIComponent(n))).json();
         if (!j?.id || !Array.isArray(j.messages)) continue;
@@ -2529,9 +2685,17 @@ function buildHistory(){
   const h = [];
   const sys = [];
   sys.push(BOUNDARY_RULES);   // 自动注入，无开关：修改走 BOUNDARY_RULES 常量
-  if (memory.length)
-    sys.push("[用户长期记忆——跨对话记住的用户信息，自然使用即可，不必逐条复述]\n"
-      + memory.map(m => "- " + m.text).join("\n"));
+  // 账本注入：画像摘要 + 置顶原文 + top-8 高分原文，token 恒定不随明细膨胀
+  const pins = memory.filter(m => m.pinned);
+  const top8 = [...memory].filter(m => !m.pinned)
+    .sort((a, b) => (b.score - a.score) || (b.ts - a.ts)).slice(0, 8);
+  const memParts = [];
+  if (ledger?.summary) memParts.push("画像：" + ledger.summary);
+  if (pins.length) memParts.push("置顶：\n" + pins.map(m => "- " + m.text).join("\n"));
+  if (top8.length) memParts.push("要点：\n" + top8.map(m => "- " + m.text).join("\n"));
+  if (memParts.length)
+    sys.push("[用户长期记忆账本——跨对话记住的用户信息，自然使用即可，不必逐条复述。画像与要点由历史对话自动归纳，可能过时或有误：与用户当前自述冲突时，一律以用户当前自述为准，禁止基于画像预设用户身份或职业]\n"
+      + memParts.join("\n"));
   if (sys.length) h.push({role:"system", content: sys.join("\n\n")});
   for (const m of messages){
     if (m.archived) continue;   // 已压缩归档：原文不发送，由下方检索按需回填
