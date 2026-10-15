@@ -23,19 +23,54 @@
 - **修得回**：📮 投稿标记 → 收到审稿意见一键 fork 修稿版 → 意见逐条结构化（状态追踪 + Response 草稿）→ 🏥 落地体检防"信里说改了稿里没改" → 导出 point-by-point 回复信 + 🖍 高亮修改稿 Word（参考文献不标）
 - **查得准**：🔬 文献检索一条命令——DeepSeek 生成检索式 → 四源并行（PubMed / OpenAlex / Europe PMC 含预印本 / ClinicalTrials.gov 在研试验）→ 去重 → DeepSeek 逐条相关性判定（✅/🟡/❌ + 理由）；写作助手里说「给这段找点文献支持」同样触发
 - **讨得深**：数据体检（GRIM 等确定性检验）· 引文校验 · 文献库（BibTeX/RIS 互通 Zotero/EndNote）
-- **换学科**：🎓 学科皮肤——AI 身份、提取/解读模板、审稿视角、专属检索源（PubMed/Europe PMC/ClinicalTrials.gov）随学科整体切换；医学口内置，其他学科复制 `disciplines/template.js` 三步 DIY，面向综合性大学各专业
+- **换学科**：🎓 学科皮肤——AI 身份、提取/解读模板、审稿视角、专属检索源（PubMed/Europe PMC/ClinicalTrials.gov）随学科整体切换。医学口开箱即用；其他学科在「🎓 学科 → ➕ 添加学科」走 **4 步网页向导**（选图标 → 填身份 → 定审稿视角 → 保存启用，全程不碰文件），面向综合性大学各专业
 
 完整功能清单、实现边界与配置细节见 **[docs/features.md](docs/features.md)**。
 
 ## 快速开始
 
-**一键安装**（自动装 Homebrew/oMLX/uv、克隆源码到 `~/Qwen38`、从 ModelScope 下载模型（主模型 16GB + MTP drafter）与 KaTeX、写入 drafter 配置、编译启动 LocalLLMServer-oMLX.app）：
+三种装法任选，成品完全相同。**多数人推荐方式二**：把指令块整段复制给终端里的 AI Agent（Claude Code 等），它替你跑完全部步骤。
+
+**方式一：一键脚本**
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dalianblue/local-llm-station/main/install.sh)
 ```
 
-内存不足 24GB 或暂不下载模型：`SKIP_MODEL=1` 运行上述命令。**一键脚本即 oMLX 路线**（自动装 Homebrew/oMLX/uv、克隆源码、ModelScope 下载模型、写入 MTP drafter 配置、编译启动）。手动分步等价操作：
+自动装 Homebrew/oMLX/uv、克隆源码到 `~/Qwen38`、从 ModelScope 下载模型（主模型 16GB + MTP drafter）与 KaTeX、写入 drafter 配置、编译启动 LocalLLMServer-oMLX.app。内存不足 24GB 或暂不下载模型：`SKIP_MODEL=1` 运行。
+
+**方式二：让 AI Agent 部署（推荐）**
+
+把下面整段复制进 Claude Code（或其他能操作终端的 Agent）发送即可：
+
+```text
+请在我的 Mac 上部署 local-llm-station（本地 LLM 科研工作台，oMLX 路线）。
+
+前置确认（先检查再继续，不满足就停下来告诉我）：
+- Apple Silicon（uname -m 为 arm64）
+- 可用内存 ≥ 24GB（sysctl hw.memsize）；内存不足时改用小模型方案并先征求我同意
+- 磁盘剩余 ≥ 20GB（df -h ~）
+
+部署步骤（逐步执行，每步失败就停下报告，不要自行换路线）：
+1. 克隆仓库到 ~/Qwen38：git clone https://github.com/dalianblue/local-llm-station.git ~/Qwen38
+   （目录已存在则 git pull 更新，不要覆盖）
+2. 安装依赖：先确认 Homebrew 存在（没有则装），然后
+   brew tap jundot/omlx https://github.com/jundot/omlx && brew install jundot/omlx/omlx
+3. 下载模型（共约 16GB，开始前向我确认一次）：
+   mkdir -p ~/.omlx/models/mlx-community
+   uvx modelscope download --model mlx-community/Qwen3.8-27B-nvfp4 --local_dir ~/.omlx/models/mlx-community/Qwen3.8-27B-nvfp4
+   uvx modelscope download --model mlx-community/Qwen3.8-27B-MTP-nvfp4 --local_dir ~/.omlx/models/mlx-community/Qwen3.8-27B-MTP-nvfp4
+4. 可选（KaTeX 公式渲染，2.9MB）：
+   mkdir -p ~/Qwen38/katex && curl -sL https://registry.npmjs.org/katex/-/katex-0.16.11.tgz -o /tmp/katex.tgz \
+     && tar xzf /tmp/katex.tgz -C ~/Qwen38/katex --strip-components=2 package/dist
+5. 构建：cd ~/Qwen38 && ./build_omlx.sh && open LocalLLMServer-oMLX.app
+6. 验证并报告结果：
+   - curl -s http://127.0.0.1:8081/health 应返回 "ok"（app 启动后存档服务即起）
+   - app 菜单「🏠 我的桌面」应打开 dashboard 网页
+   - 若我要跑本地模型：在 app 里启动服务后，curl -s http://127.0.0.1:8000/v1/models 应列出模型
+```
+
+**方式三：手动分步**（与上面 Agent 指令等价，自己敲）
 
 ```bash
 # 1. 安装 oMLX 并下载模型（ModelScope 源；主模型 15.7GB + MTP drafter 267MB）
@@ -62,7 +97,7 @@ Ollama 路线（`brew install ollama && ollama pull qwen3.8:27b-mlx`，`build_lo
 🏠 我的桌面（dashboard.html）—— 一切的入口，做完的事都变成一张卡片
 ```
 
-首次打开会先弹「🎓 选择学科方向」（决定 AI 身份与模板，之后可从顶栏「🎓 学科」随时切换）。
+首次打开会先弹「🎓 选择学科方向」（决定 AI 身份与模板，之后可从顶栏「🎓 学科」随时切换）；不在列表里？点弹层底部「➕ 添加学科」，跟着 4 步向导填表即可，全程不用碰任何文件。
 
 **① 读一篇文献**
 托盘 →「🌐 开始新对话」→ 输入框旁 📎 上传 PDF → 等提取完成，自动出**四段解读**（背景 / 方法 / 结果 / 讨论）。PDF 只在本机解析，不出网。想为综述攒原料？敲 `/` 选「证据提取」（RCT/Meta）或「观点提取」（论著），提取结果自动存进项目笔记。
@@ -165,7 +200,7 @@ LocalLLMServer-oMLX.app（宿主进程）
 | 想了解 | 去哪里 |
 |--------|--------|
 | 完整功能清单、实现边界与配置（换模型 / 上下文与内存 / 存档 API / Windows-Linux） | [docs/features.md](docs/features.md) |
-| 非医学学科？学科皮肤 DIY（三步把提示词/审稿视角换成你的领域） | [docs/discipline.md](docs/discipline.md) |
+| 非医学学科？4 步网页向导添加你的学科（或手写皮肤文件） | [docs/discipline.md](docs/discipline.md) |
 | 模型能力实测、试卷与双后端对照 | [docs/benchmark.md](docs/benchmark.md) · [benchmark/](benchmark/) |
 | 产品定位与常见疑问 | [FAQ.md](FAQ.md) |
 | 作者为什么做这样一款软件 | [docs/story.md](docs/story.md) |
