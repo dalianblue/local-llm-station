@@ -604,12 +604,7 @@
         <button id="chkbtn" title="跨章节逻辑一致性检查：结果—讨论呼应、术语与数据一致（自动附全文草稿）">🧭 <span class="lbl">检查</span></button>
         <div id="revwrap" class="revwrap">
           <button id="revbtn" title="模拟期刊审稿：选择审稿人视角通读全文，输出 Major/Minor 意见供逐条讨论">🕵️ <span class="lbl">审稿</span></button>
-          <div id="revmenu" class="expmenu anch-l">
-            <div class="nopt" data-rev="general"><b>🧑‍⚖️ 综合审稿人</b><small>新颖性 · 设计 · 可靠性 · 写作全维度</small></div>
-            <div class="nopt" data-rev="method"><b>🔬 方法学审稿人</b><small>设计 · 偏倚 · 混杂 · 盲法 · 终点</small></div>
-            <div class="nopt" data-rev="stat"><b>📊 统计审稿人</b><small>方法选择 · 样本量 · 多重比较 · 数据自洽</small></div>
-            <div class="nopt" data-rev="clin"><b>🩺 临床审稿人</b><small>临床意义 · 外推性 · 患者安全</small></div>
-          </div>
+          <div id="revmenu" class="expmenu anch-l"><!-- 审稿视角按学科皮肤渲染（DISC.reviewers） --></div>
         </div>
         <button id="draftbtn" class="togbtn" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
         <button id="attbtn" class="togbtn" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
@@ -701,7 +696,20 @@
 
 <div id="toast" class="toast"></div>
 
+<script src="disciplines/medicine.js"></script>
 <script>
+(function(){
+  var id = localStorage.getItem("qwen_discipline");
+  if (id && /^[a-z0-9_-]+$/i.test(id) && !window.DISCIPLINES[id])
+    document.write('<script src="disciplines/' + id + '.js"><\/script>');   // file:// 下 fetch 被拦，document.write 解析期同步注入
+})();
+</script>
+<script>
+// 当前学科皮肤：localStorage 选中项（加载失败/未选回退医学）；审稿角色/边界条款/综述提示由皮肤提供
+const DISC = (() => {
+  const id = localStorage.getItem("qwen_discipline");
+  return (id && /^[a-z0-9_-]+$/i.test(id) && DISCIPLINES[id]) || DISCIPLINES.medicine;
+})();
 const $ = s => document.querySelector(s);
 const ARCH = "http://127.0.0.1:8081";
 let archOK = false;
@@ -763,10 +771,11 @@ function autoMode(t){
 }
 
 // ---------- 能力边界规范与长期记忆（与 chat.html 共享 qwen_memory） ----------
+// 学科条款由皮肤注入（disciplines/*.js），其余为全学科通用
 const BOUNDARY_RULES = `[能力边界规范——基于本机 benchmark 实测，必须遵守]
 - 长尾事实（冷门人名、书目细节、历史日期等）：凡没有把握，必须明说"这点我可能记不准，请核实"，禁止自信编造
 - 训练截止后的时事、新知识（新指南/新版本/获奖者等）：直接回答不知道，禁止推测冒充；但用户当次提供的材料（文献/粘贴文本/数据）中的内容不属此列——基于材料本身作答并注明出自哪份材料
-- 医学：可以讲教科书概念与原理；涉及具体用药剂量、换药时机、临床决策时，只做方向性说明并明确提醒"以权威指南和主治医师为准"，不确定的细节要明说
+${DISC.boundaryExtra}
 - 专业领域固定译名（法律/医学文献术语）：给出译法的同时提示用户核对标准译名
 - 代码/翻译等指令性任务：直接输出结果本身，不加多余解释
 - 数学/逻辑题：遇到矛盾或缺失条件时明确指出"无解/条件不足"，禁止强行作答`;
@@ -1554,8 +1563,8 @@ function rvRender(){
   if (RV.stage === "topic"){
     b.innerHTML = `
       ${S.dskey ? "" : `<div class="alertbox">⚠ 未配置 DeepSeek API Key——判定/大纲/逐节生成需要云端模型（⚙️ 设置里填写），四源检索本身可先跑</div>`}
-      <div class="rvsub">综述话题（建议具体到干预+人群+结局）</div>
-      <input id="rvtopic" value="${esc(RV.topic || "")}" placeholder="如：IL-17 抑制剂治疗银屑病的疗效与安全性" class="qinput">
+      <div class="rvsub">综述话题（${DISC.hints.reviewTopic}）</div>
+      <input id="rvtopic" value="${esc(RV.topic || "")}" placeholder="如：${DISC.hints.reviewExample}" class="qinput">
       <div class="rvrow">
         ${rvBtn("rvsearch", "🔍 四源检索 + 相关性判定", true)}
         <span id="rvprog" class="dim"></span>
@@ -2826,13 +2835,11 @@ $("#chkbtn").onclick = async () => {
   saveReport(`检查-${dateTag()}.md`);
 };
 // 🕵️ 模拟审稿：选视角通读全文输出 Major/Minor 意见，落入对话供逐条讨论
-const REVIEWS = {
-  general: "综合审稿人：从新颖性、研究设计、结果可靠性、论证逻辑与写作规范全维度审",
-  method: "方法学家审稿人：聚焦研究设计——偏倚来源、混杂控制、盲法与分配隐藏、随访完整性、终点定义与测量",
-  stat: "统计审稿人：聚焦统计方法是否匹配设计与数据类型、样本量与功效说明、多重比较处理、效应量与置信区间报告、图表数据自洽",
-  clin: "临床审稿人：聚焦临床意义与价值、结果外推性（人群与场景）、患者安全性与不良反应、与现行临床实践的衔接",
-};
-const REV_NAMES = {general: "综合", method: "方法学", stat: "统计", clin: "临床"};
+// 审稿视角来自学科皮肤（disciplines/*.js 的 reviewers 数组）
+$("#revmenu").innerHTML = DISC.reviewers.map(r =>
+  `<div class="nopt" data-rev="${r.id}"><b>${r.icon} ${r.name}</b><small>${r.desc}</small></div>`).join("");
+const REVIEWS = Object.fromEntries(DISC.reviewers.map(r => [r.id, r.prompt]));
+const REV_NAMES = Object.fromEntries(DISC.reviewers.map(r => [r.id, r.tag]));
 const dateTag = () => new Date().toLocaleDateString("sv").slice(5).replace("-", "");
 // 报告落盘：审稿/检查回复完成后存项目目录，左栏可对照（同日同视角重跑覆盖）
 async function saveReport(name){
@@ -3572,7 +3579,7 @@ async function extractMemory(){
   if (!lastUser || lastBot?.role !== "assistant" || !lastUser.text) return;
   memCtrl?.abort(); memCtrl = new AbortController();
   const known = memory.filter(m => m.pinned || m.score >= 4).map(m => "- " + m.text).join("\n");
-  const sys = "提取标准——只记跨对话长期有效的稳定用户事实：称呼、职业、研究方向、明确的回答/格式偏好、教育或临床背景、长期目标、已确认的设备型号与技术参数。\n" +
+  const sys = "提取标准——只记跨对话长期有效的稳定用户事实：称呼、职业、研究方向、明确的回答/格式偏好、教育或专业背景、长期目标、已确认的设备型号与技术参数。\n" +
     "排除：一次性任务指令、当前稿件/审稿的临时上下文、对话内容本身、能从常识推断的信息。不确定就不记，宁缺毋滥。\n" +
     (known ? "已有记忆（不要重复）：\n" + known + "\n" : "") +
     "只输出新增记忆的 JSON 数组 [{\"text\":\"一句话（中文）\",\"score\":1到5}]，没有新信息则输出 []。不要输出其他内容。";

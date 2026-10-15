@@ -11,6 +11,15 @@
 <script src="html2canvas.min.js"></script>
 <!-- pptxgenjs：文献一键 PPT（背景/方法/结果/讨论 + 图表位图），本地单文件零 CDN -->
 <script src="pptxgen.bundle.js"></script>
+<!-- 学科皮肤（disciplines/，DIY 见 docs/discipline.md）：medicine 常驻兜底，选中其他学科时同步补载 -->
+<script src="disciplines/medicine.js"></script>
+<script>
+(function(){
+  var id = localStorage.getItem("qwen_discipline");
+  if (id && /^[a-z0-9_-]+$/i.test(id) && !window.DISCIPLINES[id])
+    document.write('<script src="disciplines/' + id + '.js"><\/script>');   // file:// 下 fetch 被拦，document.write 解析期同步注入
+})();
+</script>
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --border: #2d333b;
@@ -533,6 +542,11 @@
 </footer>
 
 <script>
+// 当前学科皮肤：localStorage 选中项（加载失败/未选回退医学）
+const DISC = (() => {
+  const id = localStorage.getItem("qwen_discipline");
+  return (id && /^[a-z0-9_-]+$/i.test(id) && DISCIPLINES[id]) || DISCIPLINES.medicine;
+})();
 const DEEPSEEK_API = "https://api.deepseek.com/v1/chat/completions";
 const usingDeep = () => S.provider === "deepseek" && S.dskey;
 // 统一请求入口：本地 Ollama 或 DeepSeek 云端 API。
@@ -658,48 +672,22 @@ document.addEventListener("click", e => {
 });
 
 // ---------- 跨对话长期记忆（DeepSeek 式：所有会话共享，回复后后台提取） ----------
+// 学科条款由皮肤注入（disciplines/*.js），其余为全学科通用
 const BOUNDARY_RULES = `[能力边界规范——基于本机 benchmark 实测，必须遵守]
 - 长尾事实（冷门人名、书目细节、历史日期等）：凡没有把握，必须明说"这点我可能记不准，请核实"，禁止自信编造
 - 训练截止后的时事、新知识（新指南/新版本/获奖者等）：直接回答不知道，禁止推测冒充；但用户当次提供的材料（文献/粘贴文本/数据）中的内容不属此列——基于材料本身作答并注明出自哪份材料
-- 医学：可以讲教科书概念与原理；涉及具体用药剂量、换药时机、临床决策时，只做方向性说明并明确提醒"以权威指南和主治医师为准"，不确定的细节要明说
+${DISC.boundaryExtra}
 - 专业领域固定译名（法律/医学文献术语）：给出译法的同时提示用户核对标准译名
 - 代码/翻译等指令性任务：直接输出结果本身，不加多余解释
 - 数学/逻辑题：遇到矛盾或缺失条件时明确指出"无解/条件不足"，禁止强行作答`;
 
-// 文献解读专属身份：附 PDF 时注入；未输入问题时使用默认解读模板
-const PAPER_PERSONA = "你是一位资深医学研究员，熟悉临床研究方法学与统计解读。" +
-  "任何回复开头不加「这是一篇很重要的研究」「很好的问题」等评价性套话，直接进入内容；" +
-  "当用户回答或讨论「建议追问」中的问题时：先针对其回答的具体内容作出回应（指出它与本文方法/数据/结论的关联，或纠正偏差并说明依据），" +
-  "再顺着这个回答推进一层；禁止「很高兴看到」「说得很好」这类空泛夸奖。" +
-  "每次回答的末尾，若讨论仍有值得深挖的方向，以「### 建议追问」节给出 1-2 个简短（≤15 字）的下一步问题（读者好奇发问口吻，指向本次讨论新展开的具体方向）；" +
-  "话题已讨论充分时不硬造追问，省略该节。";
-// 深度提取模板（综述原料生产线）：两条 / 指令共用约束块——防脑补 / 观点与数据分离 / 引用标签
+// 文献解读专属身份/提取模板/默认解读均来自学科皮肤（DISC.paperPersona / extractRct / extractView / paperDefaultQ）
+// 深度提取模板共用约束块——防脑补 / 观点与数据分离 / 引用标签（全学科通用，拼接在学科模板后）
 const EXTRACT_RULES = "\n\n约束：\n"
   + "- 每一维度区分「数据显示」（结果数据，注明来源图表）与「作者认为」（讨论/解释），两者不得混写\n"
   + "- 某维度原文未提及：只写「未明确说明」，严禁编造或引申（含 P 值、效应量、样本量）\n"
   + "- 每条有引用价值的信息末尾加标签 [[可引用于引言]] / [[可引用于讨论]] / [[可引用于方法]] 之一\n"
   + "- If the paper does not contain this information, output \"未明确说明\".";
-const EXTRACT_RCT = "你是一位循证医学证据提取专家。请按 PICOS 原则从附上的文献（多篇时逐篇、以标题分隔）提取信息，"
-  + "重点评估内部真实性，仅输出对撰写「方法学讨论」与「证据总结表」有价值的内容。用中文输出，维度标题保留英文：\n\n"
-  + "1. **PICOS 精要**：P（人群）/ I（干预）/ C（对照）/ O（主要结局）/ S（场景）\n"
-  + "2. **Risk of Bias**：随机序列隐藏、盲法、失访比例、基金利益冲突\n"
-  + "3. **Absolute Effect**：ARD 或 NNT——原文报告了则直接提取；只报告两组事件率时输出原始事件率并计算 ARD、标注「由事件率推算」；"
-  + "仅有 RR/OR 时写「原文未报告事件率，无法换算」，禁止自行换算\n"
-  + "4. **Subgroup Surprise**：显著的亚组差异（常是讨论切入点）\n"
-  + "5. **Generalizability**：结果能否外推到亚裔/老年人/合并症患者等" + EXTRACT_RULES;
-const EXTRACT_VIEW = "你是一位医学文献批判性阅读助理。请深度解析附上的文献（多篇时逐篇、以标题分隔），"
-  + "按以下 7 个维度提取观点，用于撰写 SCI 论文的 Introduction 与 Discussion。不要罗列过程，只输出精炼结论。用中文输出，维度标题保留英文：\n\n"
-  + "1. **Take-home Message**：核心结论，用「干预/暴露 vs 对照」句式；原文报告了主要终点时附 P 值与效应量（如 HR=1.5, 95%CI 1.2-1.8），未报告则不写数值；非干预性研究按其设计表述\n"
-  + "2. **Numerical Data**：支撑结论的关键数据（注明来源图表编号）\n"
-  + "3. **Methodology Gem**：最值得借鉴的统计方法或实验设计（如 PSM 匹配、孟德尔随机化）\n"
-  + "4. **Population Caveat**：纳入人群的独特之处（如「仅纳入 LAD 病变」「排除糖尿病史」）——决定能否引用其数据\n"
-  + "5. **Self-acknowledged Limitation**：仅提取作者原文承认的局限，引号标注原句或精准转述\n"
-  + "6. **Future Gap**：作者建议未来探索的未解决问题\n"
-  + "7. **Key Figure/Table**：最具说服力的图表及展示的关联趋势" + EXTRACT_RULES;
-// 默认解读固定四段结构（背景/方法/结果/讨论）——海报与 PPT 直接复用此结构渲染，无需二次生成
-const PAPER_DEFAULT_Q = "请用中文按固定四段结构总结这篇论文，每段以 ### 标题开头，每段 3-6 条简洁要点：\n"
-  + "### 背景（研究问题与现状）\n### 方法（研究设计、对象、统计）\n### 结果（主要发现，含关键数据）\n### 讨论与局限（临床意义与不足）\n"
-  + "最后单列一节「### 建议追问」，给出 3 个针对这篇文献最值得深入追问的问题。每条必须简短（不超过 15 字）、像读者好奇发问的口吻（如\"安慰剂组脱落率有多高？\"），禁止长句、禁止一条里挤多个问题；指向该文献独特的机制/方法/数据/结论。";
 const INPUT_PLACEHOLDER = input.placeholder;
 
 // 记忆条目 {id, text, ts, score(1-5), pinned(0/1)}；账本 ledger {summary, ts}
@@ -1422,7 +1410,7 @@ async function genCards(){
 $("#gencards").onclick = genCards;
 
 // 提取门控：只记稳定用户事实 + 打分，低分丢弃（fire-and-forget，不阻塞 UI）
-const MEM_CRITERIA = "提取标准——只记跨对话长期有效的稳定用户事实：称呼、职业、研究方向、明确的回答/格式偏好、教育或临床背景、长期目标、已确认的设备型号与技术参数。\n" +
+const MEM_CRITERIA = "提取标准——只记跨对话长期有效的稳定用户事实：称呼、职业、研究方向、明确的回答/格式偏好、教育或专业背景、长期目标、已确认的设备型号与技术参数。\n" +
   "排除：一次性任务指令（「这次用表格输出」类）、当前稿件/审稿/数据分析的临时上下文、对话内容本身、能从常识推断的信息。不确定就不记，宁缺毋滥。";
 async function extractMemory(){
   const lastUser = [...messages].reverse().find(m => m.role === "user");
@@ -2727,7 +2715,7 @@ function buildHistory(){
           + "用户需要深度探索时可建议其使用专门工具如 quelmap）" : "");
       const q = (m.text || "").trim();
       const userText = docText
-        ? docText + (dataText ? "\n\n" + dataText : "") + "\n\n" + PAPER_PERSONA + (q || PAPER_DEFAULT_Q)   // 附文献：注入研究员身份；无提问用默认模板
+        ? docText + (dataText ? "\n\n" + dataText : "") + "\n\n" + DISC.paperPersona + (q || DISC.paperDefaultQ)   // 附文献：注入学科身份；无提问用默认模板
         : dataText ? dataText + "\n\n" + q
         : q;
       if (m.imgs?.length){
@@ -3196,8 +3184,8 @@ input.addEventListener("keydown", e=>{
 const SLASH_CMDS = [
   {cmd: "找文献", desc: "一条命令：检索式生成 → 四源检索 → 相关性判定（需 DeepSeek Key）", fill: "找文献 "},
   {cmd: "深读", desc: "图表逐张多模态解读，如「深读 图1,3 表2」（本地限定）", fill: "深读 "},
-  {cmd: "证据提取", desc: "RCT/Meta 按 PICOS+偏倚提取证据，结果存项目笔记", paper: EXTRACT_RCT, label: "证据提取"},
-  {cmd: "观点提取", desc: "论著 7 维度提取观点与数据，结果存项目笔记", paper: EXTRACT_VIEW, label: "观点提取"},
+  {cmd: "证据提取", desc: "RCT/Meta 按 PICOS+偏倚提取证据，结果存项目笔记", paper: DISC.extractRct + EXTRACT_RULES, label: "证据提取"},
+  {cmd: "观点提取", desc: "论著 7 维度提取观点与数据，结果存项目笔记", paper: DISC.extractView + EXTRACT_RULES, label: "观点提取"},
   {cmd: "引文校验", desc: "新开会话，粘贴参考文献列表逐条核验", href: "chat.html?refs=1"},
   {cmd: "数据体检", desc: "对当前项目文件夹里的数据表跑一致性检验", audit: true},
 ];
@@ -3302,7 +3290,7 @@ async function addPdf(f){
       if (!pendingDocs.length) input.placeholder = INPUT_PLACEHOLDER;
     };
     imgsEl.appendChild(chip);
-    input.placeholder = "已附文献 📄 直接发送＝默认解读（核心发现/实验设计/临床意义/局限性），或输入具体问题";
+    input.placeholder = DISC.paperPlaceholder;
     updateChips();
     saveProjFigs(j, f.name);   // 图表位图落盘项目文件夹（fire-and-forget）
     // ?ppt=1 引导模式：附上后自动发送默认解读（空文本+附件即默认解读），解读完成（send 的

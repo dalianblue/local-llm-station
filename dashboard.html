@@ -81,6 +81,11 @@
   .nopt:hover { background: var(--bg); }
   .nopt b { display: block; font-size: 14px; }
   .nopt small { color: var(--dim); font-size: 12px; }
+  /* 学科选择层：卡片式 nopt + 底部 DIY 提示 */
+  .disclist { display: grid; gap: 8px; padding: 16px 20px; }
+  .disclist .nopt { border: 1px solid var(--border); }
+  .disclist .nopt.cur { border-color: var(--accent); }
+  .disclist-note { padding: 0 20px 16px; line-height: 1.7; }
 
   /* 全局状态条 */
   .status {
@@ -203,6 +208,7 @@
     <button id="refsbtn" class="tbtn ghost">📚 引文校验</button>
     <button id="pptbtn" class="tbtn ghost">📊 文献转PPT</button>
     <button id="libbtn" class="tbtn ghost">📚 文献库</button>
+    <button id="discbtn" class="tbtn ghost">🎓 学科</button>
     <div id="newwrap" class="newwrap">
       <button id="newbtn" class="tbtn">➕ 新建</button>
       <div id="newmenu" class="newmenu">
@@ -223,6 +229,12 @@
     <span>存档服务 <b id="archtext">检测中…</b></span>
     <span id="usagetext"></span>
   </div>
+
+  <div id="discmodal" class="modal"><div class="mbox">
+    <div class="mhead"><span id="disctitle">🎓 选择学科方向</span><button id="discclose" hidden>✕</button></div>
+    <div id="disclist" class="disclist"></div>
+    <div class="note disclist-note">自定义学科：复制 disciplines/template.js 逐字段填写 → 存为 disciplines/&lt;id&gt;.js → 把 id 加进 disciplines/index.js（指南：docs/discipline.md）</div>
+  </div></div>
 
   <div id="libpanel" class="modal"><div class="mbox">
     <div class="mhead"><span id="libtitle">📚 文献库</span><button id="libclose">✕</button></div>
@@ -275,7 +287,22 @@
   <div id="empty" class="empty-hint" hidden></div>
 </div>
 
+<script src="disciplines/medicine.js"></script>
+<script src="disciplines/index.js"></script>
 <script>
+(function(){  // 首启选择层要列出全部注册学科：按清单同步预载（file:// 下 fetch 被拦，document.write 解析期注入）
+  (window.DISCIPLINE_IDS || []).forEach(function(id){
+    if (/^[a-z0-9_-]+$/i.test(id) && !window.DISCIPLINES[id])
+      document.write('<script src="disciplines/' + id + '.js"><\/script>');
+  });
+})();
+</script>
+<script>
+// 当前学科皮肤：localStorage 选中项（加载失败/未选回退医学）；首启无选中时弹选择层
+const DISC = (() => {
+  const id = localStorage.getItem("qwen_discipline");
+  return (id && /^[a-z0-9_-]+$/i.test(id) && DISCIPLINES[id]) || DISCIPLINES.medicine;
+})();
 const ARCH = "http://127.0.0.1:8081";
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
@@ -526,7 +553,7 @@ $("#newbtn").onclick = e => { e.stopPropagation(); $("#newmenu").classList.toggl
 document.addEventListener("click", e => { if (!$("#newwrap").contains(e.target)) $("#newmenu").classList.remove("open"); });
 $("#opt-chat").onclick = () => { $("#newmenu").classList.remove("open"); location.href = "chat.html?new=1"; };
 async function createWriteProject(){
-  const name = prompt("写作项目名称（如：EA 贝叶斯预测模型研究方案）：");
+  const name = prompt(`写作项目名称（如：${DISC.hints.projectExample}）：`);
   if (!name?.trim()) return;
   const id = "c" + Date.now();
   const title = "✍️ " + name.trim();
@@ -542,7 +569,7 @@ async function createWriteProject(){
 $("#opt-write").onclick = () => { $("#newmenu").classList.remove("open"); createWriteProject(); };
 // AI 综述项目：话题即项目名，进编辑器由综述向导接管（检索 → 勾选入库 → 大纲 → 逐节生成）
 async function createReviewProject(){
-  const topic = prompt("综述话题（具体到干预/人群/结局更准，如：IL-17 抑制剂治疗银屑病的疗效与安全性）：");
+  const topic = prompt(`综述话题（${DISC.hints.reviewTopic}更准，如：${DISC.hints.reviewExample}）：`);
   if (!topic?.trim()) return;
   const id = "c" + Date.now();
   const title = "🧭 " + topic.trim();
@@ -859,6 +886,30 @@ async function openLibrary(){
 $("#libbtn").onclick = openLibrary;
 $("#libclose").onclick = () => $("#libpanel").classList.remove("open");
 $("#libpanel").onclick = e => { if (e.target === $("#libpanel")) $("#libpanel").classList.remove("open"); };
+
+// ---------- 学科选择：首启强制选择，之后可从「🎓 学科」随时切换 ----------
+function renderDiscModal(first){
+  const cur = first ? null : (localStorage.getItem("qwen_discipline") || DISC.id);   // 首启无「当前」概念
+  $("#disctitle").textContent = first ? "🎓 选择学科方向（首次使用）" : "🎓 切换学科方向";
+  $("#disclist").innerHTML = Object.values(DISCIPLINES).map(d =>
+    `<div class="nopt${d.id === cur ? " cur" : ""}" data-disc="${d.id}"><b>${d.icon} ${d.name}${d.id === cur ? " · 当前" : ""}</b><small>${d.desc}</small></div>`).join("");
+  $("#discclose").hidden = first;   // 首启不给关闭：必须选一个
+  $("#discmodal").classList.add("open");
+}
+$("#discbtn").onclick = () => renderDiscModal(false);
+$("#discbtn").title = `当前学科：${DISC.name}（点击切换——影响各页 AI 身份/模板/审稿视角）`;
+$("#discclose").onclick = () => $("#discmodal").classList.remove("open");
+$("#discmodal").onclick = e => {
+  if (e.target === $("#discmodal") && localStorage.getItem("qwen_discipline")) $("#discmodal").classList.remove("open");
+};
+$("#disclist").onclick = e => {
+  const o = e.target.closest(".nopt"); if (!o) return;
+  const cur = localStorage.getItem("qwen_discipline");
+  if (cur && o.dataset.disc === cur){ $("#discmodal").classList.remove("open"); return; }
+  localStorage.setItem("qwen_discipline", o.dataset.disc);
+  location.reload();   // 各页提示词均按 localStorage 启动时取皮肤，重载即全站生效
+};
+if (!localStorage.getItem("qwen_discipline")) renderDiscModal(true);
 $("#scanbtn2").onclick = async e => { await scanLibrary(e.target); openLibrary(); };
 $("#metabtn2").onclick = e => enrichLibrary(e.target).then(() => openLibrary());
 // ---------- BibTeX / RIS 导入导出（Zotero 等文献管理器握手） ----------

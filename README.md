@@ -161,6 +161,7 @@ LocalLLMServer-oMLX.app（宿主进程）
 | 想了解 | 去哪里 |
 |--------|--------|
 | 完整功能清单、实现边界与配置（换模型 / 上下文与内存 / 存档 API / Windows-Linux） | [docs/features.md](docs/features.md) |
+| 非医学学科？学科皮肤 DIY（三步把提示词/审稿视角换成你的领域） | [docs/discipline.md](docs/discipline.md) |
 | 模型能力实测、试卷与双后端对照 | [docs/benchmark.md](docs/benchmark.md) · [benchmark/](benchmark/) |
 | 产品定位与常见疑问 | [FAQ.md](FAQ.md) |
 | 作者为什么做这样一款软件 | [docs/story.md](docs/story.md) |
