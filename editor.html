@@ -2795,7 +2795,9 @@ $("#revinok").onclick = async () => {
   btn.disabled = false; hint.textContent = "";
   $("#revinpanel").classList.remove("open");
   renderResources();
-  toast(`📨 已解析 ${items.length} 条审稿意见`);
+  toast(items.length === 1 && items[0].comment === raw
+    ? "⚠ AI 拆解失败，已整封作为一条处理（意见太长或超上下文；可分批粘贴重试）"
+    : `📨 已解析 ${items.length} 条审稿意见`);
 };
 // 🧭 跨章节一致性检查：自动附全文草稿，按结果—讨论呼应/一致性问题/术语数据三节输出报告
 $("#chkbtn").onclick = async () => {
@@ -3271,18 +3273,52 @@ function buildEditorHistory(){
   // 点名章节注入：末条用户消息提到其他章节标题时，该章节实时全文拼进该条消息
   //（agent 式定位——模型看得见目标文件才敢直接改；尾部拼接，前缀缓存友好）
   const lu = msgs.length && msgs[msgs.length - 1].role === "user" ? msgs[msgs.length - 1] : null;
-  if (lu && lu.content){
+  if (lu && lu.content && !ED.attachDraft){   // 全文模式已含所有章节，点名注入是纯重复——跳过防撑爆
     const named = ED.sections.filter(s => s !== cur && !s.bad && lu.content.includes(s.title));
     if (named.length)
       lu.content += "\n\n（系统注入：用户消息提到的章节实时全文，修改/写入以此为准）\n" + named.map(s =>
         `[《${s.title}》章节全文开始]\n${(s.md || "").slice(0, 12000) || "（空章节——向它写入新内容请用整章写入块）"}\n[全文结束]`).join("\n\n");
   }
   for (const m of msgs) h.push(m);
+  return trimHistory(h);
+}
+// ⚖️ 预算守卫：估算超窗时确定性裁剪。阶梯：聊天纪要/附文献/检查点摘要 → 最旧对话消息（保文档注入对与末条）→ 全文草稿降级为当前章节。
+// ponytail: 0.5 tok/字符保守估算（中文实测 ~0.25-0.4，高估早裁更安全）；精确 token 计数待出问题时再换
+function trimHistory(h){
+  if (!ctxTotal || usingDeep()) return h;
+  const est = () => Math.round(h.reduce((n, m) => n + (m.content || "").length, 0) * 0.5);
+  const isDocPrime = i => i > 0 && i < h.length && /^\[(全文草稿开始|当前章节《)/.test(h[i].content || "");
+  const dropBlock = re => { const i = h.findIndex(m => m.role === "user" && re.test(m.content || "")); if (i === -1) return false; h.splice(i, 1); return true; };
+  const cuts = [];
+  while (h.length > 3){
+    if (est() <= ctxTotal * 0.85) break;
+    if (dropBlock(/^\[聊天记录纪要开始/)){ cuts.push("聊天纪要"); continue; }
+    if (dropBlock(/^\[文献《.*》全文开始/)){ cuts.push("附文献"); continue; }
+    if (dropBlock(/^\[早期对话检查点摘要/)){ cuts.push("检查点摘要"); continue; }
+    // 从最旧丢起，跳过文档注入对（[全文草稿/当前章节… + 紧随的确认回复），保住末条消息
+    let i = 1;
+    while (i < h.length - 1 && (isDocPrime(i) || (h[i].role === "assistant" && isDocPrime(i - 1)))) i++;
+    if (i >= h.length - 1){
+      const di = h.findIndex((m, k) => isDocPrime(k));
+      if (di !== -1 && h[di].content.startsWith("[全文草稿开始")){
+        const cur = ED.sections[ED.cur];
+        h[di].content = `[当前章节《${cur.title}》全文开始]\n${cur.md || "（空章节）"}\n[全文结束]`;
+        cuts.push("全文草稿降级为当前章节");
+        continue;
+      }
+      break;   // 到底了，交由后端报错（generate 有兜底提示）
+    }
+    cuts.push("早期消息"); h.splice(i, 1);
+  }
+  if (cuts.length) sysCard(`⚖️ 上下文估算超窗，已自动裁剪：${[...new Set(cuts)].join("、")}`
+    + `（估算 ${est().toLocaleString()} / ${(ctxTotal * 0.85).toLocaleString()} tok 上限；被裁内容均在存档与右侧面板，未丢失）`);
   return h;
 }
 async function send(text){
   text = (text ?? input.value).trim();
-  if (!text || busy || !ED.sections.length) return;
+  if (!text) return;
+  if (busy) return toast("AI 正在回复（长稿件首问可能要等几十秒），稍候再试");
+  if (!ED.sections.length) return toast("先创建章节再对话");
   readChain = 0;   // 用户亲自发言：read 自动续跑链复位
   flushSave();
   const um = {role: "user", text, ts: Date.now()};
@@ -3324,6 +3360,12 @@ async function generate(noThink, noRetry, forceThink){
   };
   if (useThink) body.reasoning_effort = S.effort;
   if (cfg.temp !== null) body.temperature = cfg.temp;
+
+  // 长 prefill 反馈：大上下文首 token 前可能静默 10-60 秒（预填+模型加载），给等待提示防误判"没反应"重复发送
+  const prefillTimer = setTimeout(() => {
+    if (ttft === null) contentEl.innerHTML =
+      `<p class="warn-text">⏳ 正在预填大上下文… 已等 ${Math.round((performance.now() - t0) / 1000)} 秒。长稿件/模型冷加载首问可达 1 分钟，请勿重复发送——重发会叠加消息更慢。</p>`;
+  }, 8000);
 
   try {
     const res = await apiPost(body, ctrl.signal);
@@ -3460,6 +3502,7 @@ async function generate(noThink, noRetry, forceThink){
     }
   }
   busy = false; ctrl = null;
+  clearTimeout(prefillTimer);
   $("#send").style.display = "inline-block"; $("#stopbtn").style.display = "none";
   scrollBottom();
   persistEditor();

@@ -2548,7 +2548,7 @@ function buildHistory(){
         (d.imgs || []).forEach((u, i) => push(u, `文献《${d.name.replace(/\.pdf$/i,"")}》提取图${i + 1}`));
         if (wantTables) (d.timgs || []).forEach((u, i) => push(u, `文献《${d.name.replace(/\.pdf$/i,"")}》提取表${i + 1}`));
       });
-      const docText = (m.docs||[]).map(d => `[文献《${d.name}》全文开始]\n${d.text}\n[文献全文结束]`).join("\n\n")
+      const docText = (m.docs||[]).map(d => `[文献《${d.name}》全文开始]\n${(d.text || "").slice(0, 25000)}\n[文献全文结束]`).join("\n\n")
         + (docImgs.length ? `\n（已附 ${docImgs.length} 张从该 PDF 提取的图表图片${wantTables ? "（含提问涉及的表格原图）" : ""}，请在「结果」段结合图表内容描述主要发现）` : "");
       const dataText = (m.data||[]).map(d => `[数据文件《${d.name}》概览开始]\n${d.summary}\n[数据概览结束]`).join("\n\n")
         + ((m.data||[]).length ? "\n（用户附了数据文件概览。结合概览直接回答问题、指出值得注意的点；"
@@ -2577,6 +2577,41 @@ function buildHistory(){
     if (hits)
       h[0].content += "\n\n[早期对话相关片段——原文已被摘要替代，以下按当前提问检索回填]\n" + hits;
   }
+  return trimHistory(h);
+}
+// ⚖️ 预算守卫（editor 同款思路）：估算超窗时确定性裁剪——先省略旧消息附的文献全文，再丢最旧对话（保系统与末条）。
+// ponytail: 0.5 tok/字符 + 每图 1000 tok 粗估（图片 token 数前端拿不到）；压缩自动档仍按 usage 精确触发，这里只兜首发
+function trimHistory(h){
+  if (!ctxTotal || usingDeep()) return h;
+  const est = () => h.reduce((n, m) => {
+    if (Array.isArray(m.content))
+      return n + 1000 * m.content.filter(p => p.type === "image_url").length
+        + Math.round(m.content.reduce((k, p) => k + (p.text?.length || 0), 0) * 0.5);
+    return n + Math.round((m.content || "").length * 0.5);
+  }, 0);
+  const lastUserIdx = () => { for (let i = h.length - 1; i >= 0; i--) if (h[i].role === "user") return i; return -1; };
+  const cuts = [];
+  while (h.length > 3 && est() > ctxTotal * 0.85){
+    // 1) 末条用户消息之前所附的文献全文省略（正则作用于拼好的字符串，提问文字保留）
+    let did = false;
+    const lu = lastUserIdx();
+    for (let i = 0; i < lu; i++){
+      const m = h[i];
+      if (m.role === "user" && typeof m.content === "string" && m.content.includes("[文献全文结束]")){
+        m.content = m.content.replace(/\[文献《[^》]*》全文开始\]\n[\s\S]*?\n\[文献全文结束\]/g,
+          "（该条所附文献全文因上下文超窗已省略，下方提问保留）");
+        cuts.push("旧消息文献全文"); did = true;
+      }
+    }
+    if (did) continue;
+    // 2) 丢最旧消息：优先 assistant（通常最长），保住 h[0]（系统）与末条
+    let i = h.findIndex((m, k) => k > 0 && k !== h.length - 1 && m.role === "assistant");
+    if (i === -1) i = 1;
+    cuts.push("早期消息");
+    h.splice(i, 1);
+  }
+  if (cuts.length) sysCard(`⚖️ 上下文估算超窗，已自动裁剪：${[...new Set(cuts)].join("、")}`
+    + `（估算 ${est().toLocaleString()} / ${(ctxTotal * 0.85).toLocaleString()} tok 上限；被裁原文均在对话存档，未丢失）`);
   return h;
 }
 // 中文按字符二元组、英文按整词建索引；重叠 ≥3 个才认为相关，取 top2、单条截 1500 字
@@ -2701,6 +2736,12 @@ async function generate(noThink, noRetry, forceThink){
   };
   if (useThink) body.reasoning_effort = S.effort;
   if (cfg.temp !== null) body.temperature = cfg.temp;
+
+  // 长 prefill 反馈：大上下文首 token 前可能静默 10-60 秒（预填+模型加载），防误判"没反应"重复发送
+  const prefillTimer = setTimeout(() => {
+    if (ttft === null) contentEl.innerHTML =
+      `<p class="warn-text">⏳ 正在预填大上下文… 已等 ${Math.round((performance.now() - t0) / 1000)} 秒。多文献长文首问可达 1 分钟，请勿重复发送——重发会排队叠加更慢。</p>`;
+  }, 8000);
 
   try {
     const res = await apiPost(body, ctrl.signal);
@@ -2834,6 +2875,7 @@ async function generate(noThink, noRetry, forceThink){
   // 深度提取的回复落笔记（busy=false 后、排队消息处理前；失败路径 am 已被 splice，不落）
   if (notePending){ const np = notePending; notePending = null; if (messages.includes(am)) saveExtractNote(np, am); }
   busy = false; ctrl = null;
+  clearTimeout(prefillTimer);
   $("#send").style.display="inline-block"; $("#stopbtn").style.display="none";
   persist();
   // 自动压缩须在 busy=false 后触发；有排队消息时下一轮再压
