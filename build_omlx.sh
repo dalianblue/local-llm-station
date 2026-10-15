@@ -26,21 +26,20 @@ cat > $APP/Contents/Info.plist <<'EOF'
 </plist>
 EOF
 
-# 从 assets/omlx.png 生成 .icns（存在时）
-if [ -f assets/omlx.png ]; then
+# 从 assets/logo.png 生成 .icns（存在时；源图 1024 方形由 assets/mac logo.png 生成）
+if [ -f assets/logo.png ]; then
     ICONSET=$APP/Contents/Resources/LocalLLMServer.iconset
     rm -rf "$ICONSET"; mkdir -p "$ICONSET"
     for size in 16 32 64 128 256 512; do
-        sips -z $size $size assets/omlx.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-        sips -z $((size*2)) $((size*2)) assets/omlx.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+        sips -z $size $size assets/logo.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+        sips -z $((size*2)) $((size*2)) assets/logo.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
     done
-    sips -z 1024 1024 assets/omlx.png --out "$ICONSET/icon_512x512@2x.png" >/dev/null
+    sips -z 1024 1024 assets/logo.png --out "$ICONSET/icon_512x512@2x.png" >/dev/null
     iconutil -c icns "$ICONSET" -o $APP/Contents/Resources/LocalLLMServer.icns
     rm -rf "$ICONSET"
 fi
 
 # 菜单栏托盘图标（矢量 template，存在时复制进 Resources，TrayIcon 运行时加载）
-[ -f assets/iconTemplate.pdf ] && cp assets/iconTemplate.pdf $APP/Contents/Resources/iconTemplate.pdf
 
 swiftc -O -parse-as-library -D OMLX -o $APP/Contents/MacOS/LocalLLMServer-oMLX LocalLLMServer.swift -lsqlite3
 touch $APP

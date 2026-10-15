@@ -39,7 +39,6 @@ if [ -f assets/logo.png ]; then
 fi
 
 # 菜单栏托盘图标（存在时复制进 Resources，TrayLabel 运行时加载）
-[ -f assets/qwen.png ] && cp assets/qwen.png $APP/Contents/Resources/qwen.png
 
 swiftc -O -parse-as-library -o $APP/Contents/MacOS/QwenServer QwenServer.swift
 touch $APP
