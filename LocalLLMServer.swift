@@ -359,6 +359,30 @@ final class ArchiveServer {
                 respType = name.hasSuffix(".css") ? "text/css"
                     : name.hasSuffix(".woff2") ? "font/woff2" : "application/octet-stream"
             } else { status = "404 Not Found" }
+        case ("PUT", "/disciplines/save"):
+            // 学科向导落盘：写 disciplines/<id>.js 并注册进 index.js（dashboard 添加学科向导调用）
+            // id 白名单正则 + 禁改内置（medicine/template）防路径穿越与覆盖；内容上限 256KB
+            if let j = try? JSONSerialization.jsonObject(with: req.body) as? [String: Any],
+               let id = j["id"] as? String, let js = j["js"] as? String,
+               id.range(of: "^[a-z0-9_-]{1,40}$", options: .regularExpression) != nil,
+               id != "medicine", id != "template", js.utf8.count <= 256 * 1024 {
+                let fm = FileManager.default
+                let ddir = URL(fileURLWithPath: AppRoot.path + "/disciplines")
+                try? fm.createDirectory(at: ddir, withIntermediateDirectories: true)
+                var ok = Self.safeWrite(Data(js.utf8), to: ddir.appendingPathComponent(id + ".js"))
+                // 注册 index.js：index.js 为本仓固定单行小文件，在最后一个 ] 前追加即可
+                if ok {
+                    let idx = ddir.appendingPathComponent("index.js")
+                    if let cur = try? String(contentsOf: idx, encoding: .utf8), !cur.contains("\"\(id)\""),
+                       let r = cur.range(of: "]", options: .backwards) {
+                        ok = Self.safeWrite(Data((cur[..<r.lowerBound] + ", \"\(id)\"]" + cur[r.upperBound...]).utf8), to: idx)
+                    } else if ok, !fm.fileExists(atPath: idx.path) {
+                        ok = Self.safeWrite(Data("window.DISCIPLINE_IDS = [\"medicine\", \"\(id)\"];".utf8), to: idx)
+                    }
+                }
+                if ok { body = Data("{\"ok\":true,\"id\":\"\(id)\"}".utf8) }
+                else { status = "500 Internal Server Error"; body = Data("{\"error\":\"write failed\"}".utf8) }
+            } else { status = "400 Bad Request"; body = Data("{\"error\":\"bad id or js\"}".utf8) }
         case ("GET", "/version"):
             // git SHA 版本标识
             let p = Process()

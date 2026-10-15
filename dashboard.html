@@ -81,11 +81,41 @@
   .nopt:hover { background: var(--bg); }
   .nopt b { display: block; font-size: 14px; }
   .nopt small { color: var(--dim); font-size: 12px; }
-  /* 学科选择层：卡片式 nopt + 底部 DIY 提示 */
-  .disclist { display: grid; gap: 8px; padding: 16px 20px; }
+  /* 学科选择层：卡片式 nopt + 底部添加入口 */
+  .disclist { display: grid; gap: 8px; padding: 16px 20px 8px; }
   .disclist .nopt { border: 1px solid var(--border); }
   .disclist .nopt.cur { border-color: var(--accent); }
-  .disclist-note { padding: 0 20px 16px; line-height: 1.7; }
+  .disclist-foot { padding: 8px 20px 16px; border-top: 1px dashed var(--border); text-align: center; }
+  /* 添加学科向导 */
+  .dw-box { width: min(560px, calc(100vw - 32px)); }
+  .dw-steps { padding: 16px 20px; display: grid; gap: 12px; max-height: 60vh; overflow-y: auto; }
+  .dw-pane[hidden] { display: none; }
+  .dw-sub { font-size: 14px; font-weight: 600; }
+  .dw-lab { display: grid; gap: 4px; font-size: 12px; color: var(--dim); }
+  .dw-in, .dw-ta {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-size: 13px; padding: 8px; width: 100%;
+  }
+  .dw-ta { resize: vertical; line-height: 1.6; font-family: inherit; }
+  .dw-code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .dw-emos { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dw-emo {
+    width: 36px; height: 36px; display: grid; place-items: center; font-size: 18px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  }
+  .dw-emo.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .dw-rev { display: grid; grid-template-columns: 52px 1fr 1fr 32px; gap: 8px; margin-bottom: 8px; }
+  .dw-rev input { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 12px; padding: 6px 8px; width: 100%; }
+  .dw-rev .dw-rev-p { grid-column: 1 / 4; }
+  .dw-rev button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 14px; }
+  .dw-rev button:hover { color: #f85149; }
+  .dw-rev-hint { grid-column: 1 / 5; font-size: 11px; color: var(--dim); margin: -4px 0 4px; }
+  .dw-foot { display: flex; gap: 8px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--border); }
+  .dw-foot .note { margin-right: auto; }
+  .dw-alert { background: rgba(248,81,73,.08); border: 1px solid #f85149; border-radius: 8px; padding: 8px 12px; font-size: 12px; margin-bottom: 8px; }
+  .dw-manual { display: grid; gap: 12px; }
+  .dw-manual-step { display: grid; gap: 4px; font-size: 12px; color: var(--dim); line-height: 1.6; }
+  .dw-manual-step code { background: var(--bg); border-radius: 4px; padding: 0 4px; color: var(--accent); }
 
   /* 全局状态条 */
   .status {
@@ -233,7 +263,50 @@
   <div id="discmodal" class="modal"><div class="mbox">
     <div class="mhead"><span id="disctitle">🎓 选择学科方向</span><button id="discclose" hidden>✕</button></div>
     <div id="disclist" class="disclist"></div>
-    <div class="note disclist-note">自定义学科：复制 disciplines/template.js 逐字段填写 → 存为 disciplines/&lt;id&gt;.js → 把 id 加进 disciplines/index.js（指南：docs/discipline.md）</div>
+    <div class="disclist-foot"><button id="discadd" class="tbtn ghost">➕ 添加学科</button></div>
+  </div></div>
+
+  <div id="dwmodal" class="modal"><div class="mbox dw-box">
+    <div class="mhead"><span>➕ 添加学科（4 步向导）</span><button id="dwclose">✕</button></div>
+    <div class="dw-steps">
+      <div class="dw-pane" id="dw-pane1">
+        <div class="dw-sub">第 1 步 · 基本信息</div>
+        <div class="dw-lab">图标（点选一个）</div>
+        <div class="dw-emos" id="dw-emos"></div>
+        <label class="dw-lab">学科名称（必填）<input id="dw-name" placeholder="如：物理学"></label>
+        <label class="dw-lab">一句话简介（必填，选择学科时展示）<input id="dw-desc" placeholder="如：凝聚态实验 · 第一性原理计算 · 学术写作"></label>
+      </div>
+      <div class="dw-pane" id="dw-pane2">
+        <div class="dw-sub">第 2 步 · AI 身份</div>
+        <label class="dw-lab">附文献时的 AI 身份（必填）——AI 会以这个身份帮你解读文献、回答问题
+          <textarea id="dw-persona" class="dw-ta" rows="4" placeholder="如：你是一位资深物理学研究者，熟悉实验设计与数据分析，讲解时先给结论再展开原理。"></textarea></label>
+        <label class="dw-lab">学科边界（选填）——学科里有高危输出时声明红线，会拼进 AI 的能力边界规范
+          <textarea id="dw-boundary" class="dw-ta" rows="3" placeholder="如：涉及实验安全规范与试剂剂量的具体操作时，只做方向性说明并提醒以实验室规程为准。留空则不加。"></textarea></label>
+      </div>
+      <div class="dw-pane" id="dw-pane3">
+        <div class="dw-sub">第 3 步 · 审稿视角</div>
+        <div class="note">「🕵️ 审稿」菜单里提供的视角（至少一个；每个视角是一类审稿人）</div>
+        <div id="dw-revs"></div>
+        <button id="dw-addrev" class="tbtn ghost">➕ 添加视角</button>
+      </div>
+      <div class="dw-pane" id="dw-pane4">
+        <div class="dw-sub">第 4 步 · 保存</div>
+        <div class="note">下面是生成的学科文件全文，可直接修改（懂 JS 的进阶玩法）。点「💾 保存并启用」自动保存——需本机存档服务；不可用时会给下载方案。</div>
+        <textarea id="dw-js" class="dw-ta dw-code" rows="14" spellcheck="false"></textarea>
+        <div id="dw-fallback" hidden>
+          <div class="dw-alert">⚠ 本机存档服务未连接，无法自动保存。手动安装（共 2 步）：</div>
+          <div class="dw-manual">
+            <div class="dw-manual-step"><b>1.</b> 点此下载学科文件，放到本页面所在文件夹的 <code>disciplines/</code> 目录里（没有就新建）：<button id="dw-dl" class="tbtn ghost">⬇️ 下载学科文件</button></div>
+            <div class="dw-manual-step"><b>2.</b> 用任意文本编辑器打开 <code>disciplines/index.js</code>，把下面这行加进数组后保存，刷新本页：<input id="dw-idxline" class="dw-in" readonly></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dw-foot">
+      <span id="dw-hint" class="note"></span>
+      <button id="dw-prev" class="tbtn ghost">← 上一步</button>
+      <button id="dw-next" class="tbtn">下一步 →</button>
+    </div>
   </div></div>
 
   <div id="libpanel" class="modal"><div class="mbox">
@@ -553,7 +626,7 @@ $("#newbtn").onclick = e => { e.stopPropagation(); $("#newmenu").classList.toggl
 document.addEventListener("click", e => { if (!$("#newwrap").contains(e.target)) $("#newmenu").classList.remove("open"); });
 $("#opt-chat").onclick = () => { $("#newmenu").classList.remove("open"); location.href = "chat.html?new=1"; };
 async function createWriteProject(){
-  const name = prompt(`写作项目名称（如：${DISC.hints.projectExample}）：`);
+  const name = prompt(`写作项目名称${DISC.hints.projectExample ? `（如：${DISC.hints.projectExample}）` : ""}：`);
   if (!name?.trim()) return;
   const id = "c" + Date.now();
   const title = "✍️ " + name.trim();
@@ -569,7 +642,7 @@ async function createWriteProject(){
 $("#opt-write").onclick = () => { $("#newmenu").classList.remove("open"); createWriteProject(); };
 // AI 综述项目：话题即项目名，进编辑器由综述向导接管（检索 → 勾选入库 → 大纲 → 逐节生成）
 async function createReviewProject(){
-  const topic = prompt(`综述话题（${DISC.hints.reviewTopic}更准，如：${DISC.hints.reviewExample}）：`);
+  const topic = prompt(`综述话题（${DISC.hints.reviewTopic || "越具体越准"}${DISC.hints.reviewExample ? `，如：${DISC.hints.reviewExample}` : ""}）：`);
   if (!topic?.trim()) return;
   const id = "c" + Date.now();
   const title = "🧭 " + topic.trim();
@@ -910,6 +983,122 @@ $("#disclist").onclick = e => {
   location.reload();   // 各页提示词均按 localStorage 启动时取皮肤，重载即全站生效
 };
 if (!localStorage.getItem("qwen_discipline")) renderDiscModal(true);
+
+// ---------- ➕ 添加学科向导：表单 → 生成 disciplines/<id>.js → 8081 自动落盘注册（无服务降级为下载+指引） ----------
+const DW_EMOS = ["🎓", "🔬", "🧪", "⚗️", "🧮", "📐", "🌍", "⚖️", "💰", "🧠", "🏗️", "📖"];
+let DW = null;
+function dwOpen(){
+  DW = {step: 1, icon: "🎓", id: "",
+    revs: [{icon: "🧑‍⚖️", name: "综合审稿人", desc: "全维度", prompt: "综合审稿人：从新颖性、研究设计、结果可靠性、论证逻辑与写作规范全维度审"}]};
+  $("#dw-emos").innerHTML = DW_EMOS.map(e => `<button class="dw-emo${e === DW.icon ? " cur" : ""}" data-emo="${e}">${e}</button>`).join("");
+  $("#dw-name").value = ""; $("#dw-desc").value = ""; $("#dw-persona").value = ""; $("#dw-boundary").value = "";
+  $("#dw-fallback").hidden = true;
+  dwRender();
+  $("#dwmodal").classList.add("open");
+}
+function dwRender(){
+  for (let i = 1; i <= 4; i++) $("#dw-pane" + i).hidden = i !== DW.step;
+  if (DW.step === 3) dwRenderRevs();
+  $("#dw-prev").hidden = DW.step === 1;
+  $("#dw-next").textContent = DW.step === 4 ? "💾 保存并启用" : "下一步 →";
+  $("#dw-hint").textContent = ["", "起个名字，选个顺眼的图标", "设定 AI 的学科身份与红线（身份一句话即可）", "每行一个视角：图标｜名称｜副标题｜审稿时重点看什么", "生成的文件可直接改；保存后立即全站生效"][DW.step];
+}
+function dwRenderRevs(){
+  $("#dw-revs").innerHTML = DW.revs.map((r, i) => `
+    <div class="dw-rev" data-i="${i}">
+      <input data-f="icon" value="${esc(r.icon)}" title="图标（emoji）">
+      <input data-f="name" value="${esc(r.name)}" placeholder="视角名（如：方法学审稿人）">
+      <input data-f="desc" value="${esc(r.desc)}" placeholder="副标题（如：设计 · 偏倚 · 可靠性）">
+      <button data-del="${i}" title="删除该视角">🗑</button>
+      <input class="dw-rev-p" data-f="prompt" value="${esc(r.prompt)}" placeholder="审稿重点：这个视角通读全文时盯什么（一句话）">
+    </div>`).join("");
+}
+$("#dw-emos").addEventListener("click", e => {
+  const b = e.target.closest("[data-emo]"); if (!b) return;
+  DW.icon = b.dataset.emo;
+  $("#dw-emos").querySelectorAll(".dw-emo").forEach(x => x.classList.toggle("cur", x === b));
+});
+$("#dw-revs").addEventListener("input", e => {
+  const f = e.target.dataset.f, row = e.target.closest(".dw-rev");
+  if (f && row) DW.revs[+row.dataset.i][f] = e.target.value;
+});
+$("#dw-revs").addEventListener("click", e => {
+  if (e.target.dataset.del !== undefined && DW.revs.length > 1){
+    DW.revs.splice(+e.target.dataset.del, 1); dwRenderRevs();
+  }
+});
+$("#dw-addrev").onclick = () => { DW.revs.push({icon: "🕵️", name: "", desc: "", prompt: ""}); dwRenderRevs(); };
+function dwBuildJs(){
+  const name = $("#dw-name").value.trim(), desc = $("#dw-desc").value.trim();
+  const boundary = $("#dw-boundary").value.trim();
+  const reviewers = DW.revs.map((r, i) => ({
+    id: "r" + i, icon: r.icon.trim() || "🕵️", name: r.name.trim(),
+    desc: r.desc.trim(), prompt: r.prompt.trim(), tag: r.name.trim().slice(0, 4) || "视角" + (i + 1)}));
+  const obj = {
+    id: DW.id, name, desc, icon: DW.icon,
+    paperPersona: $("#dw-persona").value.trim(),
+    extractRct: `你是一位${name}领域的证据提取专家。请从附上的文献（多篇时逐篇、以标题分隔）提取信息，评估其内部真实性，仅输出对后续写作有价值的内容。用中文输出：\n\n1. **研究问题**：想解决什么问题\n2. **设计与方法**：研究设计、对象、关键方法\n3. **主要结果**：关键数据（注明来源图表）\n4. **局限**：作者承认的与审稿人可能质疑的`,
+    extractView: `你是一位${name}文献批判性阅读助理。请深度解析附上的文献（多篇时逐篇、以标题分隔），只输出精炼结论。用中文输出：\n\n1. **Take-home Message**：核心结论（一段话）\n2. **Numerical Data**：支撑结论的关键数据\n3. **Methodology Gem**：最值得借鉴的方法或设计\n4. **Limitation**：作者承认的局限\n5. **Future Gap**：未解决的问题`,
+    paperDefaultQ: "请用中文按固定四段结构总结这篇论文，每段以 ### 标题开头，每段 3-6 条简洁要点：\n"
+      + "### 背景（研究问题与现状）\n### 方法（研究设计、对象、分析）\n### 结果（主要发现，含关键数据）\n### 讨论与局限（意义与不足）\n"
+      + "最后单列一节「### 建议追问」，给出 3 个针对这篇文献最值得深入追问的问题（每条不超过 15 字）。",
+    paperPlaceholder: "已附文献 📄 直接发送＝默认解读，或输入具体问题",
+    boundaryExtra: boundary || `- ${name}：专业细节不确定时明说「这点可能记不准，请核实」，禁止自信编造`,
+    reviewers,
+    hints: {reviewTopic: "", reviewExample: "", projectExample: name + "研究方案"},
+  };
+  const lines = Object.entries(obj).map(([k, v]) => {
+    if (k === "reviewers")
+      return "  reviewers: [\n" + v.map(r => `    {id: ${JSON.stringify(r.id)}, icon: ${JSON.stringify(r.icon)}, name: ${JSON.stringify(r.name)}, desc: ${JSON.stringify(r.desc)}, prompt: ${JSON.stringify(r.prompt)}, tag: ${JSON.stringify(r.tag)}},`).join("\n") + "\n  ],";
+    if (k === "hints") return "  hints: " + JSON.stringify(v) + ",";
+    return "  " + k + ": " + JSON.stringify(v) + ",";
+  });
+  return `// 学科皮肤——由「➕ 添加学科」向导生成（${name}）\nwindow.DISCIPLINES = window.DISCIPLINES || {};\nDISCIPLINES[${JSON.stringify(DW.id)}] = {\n${lines.join("\n")}\n};\n`;   // id 可能带连字符，必须方括号访问（点号会被解析成减法）
+}
+$("#dw-prev").onclick = () => { if (DW.step > 1){ DW.step--; dwRender(); } };
+$("#dw-next").onclick = () => {
+  if (DW.step === 1 && (!$("#dw-name").value.trim() || !$("#dw-desc").value.trim()))
+    return toast("先填学科名称与一句话简介");
+  if (DW.step === 2 && !$("#dw-persona").value.trim())
+    return toast("先设定 AI 的学科身份（一句话即可）");
+  if (DW.step === 3){
+    DW.revs = DW.revs.filter(r => r.name.trim() || r.prompt.trim());
+    if (!DW.revs.length) return toast("至少填一个审稿视角");
+    if (DW.revs.some(r => !r.name.trim() || !r.prompt.trim()))
+      return toast("每个视角的名称与审稿重点都要填（不想要的视角点 🗑 删除）");
+  }
+  if (DW.step < 4){
+    DW.step++;
+    if (DW.step === 4){
+      if (!DW.id) DW.id = "custom-" + Date.now().toString(36);
+      $("#dw-js").value = dwBuildJs();
+    }
+    dwRender();
+  } else dwSave();
+};
+async function dwSave(){
+  const js = $("#dw-js").value;
+  try {
+    const r = await fetch(ARCH + "/disciplines/save", {method: "PUT",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({id: DW.id, js})});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    localStorage.setItem("qwen_discipline", DW.id);
+    toast(`✅ 学科「${$("#dw-name").value.trim()}」已保存并启用，正在刷新…`);
+    setTimeout(() => location.reload(), 600);
+  } catch {   // 无存档服务（如纯云端 DeepSeek 用户）：降级为下载文件 + 窗口内两步指引
+    $("#dw-fallback").hidden = false;
+    $("#dw-idxline").value = `"${DW.id}"`;
+  }
+}
+$("#dw-dl").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([$("#dw-js").value], {type: "text/javascript"}));
+  a.download = DW.id + ".js";
+  a.click();
+};
+$("#discadd").onclick = e => { e.stopPropagation(); $("#discmodal").classList.remove("open"); dwOpen(); };
+$("#dwclose").onclick = () => $("#dwmodal").classList.remove("open");
+$("#dwmodal").onclick = e => { if (e.target === $("#dwmodal")) $("#dwmodal").classList.remove("open"); };
 $("#scanbtn2").onclick = async e => { await scanLibrary(e.target); openLibrary(); };
 $("#metabtn2").onclick = e => enrichLibrary(e.target).then(() => openLibrary());
 // ---------- BibTeX / RIS 导入导出（Zotero 等文献管理器握手） ----------

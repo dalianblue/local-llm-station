@@ -1572,8 +1572,8 @@ function rvRender(){
   if (RV.stage === "topic"){
     b.innerHTML = `
       ${S.dskey ? "" : `<div class="alertbox">⚠ 未配置 DeepSeek API Key——判定/大纲/逐节生成需要云端模型（⚙️ 设置里填写），多源检索本身可先跑</div>`}
-      <div class="rvsub">综述话题（${DISC.hints.reviewTopic}）</div>
-      <input id="rvtopic" value="${esc(RV.topic || "")}" placeholder="如：${DISC.hints.reviewExample}" class="qinput">
+      <div class="rvsub">综述话题（${DISC.hints.reviewTopic || "越具体越准"}）</div>
+      <input id="rvtopic" value="${esc(RV.topic || "")}" placeholder="${DISC.hints.reviewExample ? "如：" + DISC.hints.reviewExample : "输入你的综述话题"}" class="qinput">
       <div class="rvrow">
         ${rvBtn("rvsearch", `🔍 ${SRC_IDS.length} 源检索 + 相关性判定`, true)}
         <span id="rvprog" class="dim"></span>
