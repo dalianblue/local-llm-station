@@ -44,4 +44,12 @@ DISCIPLINES.medicine = {   // ← 键名与 id 都改成你的学科 id
     reviewExample: "综述话题示例（dashboard 新建综述）",
     projectExample: "写作项目名示例（dashboard 新建写作）",
   },
+
+  // —— 检索源：crossref/openalex 全学科常驻（页面固定），这里只勾选学科专属源 ——
+  // 可选值：pubmed（含引文校验的 PubMed 交叉验证）/ europepmc / ctgov（临床试验）
+  // 两个键都可整段省略——省略时仅用通用底座检索
+  search: {
+    sources: [],
+    queryStyle: "检索式构造提示（如：主题词 + 同义词，OR 连接）",
+  },
 };

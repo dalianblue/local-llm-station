@@ -506,7 +506,7 @@
   <div class="wtitle">读一篇文献，讲清楚一篇文献</div>
   <div class="whint">拖入 PDF：本地提取全文与图表 → 四段解读 · 海报 · 汇报 PPT</div>
   <div class="whint">或直接在下方输入框提问——支持图片、追问走缓存</div>
-  <div class="whint">输入「找文献 需求」一条命令完成：DeepSeek 构造检索式 → 四源检索（PubMed / OpenAlex / Europe PMC / ClinicalTrials.gov）→ DeepSeek 相关性判定</div>
+  <div class="whint" id="whint-find">输入「找文献 需求」一条命令完成：DeepSeek 构造检索式 → 多源检索 → DeepSeek 相关性判定</div>
   <button id="wup">📄 上传文献 PDF</button>
 </div>
 
@@ -548,6 +548,13 @@ const DISC = (() => {
   return (id && /^[a-z0-9_-]+$/i.test(id) && DISCIPLINES[id]) || DISCIPLINES.medicine;
 })();
 const DEEPSEEK_API = "https://api.deepseek.com/v1/chat/completions";
+// 检索源：crossref/openalex 全学科常驻；pubmed/europepmc/ctgov 按学科皮肤勾选（disciplines/*.js search.sources）
+const SRC_IDS = [...new Set(["openalex", ...(DISC.search?.sources || [])])]
+  .filter(id => ["openalex", "pubmed", "europepmc", "ctgov"].includes(id));
+const SRC_TEXT = SRC_IDS.map(id => ({openalex: "OpenAlex", pubmed: "PubMed", europepmc: "Europe PMC", ctgov: "ClinicalTrials.gov"}[id])).join(" / ");
+const srcOn = id => SRC_IDS.includes(id);
+{ const el = document.getElementById("whint-find");
+  if (el) el.textContent = `输入「找文献 需求」一条命令完成：DeepSeek 构造检索式 → ${SRC_IDS.length} 源检索（${SRC_TEXT}）→ DeepSeek 相关性判定`; }
 const usingDeep = () => S.provider === "deepseek" && S.dskey;
 // 统一请求入口：本地 Ollama 或 DeepSeek 云端 API。
 // DeepSeek 不认 llama.cpp 专有参数（chat_template_kwargs/reasoning_effort），
@@ -1099,7 +1106,7 @@ async function refSearch(r){
       }
     } catch {}
   }
-  if (best.score < 0.75){   // 仍存疑：PubMed 交叉验证（医学文献覆盖最全；两步调用均走限流）
+  if (best.score < 0.75 && srcOn("pubmed")){   // 仍存疑：PubMed 交叉验证（医学文献覆盖最全；两步调用均走限流；学科皮肤勾选 pubmed 才走）
     try {
       await pmGap();
       const j = await (await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=3&term=${encodeURIComponent((r.title || "").slice(0, 200))}[Title]`)).json();
@@ -1175,7 +1182,7 @@ async function refAudit(text){
   } finally { busy = false; }
 }
 
-// ---------- 文献检索：「找文献 需求」一条命令——DeepSeek 构造检索式 + 四源检索 + DeepSeek 相关性判定 ----------
+// ---------- 文献检索：「找文献 需求」一条命令——DeepSeek 构造检索式 + 按学科皮肤勾选的多源检索 + DeepSeek 相关性判定 ----------
 // 判定走云端（本地小模型筛选不可靠）；无 DeepSeek Key 时退化为原词直检不判定
 async function dsSearchStep(content, maxTokens){
   const r = await fetch(DEEPSEEK_API, {method: "POST",
@@ -1199,14 +1206,14 @@ async function litSearch(q){
     if (S.dskey){
       try {
         const raw = await dsSearchStep(
-          `把下面的文献检索需求转成两条英文检索式（PubMed 风格：主题词 + 同义词，OR 连接，每条是一个完整查询字符串；两条各有侧重，如一条偏干预/技术、一条偏结局/人群）。只输出 JSON：{"qs": ["检索式一", "检索式二"]}，不要输出其他文字。\n需求：${q}`, 600);
+          `把下面的文献检索需求转成两条英文检索式（${DISC.search?.queryStyle || "主题词 + 同义词，OR 连接"}；每条是一个完整查询字符串）。只输出 JSON：{"qs": ["检索式一", "检索式二"]}，不要输出其他文字。\n需求：${q}`, 600);
         const j = JSON.parse((raw.match(/(\{[\s\S]*\})/) || [, "{}"])[1]);
         if (Array.isArray(j.qs) && j.qs.filter(Boolean).length) qs = j.qs.filter(Boolean).slice(0, 2);
       } catch {}
     }
     const qEn = qs[0];
-    update(`# 🔍 文献检索：${q}\n\n检索式：${qs.join(" / ")}\n\n（正在检索 PubMed / OpenAlex / Europe PMC / ClinicalTrials.gov…）`);
-    // 第 2 步：四源并行（PubMed 内部过限流器，Promise.all 不冲突）
+    update(`# 🔍 文献检索：${q}\n\n检索式：${qs.join(" / ")}\n\n（正在检索 ${SRC_TEXT}…）`);
+    // 第 2 步：按学科皮肤勾选的源并行（PubMed 内部过限流器，Promise.all 不冲突）
     const pmSearch = async () => {
       try {
         await pmGap();
@@ -1253,7 +1260,9 @@ async function litSearch(q){
         }).filter(x => x.nct);
       } catch { return []; }
     };
-    const [pm, oa, ep, ct] = await Promise.all([pmSearch(), oaSearch(), epSearch(), ctSearch()]);
+    const [pm, oa, ep, ct] = await Promise.all([
+      srcOn("pubmed") ? pmSearch() : [], srcOn("openalex") ? oaSearch() : [],
+      srcOn("europepmc") ? epSearch() : [], srcOn("ctgov") ? ctSearch() : []]);
     // 去重合并（doi → pmid → 规范化标题前缀）
     const seen = new Set(), all = [];
     for (const x of [...pm, ...oa, ...ep]){
@@ -1264,20 +1273,20 @@ async function litSearch(q){
     // 第 3 步：DeepSeek 相关性判定（三值 + 理由，MedSR 式粗筛）
     let verdict = "";
     if (S.dskey && all.length){
-      update(`# 🔍 文献检索：${q}\n\n检索式：${qs.join(" / ")}\n\n（四源检索完成，DeepSeek 正在判定相关性…）`);
+      update(`# 🔍 文献检索：${q}\n\n检索式：${qs.join(" / ")}\n\n（${SRC_IDS.length} 源检索完成，DeepSeek 正在判定相关性…）`);
       try {
         verdict = await dsSearchStep(
-          `用户检索需求：「${q}」。下面是四库合并去重后的 ${all.length} 条候选文献（编号|标题|期刊|年份|来源，末列有「预印本」标记的是未同行评审版本）。逐条判定相关性：✅ 高相关（直接回答或支撑需求，附一句为什么值得读）；🟡 中相关（部分相关或背景价值）；❌ 低相关（主题偏移）。输出 markdown：按 ✅→🟡→❌ 排列的清单（编号 + 判定 + 理由，✅ 的理由必填），末尾一段「检索建议」——现有结果是否覆盖需求、要不要换角度再搜。不要复述标题全文。\n\n${all.map((x, i) => `${i + 1}|${(x.title || "").slice(0, 120)}|${x.journal || ""}|${x.year || ""}|${x.src}${x.preprint ? "|预印本" : ""}`).join("\n")}`, 2500);
+          `用户检索需求：「${q}」。下面是多库合并去重后的 ${all.length} 条候选文献（编号|标题|期刊|年份|来源，末列有「预印本」标记的是未同行评审版本）。逐条判定相关性：✅ 高相关（直接回答或支撑需求，附一句为什么值得读）；🟡 中相关（部分相关或背景价值）；❌ 低相关（主题偏移）。输出 markdown：按 ✅→🟡→❌ 排列的清单（编号 + 判定 + 理由，✅ 的理由必填），末尾一段「检索建议」——现有结果是否覆盖需求、要不要换角度再搜。不要复述标题全文。\n\n${all.map((x, i) => `${i + 1}|${(x.title || "").slice(0, 120)}|${x.journal || ""}|${x.year || ""}|${x.src}${x.preprint ? "|预印本" : ""}`).join("\n")}`, 2500);
       } catch (e) { verdict = "⚠ 判定步骤失败：" + e.message + "（下面为未判定列表）"; }
     }
     const card = x => `**· ${esc((x.title || "").slice(0, 140))}**${x.preprint ? " 🧪预印本" : ""}\n   ${x.src}${x.author ? " · " + esc(x.author) + " et al." : ""}${x.year ? " · " + x.year : ""}${x.journal ? " · " + esc(x.journal) : ""}` +
       `${x.pmid ? ` · [PubMed](https://pubmed.ncbi.nlm.nih.gov/${x.pmid}/)` : ""}${x.doi ? ` · [doi](https://doi.org/${x.doi})` : ""}${x.pdf ? ` · [📄 OA 全文](${x.pdf})` : ""}`;
     update(`# 🔍 文献检索：${q}\n\n检索式：${qs.join(" / ")}\n\n` +
       (verdict ? `## 🤖 相关性判定（DeepSeek）\n\n${verdict}\n\n---\n` : "") +
-      `## 候选文献（四源去重 ${all.length} 条）\n\n${all.length ? all.map(card).join("\n\n") : "（无结果或网络不可达）"}\n\n` +
+      `## 候选文献（${SRC_IDS.length} 源去重 ${all.length} 条）\n\n${all.length ? all.map(card).join("\n\n") : "（无结果或网络不可达）"}\n\n` +
       (ct.length ? `## 🧪 在研试验（ClinicalTrials.gov）\n\n${ct.map(x => `**· ${esc((x.title || "").slice(0, 140))}**\n   ${x.status}${x.phase && x.phase !== "NA" ? " · " + x.phase : ""} · [${x.nct}](https://clinicaltrials.gov/study/${x.nct})`).join("\n\n")}\n\n` : "") +
       `---\n可继续追问，如"细讲第 2 篇的研究设计"（模型不联网，深读请下载 PDF 后拖入本页解读）。`);
-    persist(); toast(`🔍 四源检索完成：文献 ${all.length} 条 · 在研试验 ${ct.length} 项`);
+    persist(); toast(`🔍 ${SRC_IDS.length} 源检索完成：文献 ${all.length} 条 · 在研试验 ${ct.length} 项`);
   } catch (e) {
     update(`# 🔍 文献检索：${q}\n\n⚠ 中断：${e.message}`);
     persist();
@@ -3182,7 +3191,7 @@ input.addEventListener("keydown", e=>{
 
 // ---------- / 快捷指令菜单：隐藏指令（找文献/深读/引文校验/数据体检）的可见入口 ----------
 const SLASH_CMDS = [
-  {cmd: "找文献", desc: "一条命令：检索式生成 → 四源检索 → 相关性判定（需 DeepSeek Key）", fill: "找文献 "},
+  {cmd: "找文献", desc: `一条命令：检索式生成 → ${SRC_IDS.length} 源检索 → 相关性判定（需 DeepSeek Key）`, fill: "找文献 "},
   {cmd: "深读", desc: "图表逐张多模态解读，如「深读 图1,3 表2」（本地限定）", fill: "深读 "},
   {cmd: "证据提取", desc: "RCT/Meta 按 PICOS+偏倚提取证据，结果存项目笔记", paper: DISC.extractRct + EXTRACT_RULES, label: "证据提取"},
   {cmd: "观点提取", desc: "论著 7 维度提取观点与数据，结果存项目笔记", paper: DISC.extractView + EXTRACT_RULES, label: "观点提取"},

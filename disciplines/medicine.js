@@ -56,4 +56,11 @@ DISCIPLINES.medicine = {
     reviewExample: "IL-17 抑制剂治疗银屑病的疗效与安全性",         // dashboard 新建综述项目示例
     projectExample: "EA 贝叶斯预测模型研究方案",                  // dashboard 新建写作项目示例
   },
+  // 检索源：openalex/crossref 为全学科常驻底座（页面固定），这里勾选学科专属源
+  // 可选：pubmed（含引文校验的 PubMed 交叉验证）/ europepmc / ctgov
+  search: {
+    sources: ["pubmed", "europepmc", "ctgov"],
+    // 检索式构造提示（喂给 DeepSeek 的风格说明）
+    queryStyle: "PubMed 风格：主题词 + 同义词，OR 连接，两条各有侧重，如一条偏干预/技术、一条偏结局/人群",
+  },
 };

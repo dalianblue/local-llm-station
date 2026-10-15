@@ -37,13 +37,22 @@
 | `boundaryExtra` | 能力边界规范拼接 | 同左（两页共享同一条款） | — |
 | `reviewers` | — | 🕵️ 审稿菜单 + 审稿 prompt + 报告文件名 | — |
 | `hints.*` | — | 综述向导话题提示/示例 | 新建写作/综述项目示例 |
+| `search.sources` | 「找文献」检索源 + 引文校验 PubMed 交叉验证 | search 块检索 + 综述向导检索 | — |
 
-## 检索源说明（P2 待参数化）
+## 检索源配置
 
-目前文献检索四源（PubMed / OpenAlex / Europe PMC / ClinicalTrials.gov）仍为
-医学口硬编码，随页面而非皮肤走。其中 Crossref / OpenAlex 本身是全学科库，
-非医学学科可正常使用「引文校验」与基础检索；PubMed/ClinicalTrials 的专属
-链路对其他学科只是多出冗余结果，不影响使用。检索源参数化后在皮肤中配置。
+文献检索与引文校验的源分两层：
+
+- **全学科常驻底座**（页面固定，无需配置）：Crossref + OpenAlex——两者本身
+  覆盖全学科，任何皮肤都有引文校验与基础文献检索能力。
+- **学科专属源**（皮肤 `search.sources` 勾选）：
+  - `pubmed` — PubMed 检索 + 引文校验的 PubMed 交叉验证
+  - `europepmc` — Europe PMC（含预印本标记、摘要）
+  - `ctgov` — ClinicalTrials.gov 在研试验段（勾选才检索、才渲染该段）
+
+省略 `search` 键时仅用通用底座（OpenAlex 单源检索）。检索式构造的风格
+说明由 `search.queryStyle` 提供（如医学口的「PubMed 风格：主题词 + 同义词」），
+相关 UI 文案（欢迎页提示、查证链、综述向导按钮的「N 源」）随勾选自动生成。
 
 ## 注意
 
