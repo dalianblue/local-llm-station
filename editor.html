@@ -860,13 +860,14 @@ function mdText(src){
   const math = [];
   src = src.replace(/\$\$([\s\S]+?)\$\$/g, (_, f) => "\u0000M" + (math.push({f, disp:true}) - 1) + "\u0000")
            .replace(/\$([^$\n]+?)\$/g, (_, f) => "\u0000M" + (math.push({f, disp:false}) - 1) + "\u0000");
+  src = esc(src);   // 公式已摘出（占位符不含 HTML 字符），整段转义防注入
   return src
     .replace(/^### (.*)$/gm,"<h4>$1</h4>").replace(/^## (.*)$/gm,"<h3>$1</h3>").replace(/^# (.*)$/gm,"<h2>$1</h2>")
     .replace(/~~(.+?)~~/g,"<del>$1</del>")
     .replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")
     .replace(/`([^`]+)`/g,"<code>$1</code>")
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) =>
-      /^(https?:|mailto:|#|\.\/)/i.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : esc(t))
+      /^(https?:|mailto:|#|\.\/)/i.test(u) ? `<a href="${u}" target="_blank" rel="noopener">${t}</a>` : t)
     .replace(/^\s*[-*+] \[( |x|X)\] (.*)$/gm, (_, c, t) => `<li><input type="checkbox" disabled${c.trim() ? " checked" : ""}> ${t}</li>`)
     .replace(/^\s*[-*+] (.*)$/gm,"<li>$1</li>")
     .replace(/^\s*\d+\. (.*)$/gm,"<lo>$1</lo>")   // 有序列表临时标记，块级再包 <ol>
@@ -1835,11 +1836,19 @@ function flushSave(){
 const jKey = f => ED.convId + "/" + f;
 function journalWrite(){
   const sec = ED.sections[ED.cur]; if (!sec || sec.bad) return;
+  const cur = {ts: Date.now(), md: $("#secmd").value};
   try {
     const all = JSON.parse(localStorage.getItem("editor_journal") || "{}");
-    all[jKey(sec.file)] = {ts: Date.now(), md: $("#secmd").value};
+    all[jKey(sec.file)] = cur;
     localStorage.setItem("editor_journal", JSON.stringify(all));
-  } catch {}
+  } catch {
+    // 配额溢出（journal 存所有项目全文）：只保留本项目当前章节，其余丢弃——崩溃保护不静默失效
+    try {
+      const keep = {}; keep[jKey(sec.file)] = cur;
+      localStorage.setItem("editor_journal", JSON.stringify(keep));
+      toast("⚠ 崩溃草稿空间已满，已只保留当前项目的最近草稿");
+    } catch {}
+  }
 }
 function journalClear(file){
   try {
@@ -1873,7 +1882,7 @@ function journalRestore(){
 async function persistEditor(){
   if (!ED.convDir) return;
   try {
-    await fetch(pf("editor.json"), {
+    const r = await fetch(pf("editor.json"), {
       method: "PUT", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         schema: 1, updated: Date.now(),
@@ -1882,7 +1891,8 @@ async function persistEditor(){
         chat: ED.chat.slice(-600),
       })
     });
-  } catch {}
+    if (!r.ok) toast("⚠ 章节清单保存失败——检查磁盘空间/权限后重试");
+  } catch { toast("⚠ 章节清单保存失败——存档服务不可达"); }
 }
 
 // ---------- 大纲 / 状态条 ----------
@@ -2083,8 +2093,8 @@ let versions = {schema: 1, list: []};
 const hashMd = () => {
   const s = ED.sections.map(x => x.md || "").join("\u0001");
   let h = 5381;
-  for (let i = 0; i < s.length; i = i + Math.max(1, (s.length / 999) | 0)) h = (h * 33 ^ s.charCodeAt(i)) >>> 0;
-  return s.length + ":" + h;   // 采样哈希：只用于快照去重，不做校验
+  for (let i = 0; i < s.length; i++) h = (h * 33 ^ s.charCodeAt(i)) >>> 0;
+  return s.length + ":" + h;   // 全量 djb2：mb 级文本微秒级，采样哈希会漏检未落在采样点上的改动
 };
 async function snapshot(reason, label){
   flushSave();

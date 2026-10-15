@@ -13,13 +13,25 @@ import SQLite3
 // Swift 的 SQLite3 模块不暴露 SQLITE_TRANSIENT 宏，等价定义
 let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-// 微型存档服务：读写 ~/Qwen38/chat_history，供 chat.html 调用（含 CORS）
+// 应用根目录：老安装沿用 ~/Qwen38，新机器用 ~/local-llm-station（自动创建）——路径可移植
+enum AppRoot {
+    static let path: String = {
+        let fm = FileManager.default
+        let legacy = NSHomeDirectory() + "/Qwen38"
+        if fm.fileExists(atPath: legacy) { return legacy }
+        let neu = NSHomeDirectory() + "/local-llm-station"
+        try? fm.createDirectory(atPath: neu, withIntermediateDirectories: true)
+        return neu
+    }()
+}
+
+// 微型存档服务：读写 根目录/chat_history，供 chat.html 调用（含 CORS）
 final class ArchiveServer {
     static let shared = ArchiveServer()
     private var listener: NWListener?
     private let memQueue = DispatchQueue(label: "mem.db")
     private var memDB: OpaquePointer?
-    let dir = URL(fileURLWithPath: NSHomeDirectory() + "/Qwen38/chat_history")
+    let dir = URL(fileURLWithPath: AppRoot.path + "/chat_history")
 
     func start() {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -28,13 +40,18 @@ final class ArchiveServer {
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = NWEndpoint.hostPort(host: NWEndpoint.Host.ipv4(.loopback),
                                                            port: NWEndpoint.Port(rawValue: 8081)!)
-        guard let l = try? NWListener(using: params) else { return }
+        guard let l = try? NWListener(using: params) else {
+            // 8081 被占（常见：旧实例未退/其他 app）——静默失败会让页面全坏无从排查
+            print("[archive] ERROR: 8081 端口被占用，存档服务未启动（检查是否有旧实例在运行）")
+            return
+        }
         l.newConnectionHandler = { conn in
             conn.start(queue: .global())
             self.read(conn, Data())
         }
         l.stateUpdateHandler = { state in
             print("[archive] listener: \(state)")
+            if case .failed(let e) = state { print("[archive] listener failed: \(e)") }
         }
         l.start(queue: .global())
         listener = l
@@ -49,7 +66,7 @@ final class ArchiveServer {
         }
     }
 
-    struct Req { let method: String; let path: String; let body: Data }
+    struct Req { let method: String; let path: String; let body: Data; let origin: String? }
 
     static func parse(_ data: Data) -> Req? {
         guard let headEnd = data.range(of: Data("\r\n\r\n".utf8)),
@@ -57,19 +74,32 @@ final class ArchiveServer {
         let lines = head.components(separatedBy: "\r\n")
         let reqLine = lines[0].components(separatedBy: " ")
         guard reqLine.count >= 2 else { return nil }
-        var length = 0
+        var length = 0, origin: String?
         for l in lines {
-            let p = l.lowercased().components(separatedBy: ":")
-            if p.count == 2, p[0].trimmingCharacters(in: .whitespaces) == "content-length",
-               let n = Int(p[1].trimmingCharacters(in: .whitespaces)), n >= 0, n <= 64 * 1024 * 1024 { length = n }
+            guard let r = l.range(of: ":") else { continue }
+            let k = String(l[..<r.lowerBound]).lowercased().trimmingCharacters(in: .whitespaces)
+            let v = String(l[r.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if k == "content-length", let n = Int(v), n >= 0, n <= 64 * 1024 * 1024 { length = n }
+            if k == "origin" { origin = v }
         }
         let body = data[headEnd.upperBound...]
         guard body.count >= length else { return nil }
         return Req(method: reqLine[0], path: reqLine[1].removingPercentEncoding ?? reqLine[1],
-                   body: body.prefix(length))
+                   body: body.prefix(length), origin: origin)
     }
 
     private func respond(_ conn: NWConnection, _ req: Req) {
+        // CORS 收紧：只放行无 Origin（curl/本机进程）、file:// 页面（Origin: null）与本机 http 页面——
+        // 防用户浏览器里其他网站经 fetch 读写本存档服务
+        if let o = req.origin?.lowercased(), o != "null",
+           !o.hasPrefix("http://127.0.0.1"), !o.hasPrefix("http://localhost"),
+           !o.hasPrefix("https://127.0.0.1"), !o.hasPrefix("https://localhost") {
+            let eb = Data("{\"error\":\"origin\"}".utf8)
+            let head = "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: \(eb.count)\r\nConnection: close\r\n\r\n"
+            conn.send(content: Data(head.utf8) + eb, completion: .contentProcessed { _ in conn.cancel() })
+            conn.send(content: Data(head.utf8), completion: .contentProcessed { _ in conn.cancel() })
+            return
+        }
         var status = "200 OK"
         var body = Data("{}".utf8)
         var respType = "application/json"
@@ -92,7 +122,9 @@ final class ArchiveServer {
         case ("PUT", let p) where p.hasPrefix("/archive/"):
             let name = String(p.dropFirst(9))
             if name.contains("..") || name.contains("/") || name.isEmpty { status = "400 Bad Request" }
-            else { Self.safeWrite(req.body, to: dir.appendingPathComponent(name)) }
+            else if !Self.safeWrite(req.body, to: dir.appendingPathComponent(name)) {
+                status = "500 Internal Server Error"; body = Data("{\"error\":\"write failed\"}".utf8)
+            }
         case ("DELETE", let p) where p.hasPrefix("/archive/"):
             let name = String(p.dropFirst(9))
             if name.contains("..") || name.contains("/") || name.isEmpty { status = "400 Bad Request" }
@@ -161,7 +193,9 @@ final class ArchiveServer {
             } else {
                 let d = dir.appendingPathComponent(conv, isDirectory: true)
                 try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
-                Self.safeWrite(req.body, to: d.appendingPathComponent(name))
+                if !Self.safeWrite(req.body, to: d.appendingPathComponent(name)) {
+                    status = "500 Internal Server Error"; body = Data("{\"error\":\"write failed\"}".utf8)
+                }
             }
         case ("GET", let p) where p.hasPrefix("/projfile/"):
             let parts = String(p.dropFirst(10)).split(separator: "/", maxSplits: 1).map(String.init)
@@ -276,7 +310,7 @@ final class ArchiveServer {
                 let tpl = dir.deletingLastPathComponent().appendingPathComponent(tplName)
                 var args = ["-f", "markdown+mark",   // ==高亮== → docx 黄底（高亮修改稿用）
                             tmp.appendingPathExtension("md").path, "-o", out.path,
-                            "--resource-path", NSHomeDirectory() + "/Qwen38"]
+                            "--resource-path", AppRoot.path]
                 if fm.fileExists(atPath: tpl.path) { args += ["--reference-doc", tpl.path] }
                 // citeproc 引文：样式文件限定 csl/ 目录，缺省回退 AMA
                 let cslDir = dir.deletingLastPathComponent().appendingPathComponent("csl", isDirectory: true)
@@ -310,7 +344,7 @@ final class ArchiveServer {
                 // 错误消息走 JSONSerialization
                 body = (try? JSONSerialization.data(withJSONObject: ["error": error.localizedDescription])) ?? Data("{}".utf8)
             }
-        // 静态资源（限 ~/Qwen38/katex/ 前缀）
+        // 静态资源（限 根目录 katex/ 前缀）
         case ("GET", let p) where p.hasPrefix("/static/katex/"):
             let name = String(p.dropFirst(14))
             if !name.isEmpty, !name.contains(".."), !name.hasPrefix("/"),
@@ -324,7 +358,7 @@ final class ArchiveServer {
             // git SHA 版本标识
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            p.arguments = ["-C", NSHomeDirectory() + "/Qwen38", "log", "-1", "--format=%h|%cs"]
+            p.arguments = ["-C", AppRoot.path, "log", "-1", "--format=%h|%cs"]
             let pipe = Pipe(); p.standardOutput = pipe; p.standardError = Pipe()
             if (try? p.run()) != nil { p.waitUntilExit() }
             let s = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
@@ -334,12 +368,15 @@ final class ArchiveServer {
             body = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{\"sha\":null}".utf8)
         case ("GET", let p) where p.hasPrefix("/projlist/"):
             let conv = String(p.dropFirst(10))
-            let files = (try? FileManager.default.contentsOfDirectory(
-                at: dir.appendingPathComponent(conv), includingPropertiesForKeys: nil))?
-                // 跳过滚动备份（name~）与原子写残片（name.tmp）
-                .filter { !$0.hasDirectoryPath && !$0.lastPathComponent.hasSuffix("~") && !$0.lastPathComponent.hasSuffix(".tmp") }
-                .map { $0.lastPathComponent } ?? []
-            body = (try? JSONEncoder().encode(files)) ?? Data("[]".utf8)
+            if conv.contains("..") || conv.contains("/") || conv.isEmpty { status = "400 Bad Request" }
+            else {
+                let files = (try? FileManager.default.contentsOfDirectory(
+                    at: dir.appendingPathComponent(conv), includingPropertiesForKeys: nil))?
+                    // 跳过滚动备份（name~）与原子写残片（name.tmp）
+                    .filter { !$0.hasDirectoryPath && !$0.lastPathComponent.hasSuffix("~") && !$0.lastPathComponent.hasSuffix(".tmp") }
+                    .map { $0.lastPathComponent } ?? []
+                body = (try? JSONEncoder().encode(files)) ?? Data("[]".utf8)
+            }
         // 可用引文样式清单（csl/ 目录，导出 Word 的样式选择弹窗数据源）
         case ("GET", "/csllist"):
             let cslDir = dir.deletingLastPathComponent().appendingPathComponent("csl", isDirectory: true)
@@ -548,7 +585,8 @@ extension ArchiveServer {
     // 原子写 + 滚动备份（name~ / 唯一 .tmp → rename）
     // tmp 必须唯一：并发写同一文件时共享 tmp 会让 replaceItemAt 拿到别人已消费的文件，
     // 兜底 removeItem(url) 会把正文删掉
-    static func safeWrite(_ data: Data, to url: URL) {
+    @discardableResult
+    static func safeWrite(_ data: Data, to url: URL) -> Bool {
         let fm = FileManager.default
         let bak = url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + "~")
         if fm.fileExists(atPath: url.path) {
@@ -556,12 +594,13 @@ extension ArchiveServer {
             try? fm.copyItem(at: url, to: bak)
         }
         let tmp = url.appendingPathExtension("tmp-" + UUID().uuidString)
-        guard (try? data.write(to: tmp)) != nil else { return }
+        guard (try? data.write(to: tmp)) != nil else { return false }
         if (try? fm.replaceItemAt(url, withItemAt: tmp)) == nil {
             // replaceItemAt 失败兜底走 move
             try? fm.removeItem(at: url)
-            if (try? fm.moveItem(at: tmp, to: url)) == nil { try? fm.removeItem(at: tmp) }
+            if (try? fm.moveItem(at: tmp, to: url)) == nil { try? fm.removeItem(at: tmp); return false }
         }
+        return true
     }
 
     static func scanArchive(_ url: URL) -> (String, Double, Int)? {
@@ -1395,11 +1434,11 @@ struct TrayMenu: View {
         Divider()
         Button("🖥 控制面板（⌥Space）") { showMainWindow() }
         Button("🏠 我的桌面（dashboard.html）") {
-            NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory() + "/Qwen38/dashboard.html"))
+            NSWorkspace.shared.open(URL(fileURLWithPath: AppRoot.path + "/dashboard.html"))
         }
         Button("🌐 开始新对话（chat.html）") {
             // 经 newchat.html 跳转（携带 ?new=1）
-            NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory() + "/Qwen38/newchat.html"))
+            NSWorkspace.shared.open(URL(fileURLWithPath: AppRoot.path + "/newchat.html"))
         }
         Divider()
         Button("退出") { NSApp.terminate(nil) }
@@ -1457,10 +1496,10 @@ struct LogLine: Identifiable {
     init(_ t: String) { text = t }
 }
 
-// ---------- 外部配置：~/Qwen38/config.json（可选，缺省回落内置默认；改后重启 app 生效） ----------
+// ---------- 外部配置：根目录 config.json（可选，缺省回落内置默认；改后重启 app 生效） ----------
 enum Config {
     private static let dict: [String: Any] = {
-        let url = URL(fileURLWithPath: NSHomeDirectory() + "/Qwen38/config.json")
+        let url = URL(fileURLWithPath: AppRoot.path + "/config.json")
         guard let d = try? Data(contentsOf: url),
               let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { return [:] }
         return j
@@ -1756,7 +1795,7 @@ struct ContentView: View {
                     .pickerStyle(.segmented)
                     .disabled(server.running)
                     Text("推荐档按本机内存计算，经 OLLAMA_CONTEXT_LENGTH 注入 serve。"
-                         + "模型 \(Config.ollamaModel)，vision 内嵌无需 mmproj；换模型改 ~/Qwen38/config.json 的 ollamaModel")
+                         + "模型 \(Config.ollamaModel)，vision 内嵌无需 mmproj；换模型改 根目录 config.json 的 ollamaModel")
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(4)
             }
@@ -1788,7 +1827,7 @@ struct ContentView: View {
                 .tint(server.running ? .red : .accentColor)
 
                 Button("我的桌面") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory() + "/Qwen38/dashboard.html"))
+                    NSWorkspace.shared.open(URL(fileURLWithPath: AppRoot.path + "/dashboard.html"))
                 }
                 .controlSize(.large)
             }

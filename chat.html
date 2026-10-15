@@ -1538,7 +1538,12 @@ setTimeout(() => {
 renderMemory();
 
 // ---------- 会话管理（持久化） ----------
-let convs = JSON.parse(localStorage.getItem("qwen_convs") || "[]");
+let convs = [];
+try { convs = JSON.parse(localStorage.getItem("qwen_convs") || "[]"); } catch {
+  // 本地记录损坏：清掉防反复崩溃，会话仍可从磁盘存档导入恢复
+  try { localStorage.removeItem("qwen_convs"); } catch {}
+  setTimeout(() => alert("本地会话记录已损坏并重置——连接存档服务后可从磁盘恢复历史会话。"), 500);
+}
 let curId = localStorage.getItem("qwen_cur") || null;
 let messages = [];   // {role, text, imgs?, think?, metrics?, checked}
 
@@ -1704,11 +1709,12 @@ async function archiveConv(){
   if (!archOK || !messages.length) return;
   try {
     const c = curConv();
-    await fetch(`${ARCH}/archive/${archiveName(c)}`, {
+    const r = await fetch(`${ARCH}/archive/${archiveName(c)}`, {
       method: "PUT",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({id:c.id, title:c.title, ts:c.ts, ctxUsed:c.ctxUsed, messages}),
     });
+    if (!r.ok) toast("⚠ 自动存档失败（磁盘满/权限？）——本会话仅存于浏览器");
   } catch {}
 }
 // 启动时从 chat_history 导入 localStorage 里没有（或更旧）的会话
@@ -1748,7 +1754,7 @@ function applyConv(){
 applyConv();
 connectArch().then(applyConv);
 function loadConv(id){
-  if (busy) return;
+  if (busy) return toast("生成中——请先停止或等回答结束再切换会话");
   curId = id;
   const c = curConv();
   messages = JSON.parse(JSON.stringify(c?.messages || []));
@@ -1791,7 +1797,7 @@ function renderConvs(){
   }
 }
 $("#newchat").onclick = () => {
-  if (busy) return;
+  if (busy) return toast("生成中——请先停止或等回答结束再新建会话");
   newConv();
   $("#sidebar").classList.remove("open"); $("#overlay").classList.remove("show");
 };
@@ -1917,6 +1923,7 @@ function mdText(src){
   const math = [];
   src = src.replace(/\$\$([\s\S]+?)\$\$/g, (_, f) => "\u0000M" + (math.push({f, disp:true}) - 1) + "\u0000")
            .replace(/\$([^$\n]+?)\$/g, (_, f) => "\u0000M" + (math.push({f, disp:false}) - 1) + "\u0000");
+  src = esc(src);   // 公式已摘出（占位符不含 HTML 字符），整段转义防注入
   return src
     .replace(/^### (.*)$/gm,"<h4>$1</h4>").replace(/^## (.*)$/gm,"<h3>$1</h3>")
     .replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")
@@ -2635,7 +2642,7 @@ function regen(idx){
   generate();
 }
 function editMsg(idx){
-  if (busy) return;
+  if (busy) return toast("生成中——请先停止或等回答结束再编辑重发");
   const m = messages[idx]; if (!m) return;
   // 编辑重发=截断该条及之后所有消息重新生成：丢弃多条时先确认
   if (messages.length - idx > 1 &&
@@ -2798,7 +2805,10 @@ function retrieveHistory(q, pool){
 let queue = null;
 async function send(payload){
   let text, imgs, docs;
-  if (payload && typeof payload === "object"){ text = payload.text || ""; imgs = payload.imgs || []; docs = payload.docs || []; }
+  if (payload && typeof payload === "object"){
+    text = payload.text || ""; imgs = payload.imgs || []; docs = payload.docs || [];
+    if (payload.data?.length) pendingData = payload.data;   // 排队消息带的数据附件不能丢
+  }
   else { text = (payload ?? input.value).trim(); imgs = [...pendingImages]; docs = [...pendingDocs]; }
   // 引文校验模式首次发送：纯文本即视为粘贴的引文列表，直接进校验而非普通对话
   if (REFSMODE && !refsDone && text && !imgs.length && !docs.length && !pendingData.length){
