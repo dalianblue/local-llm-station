@@ -8,6 +8,13 @@
 - ~~**审稿人回应助手**~~ ✅ 已完成：📮 投稿标记 → 收到审稿意见一键 fork 修稿版 → 📨 粘贴意见 AI 拆条目（Major/Minor + 状态追踪）→ 逐条讨论与 Response 草稿 → 🏥 落地体检（防信里声称的修改稿中不存在）→ 📤 point-by-point 回复信 Word + 🖍 高亮修改稿 Word（参考文献不标）。多轮修稿再 fork 即可
 - **PDF 版式兼容持续迭代**：图注锚定提取对新的期刊版式/手稿版式仍有真实失败案例，逐篇修（有提取问题的 PDF 欢迎附样本提 issue）
 - **卡片引用粒度**：`[[概念]]` 目前是整卡引用，补段落/图表级粒度
+- **UI 打磨 · 第二批（专业度欠账）**：样式层第一批已落地（emoji→SVG 图标[chat 头部/newchat/思考折叠]、按钮 hover/active 按压态、hover 对比度 #262d36、深色滚动条/antialiased/::selection）。第二批已完成前三项：
+  1. ~~`:focus-visible` 全局焦点环~~ ✅ 四页 `outline: 2px solid var(--accent)`，鼠标点击不显环
+  2. ~~`prefers-reduced-motion` 减弱动效支持~~ ✅ 四页全局降级
+  3. ~~纯 hover 操作触屏不可达~~ ✅ `@media (hover: none)` 下 .acts/.cardacts/.entrybar/.del/.ccopy/.tab .x 常显
+  4. emoji 全量迁移 SVG sprite：chat 的 MODE_LABEL（💭/🎯/💬）、slash 菜单、模式菜单等 JS 模板内 emoji；dashboard 的 ✍️/🧭 项目名前缀是**类型标记（JS startsWith 分流依据，不能直接删）**，需先换成元数据字段再清 UI emoji
+  5. ~~字号归档 + 动效参数归一~~ ✅ 字号全整数阶梯 11/12/13/14/15/20/22；`--dur-fast/.12s`、`--dur-base/.18s`、`--ease: cubic-bezier(.2,0,0,1)` 全量替换
+  6. ~~toast 语义色；UI 控件 line-height 分离~~ ✅ toast 按文案关键词自动 err/ok 着色（默认中性边框）；button/input/select line-height 1.5
 
 ## 中期（半年）
 

@@ -25,9 +25,33 @@
     --bg: #0d1117; --panel: #161b22; --border: #2d333b;
     --text: #e6edf3; --dim: #8b949e; --accent: #4f8cf7;
     --user-bubble: #1c2a4a; --think: #6e7681;
+    --danger: #f85149; --ok: #3fb950; --warn: #d29922;
+    --hover: #262d36; --sel: #22304a; --scroll-thumb: #3d444d; --tint: rgba(255,255,255,.02);
+    --dur-fast: .12s; --dur-base: .18s; --ease: cubic-bezier(.2,0,0,1);
+    --pre-bg: #0a0d12; --code-bg: #21262d; --accent-hi: #7fb0ff;
+    --scrim: rgba(0,0,0,.5);
+    --shadow-pop: 0 4px 16px rgba(0,0,0,.5);
+    --shadow-menu: 0 8px 30px rgba(0,0,0,.5);
+    --shadow-modal: 0 8px 40px rgba(0,0,0,.6);
     --mono: ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; margin: 0; }
+  html { -webkit-font-smoothing: antialiased; }
+  ::selection { background: rgba(79,140,247,.35); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+  ::-webkit-scrollbar-track { background: transparent; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  :focus:not(:focus-visible) { outline: none; }
+  button, input, select { line-height: 1.5; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+  /* 触屏无 hover：悬停浮现的操作常显可达 */
+  @media (hover: none) {
+    .acts, .conv .del, .codewrap .ccopy, .msg .pick { opacity: 1; }
+  }
   body {
     background: var(--bg); color: var(--text);
     font: 15px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -38,7 +62,7 @@
   .sidebar {
     position: fixed; left: 0; top: 0; bottom: 0; width: 260px; z-index: 50;
     background: var(--panel); border-right: 1px solid var(--border);
-    transform: translateX(-100%); transition: transform .2s; display: flex; flex-direction: column;
+    transform: translateX(-100%); transition: transform var(--dur-base) var(--ease); display: flex; flex-direction: column;
   }
   .sidebar.open { transform: translateX(0); }
   .sidebar .head { padding: 16px 16px 12px; }
@@ -46,6 +70,8 @@
     width: 100%; background: var(--accent); color: #fff; border: none; border-radius: 8px;
     padding: 8px; font-size: 14px; cursor: pointer; font-weight: 500;
   }
+  .newchat:hover { filter: brightness(1.1); }
+  .newchat:active { transform: scale(.97); }
   .sidebar .search {
     width: 100%; margin-top: 8px; background: var(--bg); color: var(--text);
     border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none;
@@ -54,14 +80,14 @@
   .sidever { padding: 8px 12px; font-size: 11px; color: var(--dim); }
   .conv {
     padding: 8px 12px; border-radius: 8px; cursor: pointer; display: flex;
-    align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13.5px;
+    align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px;
   }
-  .conv:hover { background: #1f2630; }
-  .conv.active { background: #22304a; }
+  .conv:hover { background: var(--hover); }
+  .conv.active { background: var(--sel); }
   .conv .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conv .d { font-size: 11px; color: var(--dim); }
   .conv .del { color: var(--dim); border: none; background: none; cursor: pointer; font-size: 12px; opacity: 0; }
-  .conv:hover .del { opacity: 1; } .conv .del:hover { color: #f85149; }
+  .conv:hover .del { opacity: 1; } .conv .del:hover { color: var(--danger); }
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 40; display: none; }
   .overlay.show { display: block; }
 
@@ -70,22 +96,24 @@
     display: flex; align-items: center; gap: 12px; background: var(--panel);
     position: relative; z-index: 30;
   }
-  .hbtn { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 17px; padding: 4px 8px; }
+  .hbtn { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 15px; padding: 4px 8px; }
   .hbtn:hover { color: var(--text); }
+  .hbtn:active { transform: scale(.92); }
+  .hbtn svg { width: 16px; height: 16px; display: block; }
   header h1 { font-size: 15px; font-weight: 600; }
   header .status { font-size: 12px; color: var(--dim); font-family: var(--mono); }
   header .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
-  .on { background: #3fb950; } .off { background: #f85149; }
+  .on { background: var(--ok); } .off { background: var(--danger); }
   .spacer { margin-left: auto; }
 
   /* ---------- 头部三滑出面板（设置 / 记忆 / 项目）公共基类 ---------- */
   .sheet {
     position: absolute; right: 12px; top: 48px; z-index: 60;
     background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 12px 16px; display: none; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    padding: 12px 16px; display: none; box-shadow: var(--shadow-menu);
   }
   .sheet.open { display: block; }
-  .sheet-head { display: flex; align-items: center; gap: 8px; font-size: 13.5px; padding-bottom: 8px;
+  .sheet-head { display: flex; align-items: center; gap: 8px; font-size: 13px; padding-bottom: 8px;
                 border-bottom: 1px solid var(--border); }
   .sheet-head .cnt { color: var(--dim); font-size: 12px; }
   .sheet-head button { background: none; border: 1px solid var(--border); border-radius: 6px;
@@ -96,10 +124,10 @@
   /* ---------- 设置面板 ---------- */
   .settings { width: 280px; }
   .settings .row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 14px; }
-  .settings .row small { display: block; color: var(--dim); font-size: 11.5px; margin-top: 4px; }
+  .settings .row small { display: block; color: var(--dim); font-size: 11px; margin-top: 4px; }
   .setinput {
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 4px 8px; font-size: 12.5px;
+    border-radius: 6px; padding: 4px 8px; font-size: 12px;
   }
   .setinput.txt { width: 150px; }
   .settings select { font-size: 13px; }
@@ -114,10 +142,10 @@
   .mrow .mscore { color: var(--dim); font-size: 11px; }
   .mrow.ledger .t { color: var(--dim); }
   .mrow .pin, .mrow .del { color: var(--dim); border: none; background: none; cursor: pointer; font-size: 12px; }
-  .mrow .del:hover { color: #f85149; }
+  .mrow .del:hover { color: var(--danger); }
   .mrow .pin:hover, .mrow .pin.on { color: var(--accent); }
-  .memempty { color: var(--dim); font-size: 12.5px; padding: 16px 0; text-align: center; }
-  .bdetails { margin: 8px 0; font-size: 12.5px; color: var(--dim); }
+  .memempty { color: var(--dim); font-size: 12px; padding: 16px 0; text-align: center; }
+  .bdetails { margin: 8px 0; font-size: 12px; color: var(--dim); }
   .bdetails summary { cursor: pointer; }
   .bview { white-space: pre-wrap; padding: 8px 0 4px 12px; border-left: 2px solid var(--border); margin-top: 8px; }
 
@@ -145,13 +173,13 @@
   .selbtn {
     position: fixed; z-index: 85; display: none;
     background: var(--panel); border: 1px solid var(--accent); border-radius: 8px;
-    padding: 4px 12px; font-size: 12.5px; color: var(--text); cursor: pointer;
-    box-shadow: 0 4px 16px rgba(0,0,0,.5);
+    padding: 4px 12px; font-size: 12px; color: var(--text); cursor: pointer;
+    box-shadow: var(--shadow-pop);
   }
   .drow { display: flex; gap: 8px; align-items: center; padding: 8px 0; font-size: 13px;
           border-bottom: 1px solid var(--border); }
   .drow:last-of-type { border-bottom: none; }
-  .drow small { display: block; color: var(--dim); font-size: 11.5px; }
+  .drow small { display: block; color: var(--dim); font-size: 11px; }
   .gencards {
     width: 100%; margin-top: 8px; background: var(--bg); color: var(--text);
     border: 1px solid var(--accent); border-radius: 8px; padding: 8px; font-size: 13px; cursor: pointer;
@@ -164,29 +192,31 @@
   }
   .kcard:hover { border-color: var(--accent); }
   .kcard .front b { font-size: 14px; }
-  .kcard .front small { color: var(--dim); font-size: 11.5px; display: block; margin-top: 4px; }
+  .kcard .front small { color: var(--dim); font-size: 11px; display: block; margin-top: 4px; }
   .kcard .back { display: none; }
   .kcard.flip .front { display: none; }
   .kcard.flip .back { display: block; }
   .kcard .back .f { margin: 4px 0; }
-  .kcard .back .lbl { color: var(--accent); font-size: 11.5px; margin-right: 8px; }
+  .kcard .back .lbl { color: var(--accent); font-size: 11px; margin-right: 8px; }
   .kcard .del { float: right; color: var(--dim); border: none; background: none; cursor: pointer; font-size: 12px; }
-  .kcard .del:hover { color: #f85149; }
+  .kcard .del:hover { color: var(--danger); }
   .toast {
     position: fixed; top: 56px; right: 16px; z-index: 80; max-width: 320px;
-    background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
-    padding: 8px 16px; font-size: 13px; box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 16px; font-size: 13px; box-shadow: var(--shadow-pop);
     display: none;
   }
+  .toast.err { border-color: var(--danger); }
+  .toast.ok { border-color: var(--ok); }
   /* PDF 解析等待条：纯 CSS 旋转，无 gif 依赖 */
   .pdfwait {
     position: fixed; inset: 0; z-index: 90; display: none;
-    align-items: center; justify-content: center; background: rgba(0,0,0,.45);
+    align-items: center; justify-content: center; background: var(--scrim);
   }
   .pdfwait .card {
     display: flex; align-items: center; gap: 16px;
     background: var(--panel); border: 1px solid var(--accent); border-radius: 12px;
-    padding: 20px 28px; font-size: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.6);
+    padding: 20px 28px; font-size: 14px; box-shadow: var(--shadow-modal);
   }
   .pdfwait .spin {
     width: 24px; height: 24px; border-radius: 50%; flex: none;
@@ -198,7 +228,7 @@
   .guide {
     position: fixed; top: 68px; left: 50%; transform: translateX(-50%); z-index: 85;
     background: var(--panel); border: 1px solid var(--accent); border-radius: 12px;
-    padding: 12px 24px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.5);
+    padding: 12px 24px; font-size: 14px; box-shadow: var(--shadow-pop);
     text-align: center; max-width: 520px;
   }
   .guide button {
@@ -212,7 +242,7 @@
     position: fixed; top: 56px; left: 50%; transform: translateX(-50%); z-index: 70;
     background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
     padding: 8px 20px; font-size: 13px; display: none;
-    box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    box-shadow: var(--shadow-pop);
     animation: pptbreathe 2s ease-in-out infinite;
   }
   @keyframes pptbreathe { 50% { opacity: .55; } }
@@ -226,7 +256,7 @@
   }
   .welcome .wlogo { font-size: 56px; filter: saturate(.9); }
   .welcome .wtitle { font-size: 26px; font-weight: 600; color: var(--text); letter-spacing: .5px; }
-  .welcome .whint { font-size: 13.5px; color: var(--dim); }
+  .welcome .whint { font-size: 13px; color: var(--dim); }
   .welcome button {
     pointer-events: auto; margin-top: 16px; background: var(--accent); color: #fff;
     border: none; border-radius: 10px; padding: 8px 24px; font-size: 14px; cursor: pointer;
@@ -238,7 +268,7 @@
   /* 拖放上传的全页提示蒙层 */
   body.dragging::after {
     content: "松开以上传 图片 / PDF"; position: fixed; inset: 0; z-index: 90;
-    display: flex; align-items: center; justify-content: center; font-size: 16px; color: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 15px; color: var(--accent);
     background: rgba(13,17,23,.75); border: 2px dashed var(--accent); border-radius: 12px;
     pointer-events: none;
   }
@@ -251,24 +281,25 @@
   .bubble { max-width: calc(100% - 44px); word-break: break-word; flex: 1; }
   .msg.user .bubble .content { background: var(--user-bubble); padding: 12px 16px; border-radius: 12px; }
   .content img.thumb { max-width: 220px; border-radius: 8px; margin-bottom: 8px; display: block; }
-  .msg .pick { position: absolute; top: -4px; left: -24px; opacity: .25; transition: opacity .1s; accent-color: var(--accent); cursor: pointer; }
+  .msg .pick { position: absolute; top: -4px; left: -24px; opacity: .25; transition: opacity var(--dur-fast) var(--ease); accent-color: var(--accent); cursor: pointer; }
   .msg:hover .pick { opacity: 1; }
 
   .think-block { margin-bottom: 8px; }
   .think-block summary { color: var(--think); font-size: 13px; cursor: pointer; user-select: none; list-style: none; }
-  .think-block summary::before { content: "💭 "; }
+  .think-block summary::before { content: "▸"; display: inline-block; margin-right: 6px; font-size: 11px; transition: transform var(--dur-base) var(--ease); }
+  .think-block[open] summary::before { transform: rotate(90deg); }
   .think-block .tcontent {
     color: var(--think); font-size: 13px; border-left: 2px solid var(--border);
     padding-left: 12px; margin-top: 8px; white-space: pre-wrap;
   }
   .content pre {
-    background: #0a0d12; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--pre-bg); border: 1px solid var(--border); border-radius: 8px;
     padding: 12px; overflow-x: auto; font-family: var(--mono); font-size: 13px; margin: 8px 0;
   }
-  .content code { font-family: var(--mono); font-size: 13.5px; }
-  .content :not(pre) > code { background: #21262d; padding: 4px 8px; border-radius: 4px; }
+  .content code { font-family: var(--mono); font-size: 13px; }
+  .content :not(pre) > code { background: var(--code-bg); padding: 4px 8px; border-radius: 4px; }
   .content p { margin: 8px 0; } .content ul { margin: 8px 0 8px 24px; }
-  .content table { border-collapse: collapse; margin: 8px 0; font-size: 13.5px;
+  .content table { border-collapse: collapse; margin: 8px 0; font-size: 13px;
                    display: block; overflow-x: auto; }
   .content .katex-display { overflow-x: auto; overflow-y: hidden; margin: 12px 0; }
   /* 离屏导出容器（海报/长图）：复用 .content 渲染但覆盖为浅色主题 */
@@ -280,13 +311,13 @@
   .pngexport .content h3, .pngexport .content h4 { color:#1a2f5e; }
   .pngexport .content .think-block { display:none; }
   .content th, .content td { border: 1px solid var(--border); padding: 4px 12px; text-align: left; }
-  .content th { background: #21262d; }
+  .content th { background: var(--code-bg); }
 
   .metrics { margin-top: 8px; font-size: 12px; color: var(--dim); font-family: var(--mono);
              display: flex; flex-wrap: wrap; gap: 4px 16px; }
   .metrics b { color: var(--accent); font-weight: 600; }
   /* 消息操作行 + 代码块复制（借鉴 deepseek-harness turn-tail actions） */
-  .acts { display: flex; gap: 4px; margin-top: 8px; opacity: 0; transition: opacity .12s; }
+  .acts { display: flex; gap: 4px; margin-top: 8px; opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
   .msg:hover .acts, .acts.actson { opacity: 1; }   /* actson：带文献回复的操作栏常驻（PPT 入口不可见问题，issue #1） */
   .acts button {
     background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--dim);
@@ -297,33 +328,33 @@
   .codewrap .ccopy {
     position: absolute; right: 8px; top: 8px; z-index: 2; opacity: 0;
     background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
-    color: var(--dim); font-size: 11.5px; padding: 4px 8px; cursor: pointer;
+    color: var(--dim); font-size: 11px; padding: 4px 8px; cursor: pointer;
   }
   .codewrap:hover .ccopy { opacity: 1; }
   .codewrap .ccopy:hover { color: var(--text); }
-  .attach-chip { font-size: 12.5px; color: var(--dim); border: 1px dashed var(--border);
+  .attach-chip { font-size: 12px; color: var(--dim); border: 1px dashed var(--border);
     border-radius: 8px; padding: 4px 12px; display: inline-flex; align-items: center; gap: 8px; }
   .attach-chip button { border: none; background: none; color: var(--dim); cursor: pointer; font-size: 12px; padding: 0; }
-  .attach-chip button:hover { color: #f85149; }
-  .pend-chip { display: inline-flex; align-items: center; gap: 8px; background: #21262d;
-    border-radius: 8px; padding: 8px 12px; font-size: 12.5px; }
+  .attach-chip button:hover { color: var(--danger); }
+  .pend-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--code-bg);
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; }
   .pend-chip button { border: none; background: none; color: var(--dim); cursor: pointer; font-size: 12px; padding: 0; position: static; }
-  .pend-chip button:hover { color: #f85149; }
+  .pend-chip button:hover { color: var(--danger); }
   .filehead { margin: 12px 0 4px; font-size: 12px; color: var(--dim); }
   .filehead button { float: right; font-size: 12px; padding: 4px 12px; }
-  .warn-text { color: #d29922; }
+  .warn-text { color: var(--warn); }
   .typing::after { content: "▍"; animation: blink 1s step-start infinite; color: var(--accent); }
   @keyframes blink { 50% { opacity: 0; } }
   .syscard {
     border: 1px dashed var(--border); border-radius: 10px; padding: 8px 12px;
-    font-size: 13px; color: var(--dim); margin-bottom: 16px; background: rgba(255,255,255,.02);
+    font-size: 13px; color: var(--dim); margin-bottom: 16px; background: var(--tint);
     white-space: pre-wrap;
   }
 
   footer { border-top: 1px solid var(--border); background: var(--panel); padding: 16px 20px 20px; }
   .inputbox {
     max-width: 820px; margin: 0 auto; border: 1px solid var(--border); border-radius: 14px;
-    background: var(--bg); padding: 12px; transition: border-color .15s;
+    background: var(--bg); padding: 12px; transition: border-color var(--dur-base) var(--ease);
     position: relative;
   }
   .inputbox:focus-within { border-color: var(--accent); }
@@ -331,7 +362,7 @@
   .slashmenu {
     display: none; position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 40;
     background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 8px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    padding: 8px; box-shadow: var(--shadow-menu);
   }
   .slashmenu.open { display: block; }
   .slashmenu .sopt { padding: 8px 12px; border-radius: 8px; cursor: pointer; display: flex; gap: 12px; align-items: baseline; }
@@ -343,7 +374,7 @@
   .imgs img { height: 56px; border-radius: 8px; }
   .imgs button {
     position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; border-radius: 50%;
-    border: none; background: #f85149; color: #fff; font-size: 11px; line-height: 1; cursor: pointer;
+    border: none; background: var(--danger); color: #fff; font-size: 11px; line-height: 1; cursor: pointer;
   }
   .ptext { width: 100%; background: none; border: none; outline: none; color: var(--text);
        font: inherit; resize: none; max-height: 180px; }
@@ -351,7 +382,7 @@
   .inputbar .hint { font-size: 12px; color: var(--dim); }
   .mode {
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 4px 8px; font-size: 12.5px;
+    border-radius: 6px; padding: 4px 8px; font-size: 12px;
   }
   .icon-btn { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 15px; padding: 4px; }
   .icon-btn:hover { color: var(--text); }
@@ -359,8 +390,10 @@
     background: var(--accent); color: #fff; border: none; border-radius: 8px;
     padding: 8px 20px; font-size: 14px; cursor: pointer;
   }
+  .ibtn:hover { filter: brightness(1.1); }
+  .ibtn:active { transform: scale(.97); }
   .ibtn.send { margin-left: auto; }
-  .ibtn.stop { background: #f85149; display: none; }
+  .ibtn.stop { background: var(--danger); display: none; }
 
   .ctxbar { max-width: 820px; margin: 0 auto 8px; font-size: 12px; color: var(--dim); font-family: var(--mono); }
   /* 文献快捷追问 chips：读一次全文（缓存），此后每问都是短输出快速任务 */
@@ -368,46 +401,46 @@
   /* FigureYa 图型推荐：纯前端关键词匹配，零 token；点击直达对应模块页 */
   .fighint { max-width: 820px; margin: 0 auto 8px; display: none; align-items: center; gap: 8px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-    padding: 4px 12px; font-size: 12.5px; color: var(--dim); }
+    padding: 4px 12px; font-size: 12px; color: var(--dim); }
   .fighint a { color: var(--accent); text-decoration: none; }
   .fighint a:hover { text-decoration: underline; }
   .qchip {
     background: var(--bg); border: 1px solid var(--border); border-radius: 999px; color: var(--dim);
-    font-size: 12.5px; padding: 4px 12px; cursor: pointer;
+    font-size: 12px; padding: 4px 12px; cursor: pointer;
   }
   .qchip:hover { color: var(--text); border-color: var(--accent); }
   /* 解读结尾"建议追问"条目：点击填入输入框 */
   .askq { color: var(--accent); text-decoration: none; border-bottom: 1px dashed var(--accent); cursor: pointer; }
-  .askq:hover { color: #7fb0ff; border-bottom-style: solid; }
+  .askq:hover { color: var(--accent-hi); border-bottom-style: solid; }
   /* 流式期间的大纲预览：吸顶显示已出现的标题，生成完毕后隐藏 */
   .outline { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; gap: 4px;
     padding: 4px 0 8px; margin-bottom: 4px; background: var(--bg); border-bottom: 1px dashed var(--border); }
-  .outline span { font-size: 11.5px; color: var(--dim); border: 1px solid var(--border);
+  .outline span { font-size: 11px; color: var(--dim); border: 1px solid var(--border);
     border-radius: 999px; padding: 1px 8px; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
   .ctxtrack { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
   .ctxfill { height: 100%; width: 0%; background: var(--accent); border-radius: 2px; transition: width .3s; }
-  .ctxfill.warn { background: #d29922; } .ctxfill.danger { background: #f85149; }
+  .ctxfill.warn { background: var(--warn); } .ctxfill.danger { background: var(--danger); }
 
 </style>
 </head>
 <body>
 <div id="overlay" class="overlay"></div>
 <div id="sidebar" class="sidebar">
-  <div class="head"><button id="newchat" class="newchat">＋ 开启新对话</button><input id="search" class="search" placeholder="🔍 搜索对话…"></div>
+  <div class="head"><button id="newchat" class="newchat">＋ 开启新对话</button><input id="search" class="search" placeholder="搜索对话…"></div>
   <div id="convlist" class="convlist"></div>
   <div id="sidever" class="sidever"></div>
 </div>
 
 <header>
-  <button class="hbtn" id="sidebtn" title="对话列表">☰</button>
+  <button class="hbtn" id="sidebtn" title="对话列表"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
   <h1 id="h1">Qwen3.8-27B</h1>
-  <button class="hbtn" id="homebtn" title="返回项目仪表盘" hidden>🏠</button>
+  <button class="hbtn" id="homebtn" title="返回项目仪表盘" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></button>
   <span class="status"><span class="dot off" id="dot"></span><span id="statustext">连接中…</span></span>
   <span class="spacer"></span>
-  <button class="hbtn" id="writebtn" title="写作台：分章节写作、版本快照（当前项目）">✍️</button>
-  <button class="hbtn" id="projbtn" title="项目：笔记与资料">🗂</button>
-  <button class="hbtn" id="membtn" title="长期记忆">🧠</button>
-  <button class="hbtn" id="setbtn" title="设置">⚙️</button>
+  <button class="hbtn" id="writebtn" title="写作台：分章节写作、版本快照（当前项目）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+  <button class="hbtn" id="projbtn" title="项目：笔记与资料"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2a2 2 0 0 0-1.67-.9H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></button>
+  <button class="hbtn" id="membtn" title="长期记忆"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg></button>
+  <button class="hbtn" id="setbtn" title="设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg></button>
   <div id="settings" class="sheet settings">
     <div class="row">
       <span>推理深度<small id="effortnote">深度推理模式下的思考量</small></span>
@@ -809,6 +842,7 @@ function renderMemory(){
 function toast(text, ms){
   const t = $("#toast");
   t.textContent = text; t.style.display = "block";
+  t.className = "toast" + (/失败|错误|无法|请先/.test(text) ? " err" : /完成|成功|已/.test(text) ? " ok" : "");
   clearTimeout(toast._t);
   toast._t = setTimeout(() => t.style.display = "none", ms || 2600);
 }
@@ -1683,7 +1717,7 @@ function updateArchBtn(){
   b.title = archOK ? "自动存档：已开启（LocalLLMServer:8081 → ~/Qwen38/chat_history）"
     : usingDeep() ? "自动存档：未连接（可选功能，需 macOS 的 LocalLLMServer.app；对话不受影响，浏览器内记录仍保留）"
     : "自动存档：未连接，点击重试（需启动 LocalLLMServer.app）";
-  b.style.color = archOK ? "#3fb950" : "";
+  b.style.color = archOK ? "var(--ok)" : "";
 }
 async function connectArch(){
   try {
