@@ -13,13 +13,18 @@ import SQLite3
 // Swift 的 SQLite3 模块不暴露 SQLITE_TRANSIENT 宏，等价定义
 let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-// 应用根目录：老安装沿用 ~/Qwen38，新机器用 ~/local-llm-station（自动创建）——路径可移植
+// 应用根目录：取第一个真正含页面（dashboard.html）的候选——老安装 ~/Qwen38、
+// 新机器 ~/local-llm-station、开发构建时 app 就在仓库里（bundle 同级）；全都没有则新建。
+// 只判目录存在会误指向搬家后残留的旧目录（页面已随仓库移走），菜单打开不存在的页面静默失败
 enum AppRoot {
     static let path: String = {
         let fm = FileManager.default
-        let legacy = NSHomeDirectory() + "/Qwen38"
-        if fm.fileExists(atPath: legacy) { return legacy }
-        let neu = NSHomeDirectory() + "/local-llm-station"
+        let home = NSHomeDirectory()
+        let bundleDir = Bundle.main.bundleURL.deletingLastPathComponent().path
+        for dir in [home + "/Qwen38", home + "/local-llm-station", bundleDir] {
+            if fm.fileExists(atPath: dir + "/dashboard.html") { return dir }
+        }
+        let neu = home + "/local-llm-station"
         try? fm.createDirectory(atPath: neu, withIntermediateDirectories: true)
         return neu
     }()
