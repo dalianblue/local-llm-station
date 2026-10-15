@@ -132,13 +132,47 @@ All file operations are performed by the local host process; the browser has zer
 
 ## Quick Start
 
-**One-click install** (auto-installs Homebrew, clones sources to `~/Qwen38`, downloads the model and KaTeX, builds and launches; in China run `export HF_ENDPOINT=https://hf-mirror.com` first):
+Three ways to install — identical results. **Option 2 is recommended for most people**: paste the instruction block below into a terminal AI agent (Claude Code, Tencent WorkBuddy, etc.) and let it run everything for you.
+
+**Option 1: One-click script** (auto-installs Homebrew, clones sources to `~/Qwen38`, downloads the model and KaTeX, builds and launches; in China run `export HF_ENDPOINT=https://hf-mirror.com` first):
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dalianblue/local-llm-station/main/install.sh)
 ```
 
-Less than 24GB RAM or skip the model: run with `SKIP_MODEL=1`. **The one-liner installs the oMLX route** (Homebrew + oMLX + uv, ModelScope model downloads, MTP drafter config, builds and launches LocalLLMServer-oMLX.app). Equivalent manual steps:
+Less than 24GB RAM or skip the model: run with `SKIP_MODEL=1`.
+
+**Option 2: Let an AI agent deploy it (recommended)** — copy the whole block below into your agent:
+
+```text
+Deploy local-llm-station (a local-LLM research workstation, oMLX route) on this Mac.
+
+Pre-checks (verify before proceeding; stop and report if any fails):
+- Apple Silicon: uname -m returns arm64
+- RAM >= 24GB (sysctl hw.memsize); if less, propose a smaller model and ask me first
+- Free disk >= 20GB (df -h ~)
+
+Steps (run one by one; on failure stop and report, do not switch routes on your own):
+1. Clone into ~/Qwen38: git clone https://github.com/dalianblue/local-llm-station.git ~/Qwen38
+   (if the directory already exists, git pull instead — never overwrite)
+2. Dependencies: make sure Homebrew exists (install if missing), then
+   brew tap jundot/omlx https://github.com/jundot/omlx && brew install jundot/omlx/omlx
+3. Download the models (~16GB total; ask me for confirmation before starting):
+   mkdir -p ~/.omlx/models/mlx-community
+   uvx modelscope download --model mlx-community/Qwen3.8-27B-nvfp4 --local_dir ~/.omlx/models/mlx-community/Qwen3.8-27B-nvfp4
+   uvx modelscope download --model mlx-community/Qwen3.8-27B-MTP-nvfp4 --local_dir ~/.omlx/models/mlx-community/Qwen3.8-27B-MTP-nvfp4
+4. Optional (KaTeX, 2.9MB):
+   mkdir -p ~/Qwen38/katex && curl -sL https://registry.npmjs.org/katex/-/katex-0.16.11.tgz -o /tmp/katex.tgz \
+     && tar xzf /tmp/katex.tgz -C ~/Qwen38/katex --strip-components=2 package/dist
+5. Build: cd ~/Qwen38 && ./build_omlx.sh && open LocalLLMServer-oMLX.app
+6. Verify and report:
+   - curl -s http://127.0.0.1:8081/health should return "ok"
+   - The app menu item "🏠 My Desktop" should open the dashboard page
+   - If I want the local model: after starting the service in the app,
+     curl -s http://127.0.0.1:8000/v1/models should list the model
+```
+
+**Option 3: Manual steps** (equivalent to the agent block above):
 
 ```bash
 # 1. Install oMLX and download the models (ModelScope; main 15.7GB + MTP drafter 267MB)
