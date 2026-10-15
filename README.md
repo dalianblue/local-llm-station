@@ -29,7 +29,7 @@
 
 ## 快速开始
 
-三种装法任选，成品完全相同。**多数人推荐方式二**：把指令块整段复制给终端里的 AI Agent（Claude Code 等），它替你跑完全部步骤。
+三种装法任选，成品完全相同。**多数人推荐方式二**：把指令块整段复制给终端里的 AI Agent（腾讯 WorkBuddy 等），它替你跑完全部步骤。
 
 **方式一：一键脚本**
 
@@ -41,7 +41,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/dalianblue/local-llm-station
 
 **方式二：让 AI Agent 部署（推荐）**
 
-把下面整段复制进 Claude Code（或其他能操作终端的 Agent）发送即可：
+把下面整段复制进腾讯 WorkBuddy（或其他能操作终端的 Agent）发送即可：
 
 ```text
 请在我的 Mac 上部署 local-llm-station（本地 LLM 科研工作台，oMLX 路线）。
