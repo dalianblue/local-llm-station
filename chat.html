@@ -744,12 +744,33 @@ try {
   memory = JSON.parse(localStorage.getItem("qwen_memory") || "[]")
     .map((m, i) => m && typeof m === "object" ? {   // 旧格式 {text,ts} 归一化补 id/score/pinned
       id: m.id ?? -(i + 1), text: String(m.text || ""), ts: m.ts || Date.now(),
-      score: m.score ?? 3, pinned: m.pinned ? 1 : 0
+      score: m.score ?? 3, pinned: m.pinned ? 1 : 0,
+      type: m.type || "pref", src: m.src || ""   // 1016: 类别(衰减档位)+依据链
     } : null).filter(Boolean);
 } catch {}
 try { ledger = JSON.parse(localStorage.getItem("qwen_ledger") || "null"); } catch {}
 
 const MEM_CAP = 200;   // 上限+裁剪：超限删最低分最旧非置顶条
+// ---- 1016记忆升级：时间衰减 + 检索式相关性 ----
+// 半衰期按类别：pref偏好90天 / proj项目30天 / event事件14天（pinned豁免）
+const MEM_HALF_LIFE = {pref: 90, proj: 30, event: 14};
+function memEffScore(m, now){
+  if (m.pinned) return m.score * 10;            // 置顶=常青+检索加权
+  const age = (now - (m.ts || now)) / 86400e3;
+  const hl = MEM_HALF_LIFE[m.type] || 30;
+  return (m.score || 3) * Math.pow(0.5, age / hl);
+}
+// 2-gram重合：中文无分词依赖的廉价相关性（当前输入 vs 记忆文本）
+function memRelScore(query, text){
+  if (!query || query.length < 2) return 0;
+  const q = query.replace(/\s+/g, ""), t = text;
+  let hit = 0, total = 0;
+  for (let i = 0; i < q.length - 1; i++){
+    total++;
+    if (t.includes(q.slice(i, i + 2))) hit++;
+  }
+  return total ? hit / total : 0;
+}
 function mirrorMem(){
   try {
     localStorage.setItem("qwen_memory", JSON.stringify(memory));
@@ -772,8 +793,10 @@ async function memMutate(action, extra = {}){
   if (action === "add"){
     const text = (extra.text || "").trim();
     const score = Math.min(Math.max(extra.score ?? 3, 1), 5);
+    const type = ["pref","proj","event"].includes(extra.type) ? extra.type : "pref";
+    const src = (extra.src || "").slice(0, 30);
     if (text && !memory.some(x => x.text === text)){
-      memory.push({id: -Date.now(), text, ts: Date.now(), score, pinned: 0});
+      memory.push({id: -Date.now(), text, ts: Date.now(), score, pinned: 0, type, src});
       changed = true;
     }
   } else if (action === "del"){
@@ -837,7 +860,8 @@ function renderMemory(){
   for (const m of [...memory].sort((a, b) => (b.pinned - a.pinned) || (b.score - a.score) || (b.ts - a.ts))){
     const d = document.createElement("div");
     d.className = "mrow";
-    d.innerHTML = `<span class="t">${esc(m.text)} <small class="mscore">${m.score ?? 3}</small></span>` +
+    d.innerHTML = `<span class="t">${esc(m.text)} <small class="mscore">${m.score ?? 3}</small>` +
+      (m.src ? ` <small class="mscore" title="依据：${esc(m.src)}（${m.type || "pref"}）">溯源</small>` : "") + `</span>` +
       `<button class="pin${m.pinned ? " on" : ""}" title="${m.pinned ? "取消置顶" : "置顶（恒入账本）"}">★</button>` +
       `<button class="del" title="删除">✕</button>`;
     d.querySelector(".pin").onclick = () => memMutate("pin", {id: m.id, on: !m.pinned});
@@ -1470,7 +1494,7 @@ async function extractMemory(){
   const known = memory.filter(m => m.pinned || m.score >= 4).map(m => "- " + m.text).join("\n");
   const sys = MEM_CRITERIA + "\n" +
     (known ? "已有记忆（不要重复）：\n" + known + "\n" : "") +
-    "只输出新增记忆的 JSON 数组 [{\"text\":\"一句话（中文）\",\"score\":1到5}]，score：5=核心长期事实，4=稳定背景，3=一般偏好。没有新信息则输出 []。不要输出其他内容。";
+    "只输出新增记忆的 JSON 数组 [{\"text\":\"一句话（中文）\",\"score\":1到5,\"type\":\"pref|proj|event\"}]. type：pref=长期偏好/背景（半衰期90天）、proj=项目或病情等阶段事实（30天）、event=一次性事件（14天）。另附 \"src\":\"用户原话中最关键的依据片段（≤30字）\" 以便溯源。score：5=核心长期事实，4=稳定背景，3=一般偏好。没有新信息则输出 []。不要输出其他内容。";
   try {
     const r = await apiPost({
         messages: [
@@ -1489,7 +1513,9 @@ async function extractMemory(){
     for (const it of items){
       const text = (typeof it === "string" ? it : it?.text || "").trim();
       const score = typeof it === "object" && it?.score ? Math.min(Math.max(it.score, 1), 5) : 3;
-      if (text && score >= 3 && await memMutate("add", {text, score})) added++;
+      const type = (typeof it === "object" && ["pref","proj","event"].includes(it.type)) ? it.type : "pref";
+      const src = (typeof it === "object" && it?.src || "").slice(0, 30);
+      if (text && score >= 3 && await memMutate("add", {text, score, type, src})) added++;
     }
     if (added) toast("已记住 " + added + " 条新记忆");
   } catch {}
@@ -2729,10 +2755,13 @@ function buildHistory(){
   const h = [];
   const sys = [];
   sys.push(BOUNDARY_RULES);   // 自动注入，无开关：修改走 BOUNDARY_RULES 常量
-  // 账本注入：画像摘要 + 置顶原文 + top-8 高分原文，token 恒定不随明细膨胀
+  // 账本注入：画像摘要 + 置顶原文 + 相关8（1016：检索式——2-gram重合×衰减有效分，替代纯热度top8）
   const pins = memory.filter(m => m.pinned);
+  const curQ = [...messages].reverse().find(m => m.role === "user" && m.text)?.text || "";
+  const now = Date.now();
   const top8 = [...memory].filter(m => !m.pinned)
-    .sort((a, b) => (b.score - a.score) || (b.ts - a.ts)).slice(0, 8);
+    .map(m => ({m, eff: memEffScore(m, now) * (1 + 2 * memRelScore(curQ, m.text))}))
+    .sort((a, b) => b.eff - a.eff).slice(0, 8).map(x => x.m);
   const memParts = [];
   if (ledger?.summary) memParts.push("画像：" + ledger.summary);
   if (pins.length) memParts.push("置顶：\n" + pins.map(m => "- " + m.text).join("\n"));
