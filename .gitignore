@@ -33,3 +33,6 @@ pdf_corpus/
 
 # oMLX 版编译产物
 LocalLLMServer-oMLX.app/
+
+# 大赛申报书（不对外）
+docs/zju-contest-申报书.*
