@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0d1117">
 <title>📚 知识工作台 · 项目仪表盘</title>
 <style>
   /* 与 chat.html 同一套深色基调 */
@@ -168,6 +169,12 @@
     color: var(--text); font-size: 13px; padding: 0 12px; outline: none; cursor: pointer;
   }
   .searchhint { font-size: 12px; color: var(--dim); align-self: center; white-space: nowrap; }
+  @media (max-width: 640px) {
+    .searchhint { display: none; } /* 窄屏隐藏防挤出(1016评审#1) */
+    .searchbox select { max-width: 96px; }
+    .searchinput { min-width: 0; } /* 长placeholder不撑破flex(1016评审#1) */
+    body { padding: 20px 12px 48px; }
+  }
   .searchresults { margin-bottom: 28px; }
   .hit {
     background: var(--panel); border: 1px solid var(--border); border-radius: 10px;

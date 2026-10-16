@@ -12,9 +12,12 @@
   1. ~~`:focus-visible` 全局焦点环~~ ✅ 四页 `outline: 2px solid var(--accent)`，鼠标点击不显环
   2. ~~`prefers-reduced-motion` 减弱动效支持~~ ✅ 四页全局降级
   3. ~~纯 hover 操作触屏不可达~~ ✅ `@media (hover: none)` 下 .acts/.cardacts/.entrybar/.del/.ccopy/.tab .x 常显
-  4. emoji 全量迁移 SVG sprite：chat 的 MODE_LABEL（💭/🎯/💬）、slash 菜单、模式菜单等 JS 模板内 emoji；dashboard 的 ✍️/🧭 项目名前缀是**类型标记（JS startsWith 分流依据，不能直接删）**，需先换成元数据字段再清 UI emoji
+  4. ~~editor 头部按钮 emoji→SVG~~ ✅ 1016评审整改：homebtn/chatbtn/verbtn/setbtn 换 Lucide 内联 SVG（与 chat 同款 16×16）
   5. ~~字号归档 + 动效参数归一~~ ✅ 字号全整数阶梯 11/12/13/14/15/20/22；`--dur-fast/.12s`、`--dur-base/.18s`、`--ease: cubic-bezier(.2,0,0,1)` 全量替换
   6. ~~toast 语义色；UI 控件 line-height 分离~~ ✅ toast 按文案关键词自动 err/ok 着色（默认中性边框）；button/input/select line-height 1.5
+  7. ~~手机端横向溢出~~ ✅ 1016评审整改：chat 窄屏隐状态文字、editor 隐状态文字+缩 projname+云按钮缩短、dashboard 隐 searchhint+select 收窄+input min-width:0（长 placeholder 撑破 flex 是根因）——390px 四页零溢出实测
+  8. ~~newchat 缺 viewport；四页缺 theme-color~~ ✅ 1016评审整改补齐
+  9. emoji 全量迁移 SVG sprite（JS 层待做）：chat 的 MODE_LABEL（💭/🎯/💬）、slash 菜单、模式菜单等 JS 模板内 emoji；dashboard 的 ✍️/🧭 项目名前缀是**类型标记（JS startsWith 分流依据，不能直接删）**，需先换成元数据字段再清 UI emoji
 
 ## 中期（半年）
 

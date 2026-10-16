@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0d1117">
 <title id="pagetitle">Qwen3.8-27B · 本地对话</title>
 <!-- KaTeX 本地公式渲染（~/Qwen38/katex/，离线零 CDN）；缺失时 md() 降级为原样文本 -->
 <link rel="stylesheet" href="katex/katex.min.css">
@@ -49,6 +50,11 @@
     *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
   }
   /* 触屏无 hover：悬停浮现的操作常显可达 */
+  /* 窄屏: 隐藏状态文字(保留状态点), header防溢出(1016评审#1) */
+  @media (max-width: 480px) {
+    header .status #statustext { display: none; }
+    header h1 { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
   @media (hover: none) {
     .acts, .conv .del, .codewrap .ccopy, .msg .pick { opacity: 1; }
   }
