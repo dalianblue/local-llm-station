@@ -250,7 +250,7 @@
     font-size: 12px; padding: 4px 12px; cursor: pointer;
   }
   .statusbar button:hover { color: var(--text); border-color: var(--dim); }
-  .expwrap, .revwrap { position: relative; }
+  .expwrap { position: relative; }
   /* 导出/审稿弹出菜单（statusbar 内，样式比照 dashboard 的 newmenu） */
   .expmenu {
     display: none; position: absolute; bottom: calc(100% + 8px); z-index: 50;
@@ -261,7 +261,7 @@
   .expmenu.anch-l { left: 0; right: auto; }
   .expmenu.open { display: block; }
   .expmenu .nopt { padding: 8px 12px; border-radius: 8px; cursor: pointer; }
-  .expmenu .nopt:hover { background: var(--bg); }
+  .expmenu .nopt:hover, .expmenu .nopt.on { background: var(--bg); }
   .expmenu .nopt b { display: block; font-size: 13px; }
   .expmenu .nopt small { color: var(--dim); font-size: 11px; }
   .snapcount { cursor: pointer; }
@@ -352,6 +352,7 @@
   .inputbox {
     flex: none; margin: 0 12px 12px; border: 1px solid var(--border); border-radius: 12px;
     background: var(--bg); padding: 8px 12px; transition: border-color var(--dur-base) var(--ease);
+    position: relative;   /* cmdmenu 锚点 */
   }
   /* 输入框顶边拖拽把手：上调增高输入框（高度存 editor_layout.inpH） */
   .inpgrip { height: 8px; margin: -8px -12px 4px; cursor: row-resize; position: relative; }
@@ -369,6 +370,7 @@
     padding: 4px 16px; font-size: 13px; cursor: pointer;
   }
   .ibtn:hover { filter: brightness(1.1); }
+  .inputbar .ibtn { display: inline-flex; align-items: center; gap: 6px; }
   .ibtn:active { transform: scale(.97); }
   .ibtn.stop { background: var(--danger); display: none; margin-left: auto; }
   /* 开关按钮类：新开关加 class="togbtn" 即得样式（id 列表是漏样式之源） */
@@ -377,7 +379,6 @@
     font-size: 12px; padding: 4px 8px; cursor: pointer;
   }
   .togbtn.on { color: var(--accent); border-color: var(--accent); }
-  .togbtn.gen { color: var(--accent); }
   /* 选中文字浮动工具条：跟随选区（mouseup 定位，键盘选择按行估算） */
   .selbar {
     position: fixed; z-index: 70; display: flex; align-items: center; gap: 4px;
@@ -636,19 +637,15 @@
     <div id="ctxbar" class="ctxbar"><span id="ctxtext">上下文：读取中…</span><div id="ctxtrack" class="ctxtrack"><div id="ctxfill" class="ctxfill"></div></div></div>
     <div id="inputbox" class="inputbox">
       <div id="inpgrip" class="inpgrip" title="拖动调整输入框高度（双击复位）"></div>
-      <textarea id="p" class="ptext" rows="1" placeholder="问当前章节的问题…（Enter 发送，Shift+Enter 换行；AI 回答可一键插入正文）"></textarea>
+      <textarea id="p" class="ptext" rows="1" placeholder="问当前章节的问题…（/ 呼出命令：初稿/检查/审稿；Enter 发送，Shift+Enter 换行）"></textarea>
       <div id="bar" class="inputbar">
-        <button id="genbtn" class="togbtn gen" title="按本章节大纲生成初稿（依据：附文献/全文草稿/引文键清单）">✨ <span class="lbl">初稿</span></button>
-        <button id="chkbtn" title="跨章节逻辑一致性检查：结果—讨论呼应、术语与数据一致（自动附全文草稿）">🧭 <span class="lbl">检查</span></button>
-        <div id="revwrap" class="revwrap">
-          <button id="revbtn" title="模拟期刊审稿：选择审稿人视角通读全文，输出 Major/Minor 意见供逐条讨论">🕵️ <span class="lbl">审稿</span></button>
-          <div id="revmenu" class="expmenu anch-l"><!-- 审稿视角按学科皮肤渲染（DISC.reviewers） --></div>
-        </div>
         <button id="draftbtn" class="togbtn" title="把全文草稿（所有章节）注入 AI 上下文——可问「讨论是否回应了结果」等跨章节问题">📄 <span class="lbl">全文</span></button>
         <button id="attbtn" class="togbtn" title="选择要附给 AI 的文献全文（来自全局文献库）">📎 <span class="lbl">文献</span></button>
-        <button id="histbtn" class="togbtn" title="把本项目「聊聊文献」里的讨论记录带给论文助手（最近 15 条，截断纪要）">💬 <span class="lbl">聊天记录</span></button>        <button id="stopbtn" class="ibtn stop" title="停止生成">■ <span class="lbl">停止</span></button>
-        <button id="send" class="ibtn">发送</button>
+        <button id="histbtn" class="togbtn" title="把本项目「聊聊文献」里的讨论记录带给论文助手（最近 15 条，截断纪要）">💬 <span class="lbl">聊天记录</span></button>
+        <button id="stopbtn" class="ibtn stop" title="停止生成">■ <span class="lbl">停止</span></button>
+        <button id="send" class="ibtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg><span class="lbl">发送</span></button>
       </div>
+      <div id="cmdmenu" class="expmenu anch-l"><!-- 斜杠命令面板（初稿/检查/审稿，审稿第二级列学科视角） --></div>
     </div>
   </aside>
 </div>
@@ -2661,12 +2658,12 @@ function buildDraftPrompt(){
 
 ${headPart}`;
 }
-$("#genbtn").onclick = () => {
+function runDraft(){
   if (!ED.sections.length) return;
   if (!ED.attachDraft && ED.sections.every(s => !wc(s.md)))
     toast("提示：其他章节均空——先写好其他章节或点「📄 全文」可获得更好的初稿连贯性");
   send(buildDraftPrompt());
-};
+}
 // 自动附全文草稿（🧭 检查与 🕵️ 审稿共用）
 function ensureDraft(){
   if (ED.attachDraft) return;
@@ -2870,7 +2867,7 @@ $("#revinok").onclick = async () => {
     : `📨 已解析 ${items.length} 条审稿意见`);
 };
 // 🧭 跨章节一致性检查：自动附全文草稿，按结果—讨论呼应/一致性问题/术语数据三节输出报告
-$("#chkbtn").onclick = async () => {
+async function runCheck(){
   if (busy) return toast("AI 正在回复，稍候再试");   // send 在 busy 时静默返回，不带守卫会把上一轮回复误存成报告
   if (ED.sections.filter(s => wc(s.md) > 20).length < 2)
     return toast("至少两个章节有内容才能做跨章节检查");
@@ -2881,11 +2878,9 @@ $("#chkbtn").onclick = async () => {
     + "## 跨章节一致性问题\n结论超出结果、方法与结果描述矛盾、章节间论证断裂等。\n"
     + "## 术语与数据一致\n分组名、变量名、缩写、样本量、效应方向在章节间是否一致。");
   saveReport(`检查-${dateTag()}.md`);
-};
+}
 // 🕵️ 模拟审稿：选视角通读全文输出 Major/Minor 意见，落入对话供逐条讨论
 // 审稿视角来自学科皮肤（disciplines/*.js 的 reviewers 数组）
-$("#revmenu").innerHTML = DISC.reviewers.map(r =>
-  `<div class="nopt" data-rev="${r.id}"><b>${r.icon} ${r.name}</b><small>${r.desc}</small></div>`).join("");
 const REVIEWS = Object.fromEntries(DISC.reviewers.map(r => [r.id, r.prompt]));
 const REV_NAMES = Object.fromEntries(DISC.reviewers.map(r => [r.id, r.tag]));
 const dateTag = () => new Date().toLocaleDateString("sv").slice(5).replace("-", "");
@@ -2902,21 +2897,17 @@ async function saveReport(name){
     toast(`报告已保存：${name}（左栏可对照修改）`);
   } catch { toast("报告保存失败（存档服务未连接？）"); }
 }
-$("#revbtn").onclick = e => { e.stopPropagation(); $("#revmenu").classList.toggle("open"); };
-document.addEventListener("click", e => { if (!$("#revwrap").contains(e.target)) $("#revmenu").classList.remove("open"); });
-$("#revmenu").addEventListener("click", async e => {
-  const o = e.target.closest(".nopt"); if (!o) return;
-  $("#revmenu").classList.remove("open");
+async function runReview(id){
   if (busy) return toast("AI 正在回复，稍候再试");
   if (ED.sections.filter(s => wc(s.md) > 20).length < 2)
     return toast("至少两个章节有内容才能模拟审稿");
   ensureDraft();
-  await send(`请以${REVIEWS[o.dataset.rev]}的视角，模拟目标期刊的审稿流程通读全文草稿，输出 Markdown 审稿意见：\n`
+  await send(`请以${REVIEWS[id]}的视角，模拟目标期刊的审稿流程通读全文草稿，输出 Markdown 审稿意见：\n`
     + "## Major（必须解决）\n## Minor（建议修改）\n"
     + "每条注明所在章节与最小修改建议（不重写整段）；真实判断不和稀泥，没有问题的维度明确写「未发现」；"
     + "结尾给出总体评价（接受 / 小修 / 大修 / 拒稿倾向）与理由。");
-  saveReport(`审稿-${REV_NAMES[o.dataset.rev]}-${dateTag()}.md`);
-});
+  saveReport(`审稿-${REV_NAMES[id]}-${dateTag()}.md`);
+}
 // 云端知情同意切换：本地离线时按钮才出现；点击后仍需确认"数据出本机"
 $("#cloudbtn").onclick = () => {
   if (!S.dskey){ $("#settings").classList.add("open"); toast("先在设置里填写 DeepSeek API Key"); return; }
@@ -3406,7 +3397,7 @@ async function send(text){
 }
 async function generate(noThink, noRetry, forceThink){
   busy = true;
-  $("#send").style.display = "none"; $("#stopbtn").style.display = "inline-block";
+  $("#send").style.display = "none"; $("#stopbtn").style.display = "inline-flex";
   const lastUser = [...ED.chat].reverse().find(m => m.role === "user");
   const curMode = S.mode === "auto" ? autoMode(lastUser?.text || "") : S.mode;
   const cfg = MODES[curMode];
@@ -3579,7 +3570,7 @@ async function generate(noThink, noRetry, forceThink){
   }
   busy = false; ctrl = null;
   clearTimeout(prefillTimer);
-  $("#send").style.display = "inline-block"; $("#stopbtn").style.display = "none";
+  $("#send").style.display = "inline-flex"; $("#stopbtn").style.display = "none";
   scrollBottom();
   persistEditor();
   extractMemory();
@@ -3684,13 +3675,64 @@ $("#stopbtn").onclick = () => ctrl?.abort();
 // Safari 怪癖：确认输入法组合的回车时 isComposing 已是 false——加 229 键码与组合结束时间窗双保险
 let composeEndAt = 0;
 input.addEventListener("compositionend", () => composeEndAt = Date.now());
+// ---------- 斜杠命令面板：输入 / 呼出（初稿/检查/审稿；审稿第二级列学科视角） ----------
+const cmdmenu = $("#cmdmenu");
+let cmdItems = [], cmdIdx = 0;
+function renderCmdMenu(){
+  const q = input.value;
+  const list = q.replace(/^\//, "");
+  if (!q.startsWith("/")){ cmdmenu.classList.remove("open"); return; }
+  if (/^审稿/.test(list)){
+    const rest = list.slice(2).trim();
+    cmdItems = DISC.reviewers
+      .filter(r => !rest || (r.name + (r.tag || "") + r.desc).includes(rest))
+      .map(r => ({h: `${r.icon} 审稿 · ${r.name}`, s: r.desc, run: () => runReview(r.id)}));
+  } else {
+    const defs = [
+      {h: "✨ 初稿", s: "按本章大纲生成初稿（附文献/全文草稿/引文键清单）", run: runDraft},
+      {h: "🧭 检查", s: "跨章节逻辑一致性：结果—讨论呼应 · 术语与数据一致（自动附全文）", run: runCheck},
+      {h: "🕵️ 审稿", s: "模拟期刊审稿——选择审稿人视角", run: () => { input.value = "/审稿 "; renderCmdMenu(); input.focus(); }},
+    ];
+    cmdItems = defs.filter(c => !list.trim() || (c.h + c.s).includes(list.trim()));
+  }
+  cmdIdx = 0;
+  if (!cmdItems.length){ cmdmenu.classList.remove("open"); return; }
+  cmdmenu.innerHTML = cmdItems.map((c, i) =>
+    `<div class="nopt${i === cmdIdx ? " on" : ""}" data-i="${i}"><b>${c.h}</b><small>${c.s}</small></div>`).join("");
+  cmdmenu.classList.add("open");
+}
+function execCmd(i){
+  const c = cmdItems[i]; if (!c) return;
+  cmdmenu.classList.remove("open");
+  input.value = ""; input.style.height = "auto"; fitInputH();
+  c.run();
+}
+cmdmenu.addEventListener("mousedown", e => {
+  e.preventDefault();   // 保住 textarea 焦点
+  const el = e.target.closest(".nopt"); if (el) execCmd(+el.dataset.i);
+});
+document.addEventListener("click", e => {
+  if (!cmdmenu.contains(e.target) && e.target !== input) cmdmenu.classList.remove("open");
+});
 input.addEventListener("keydown", e => {
+  if (cmdmenu.classList.contains("open")){
+    if (e.key === "ArrowDown" || e.key === "ArrowUp"){
+      e.preventDefault();
+      cmdIdx = (cmdIdx + (e.key === "ArrowDown" ? 1 : cmdItems.length - 1)) % cmdItems.length;
+      cmdmenu.querySelectorAll(".nopt").forEach((el, i) => el.classList.toggle("on", i === cmdIdx));
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229
+        && Date.now() - composeEndAt > 100){ e.preventDefault(); execCmd(cmdIdx); return; }
+    if (e.key === "Escape"){ cmdmenu.classList.remove("open"); return; }
+  }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229
       && Date.now() - composeEndAt > 100){ e.preventDefault(); send(); }
 });
 input.addEventListener("input", () => {
   input.style.height = "auto";
   fitInputH();
+  renderCmdMenu();
 });
 const ta = $("#secmd");
 ta.addEventListener("input", () => {
@@ -3825,6 +3867,8 @@ document.addEventListener("click", e => {
 });
 // 栏折叠与宽度（状态存 localStorage）
 const layout = Object.assign({left: true, right: true, leftW: 250, rightW: 400, outlineH: 300, inpH: 160}, JSON.parse(localStorage.getItem("editor_layout") || "{}"));
+layout.leftW = Math.max(150, Math.min(560, layout.leftW));
+layout.rightW = Math.max(220, Math.min(560, layout.rightW));
 function setInputH(h){
   layout.inpH = h;
   input.style.maxHeight = "";
@@ -3863,7 +3907,7 @@ function bindSplit(el, side){
     const x0 = e.clientX, w0 = side === "left" ? layout.leftW : layout.rightW;
     const move = ev => {
       const d = side === "left" ? ev.clientX - x0 : x0 - ev.clientX;
-      const w = Math.min(560, Math.max(150, Math.round(w0 + d)));
+      const w = Math.min(560, Math.max(side === "left" ? 150 : 220, Math.round(w0 + d)));
       if (side === "left") layout.leftW = w; else layout.rightW = w;
       applyLayout(false);
     };
