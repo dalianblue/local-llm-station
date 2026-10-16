@@ -260,11 +260,14 @@
     padding: 8px 16px; font-size: 13px; box-shadow: var(--shadow-pop); }
   .toast.err { border-color: var(--danger); }
   .toast.ok { border-color: var(--ok); }
-  .verbadge { position: fixed; right: 12px; bottom: 8px; font-size: 11px; color: var(--dim); z-index: 60; }
-  .verbadge a { color: var(--accent); }
+  .verbadge { position: fixed; left: 50%; transform: translateX(-50%); bottom: 8px;
+    font-size: 11px; color: var(--dim); z-index: 60; white-space: nowrap; }
+  .verbadge a { color: var(--dim); text-decoration: none; }
+  .verbadge a:hover { color: var(--accent); }
 </style>
 </head>
 <body>
+<div class="verbadge"><a href="https://github.com/dalianblue/local-llm-station" target="_blank">项目主页</a> · <a href="https://github.com/dalianblue/local-llm-station/issues" target="_blank">提意见</a> · <span id="verinfo"></span></div>
 <div class="wrap">
   <header>
     <h1>📚 知识工作台</h1>
@@ -1288,9 +1291,7 @@ window.addEventListener("focus", loadProjects);
 
 // ---------- 版本标识（git SHA，零手工维护）+ 上游更新提示 ----------
 (async () => {
-  const el = document.createElement("div");
-  el.className = "verbadge";
-  document.body.appendChild(el);
+  const el = $("#verinfo");
   try {
     const v = await (await fetch("http://127.0.0.1:8081/version")).json();
     if (!v.sha){ el.textContent = "源码版（非 git 目录）"; return; }
