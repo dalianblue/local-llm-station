@@ -54,6 +54,8 @@
   @media (max-width: 480px) {
     header .status #statustext { display: none; }
     header h1 { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .inputbar .hint, .icon-btn .lbl { display: none; }   /* 手机输入栏收纳：藏提示语，工具按钮回退纯图标 */
+    .ctxrow .mode { max-width: 120px; }   /* 手机上下文行：模式下拉收缩防挤爆 */
   }
   @media (hover: none) {
     .acts, .conv .del, .codewrap .ccopy, .msg .pick { opacity: 1; }
@@ -241,6 +243,9 @@
     display: block; margin: 8px auto 0; background: var(--accent); color: #fff;
     border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer;
   }
+  .guide .exitbtn { display: inline-block; background: none; border: 1px solid var(--border);
+    color: var(--dim); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+  .guide .exitbtn:hover { color: var(--text); border-color: var(--dim); }
   .guide .hint { margin-top: 8px; font-size: 12px; color: var(--dim); }
 
   /* PPT 长任务常驻状态条：无百分比，阶段文案 + 呼吸动画表示"工作中"，可安心离开 */
@@ -372,7 +377,7 @@
   }
   .slashmenu.open { display: block; }
   .slashmenu .sopt { padding: 8px 12px; border-radius: 8px; cursor: pointer; display: flex; gap: 12px; align-items: baseline; }
-  .slashmenu .sopt:hover { background: var(--bg); }
+  .slashmenu .sopt:hover, .slashmenu .sopt.on { background: var(--bg); }
   .slashmenu .sopt b { flex: none; }
   .slashmenu .sopt small { color: var(--dim); font-size: 12px; }
   .imgs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -390,18 +395,25 @@
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 4px 8px; font-size: 12px;
   }
-  .icon-btn { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 15px; padding: 4px; }
+  .icon-btn { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 15px; padding: 4px;
+       display: inline-flex; align-items: center; gap: 6px; }
+  .icon-btn[hidden] { display: none; }   /* display 基样式会压过 hidden 属性，需守卫 */
   .icon-btn:hover { color: var(--text); }
+  .icon-btn svg { width: 15px; height: 15px; }
   .ibtn {
     background: var(--accent); color: #fff; border: none; border-radius: 8px;
     padding: 8px 20px; font-size: 14px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
   }
+  .ibtn svg { width: 15px; height: 15px; }
   .ibtn:hover { filter: brightness(1.1); }
   .ibtn:active { transform: scale(.97); }
   .ibtn.send { margin-left: auto; }
   .ibtn.stop { background: var(--danger); display: none; }
 
   .ctxbar { max-width: 820px; margin: 0 auto 8px; font-size: 12px; color: var(--dim); font-family: var(--mono); }
+  .ctxrow { display: flex; align-items: center; gap: 8px; }
+  .ctxrow #ctxtext { flex: 1; min-width: 0; }
   /* 文献快捷追问 chips：读一次全文（缓存），此后每问都是短输出快速任务 */
   .qchips { max-width: 820px; margin: 0 auto 8px; display: none; flex-wrap: wrap; gap: 8px; }
   /* FigureYa 图型推荐：纯前端关键词匹配，零 token；点击直达对应模块页 */
@@ -536,6 +548,7 @@
 <div id="refsguide" class="guide" hidden>
   📚 <b>引文校验</b>：把参考文献列表（任意格式）粘贴到下方输入框，按 Enter 开始校验
   <div class="hint">逐条查询 Crossref / OpenAlex 公开学术数据库（需联网，仅外发引文信息）；校验完成后即可正常追问报告</div>
+  <button class="exitbtn" id="refsexit">✕ 不校验了，转普通对话</button>
 </div>
 <div id="pptbar" class="pptbar"></div>
 
@@ -553,7 +566,15 @@
   <div id="fighint" class="fighint"></div>
   <div id="qchips" class="qchips"></div>
   <div id="ctxbar" class="ctxbar">
-    <span id="ctxtext">上下文：读取中…</span>
+    <div class="ctxrow">
+      <span id="ctxtext">上下文：读取中…</span>
+      <select id="mode" class="mode" title="智能：按消息内容自动选择模式；其余为手动覆盖（来自 benchmark 实测结论）">
+        <option value="auto">⚡ 智能</option>
+        <option value="think">💭 深度推理</option>
+        <option value="exact">🎯 精确 · 代码/翻译</option>
+        <option value="chat">💬 日常 · 写作</option>
+      </select>
+    </div>
     <div id="ctxtrack" class="ctxtrack"><div id="ctxfill" class="ctxfill"></div></div>
   </div>
   <div id="inputbox" class="inputbox">
@@ -563,19 +584,13 @@
     <div id="bar" class="inputbar">
       <input type="file" id="file" accept="image/*" multiple hidden>
       <input type="file" id="pdffile" accept="application/pdf" multiple hidden>
-      <button class="icon-btn" id="attach" title="上传图片">📎 图片</button>
-      <button class="icon-btn" id="attachpdf" title="上传 PDF 文献（本地提取全文）">📑 文献</button>
-      <button class="icon-btn" id="shot" title="导出勾选消息为长图 PNG">📷</button>
-      <button class="icon-btn" id="save" title="导出全部对话为 Markdown">📄</button>
-      <select id="mode" class="mode" title="智能：按消息内容自动选择模式；其余为手动覆盖（来自 benchmark 实测结论）">
-        <option value="auto">⚡ 智能</option>
-        <option value="think">💭 深度推理</option>
-        <option value="exact">🎯 精确 · 代码/翻译</option>
-        <option value="chat">💬 日常 · 写作</option>
-      </select>
+      <button class="icon-btn" id="attach" title="上传图片"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg> 图片</button>
+      <button class="icon-btn" id="attachpdf" title="上传 PDF 文献（本地提取全文）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4z"/></svg> 文献</button>
+      <button class="icon-btn" id="shot" title="导出勾选消息为长图 PNG"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg><span class="lbl">长图</span></button>
+      <button class="icon-btn" id="save" title="导出全部对话为 Markdown"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span class="lbl">MD</span></button>
       <span class="hint">悬停消息可勾选导出</span>
-      <button id="stopbtn" class="ibtn stop">■ 停止</button>
-      <button id="send" class="ibtn send">发送</button>
+      <button id="stopbtn" class="ibtn stop"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg> 停止</button>
+      <button id="send" class="ibtn send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg><span class="lbl">发送</span></button>
     </div>
   </div>
 </footer>
@@ -1189,15 +1204,21 @@ async function refSearch(r){
   }
   return best;
 }
+// 校验模式退出/完成共用：会话原地转普通对话（保留输入框未发送内容）
+function exitRefsMode(){
+  refsDone = true;   // 此后 Enter 恢复普通对话，指令菜单与上传按钮同步回归
+  $("#send .lbl").textContent = "发送";
+  input.placeholder = INPUT_PLACEHOLDER;
+  $("#refsguide").hidden = true;
+  $("#attach").hidden = false;
+  $("#attachpdf").hidden = false;
+}
 async function refAudit(text){
   text = (text || "").trim();
   if (text.length < 20) return toast("⚠ 请先把参考文献列表粘贴到输入框（至少几条引文）");
   if (busy) return toast("⚠ 正在生成中，稍后再试");
-  refsDone = true;   // 此后 Enter 恢复普通对话，报告可正常追问
-  $("#send").textContent = "发送";
+  exitRefsMode();
   input.value = ""; input.style.height = "auto";
-  input.placeholder = INPUT_PLACEHOLDER;
-  $("#refsguide").hidden = true;
   busy = true;
   const out = {role: "assistant", text: "# 📚 引文校验\n\n（正在解析引文列表…）", ts: Date.now()};
   messages.push(out);
@@ -1240,8 +1261,11 @@ async function refAudit(text){
   } catch (e) {
     update(`# 📚 引文校验\n\n⚠ 中断：${e.message}`);
     refsDone = false;   // 校验未完成：留在校验模式，粘贴后可重试
-    $("#send").textContent = "校验";
+    $("#send .lbl").textContent = "校验";
+    input.placeholder = "📚 粘贴参考文献列表（任意格式），Enter 即开始校验";
     $("#refsguide").hidden = false;
+    $("#attach").hidden = true;   // 上传入口随校验模式收敛，重试期间同样隐藏
+    $("#attachpdf").hidden = true;
     persist();
   } finally { busy = false; }
 }
@@ -1636,7 +1660,10 @@ if (REFSMODE){
   $("#refsguide").hidden = false;
   $("#welcome").style.display = "none";   // 隐藏"上传文献"引导
   input.placeholder = "📚 粘贴参考文献列表（任意格式），Enter 即开始校验";
-  $("#send").textContent = "校验";        // 此键此时触发校验，完成后改回
+  $("#send .lbl").textContent = "校验";        // 此键此时触发校验，完成后改回
+  $("#attach").hidden = true;   // 校验流程纯粘贴文本：上传入口与指令菜单先收敛
+  $("#attachpdf").hidden = true;
+  $("#refsexit").onclick = exitRefsMode;
 }
 $("#homebtn").onclick = () => location.href = "dashboard.html";
 $("#writebtn").onclick = () => location.href = "editor.html" + (curId ? "?conv=" + encodeURIComponent(curId) : "");
@@ -2878,10 +2905,12 @@ async function send(payload){
   else { text = (payload ?? input.value).trim(); imgs = [...pendingImages]; docs = [...pendingDocs]; }
   // 引文校验模式首次发送：纯文本即视为粘贴的引文列表，直接进校验而非普通对话
   if (REFSMODE && !refsDone && text && !imgs.length && !docs.length && !pendingData.length){
+    input.value=""; input.style.height="auto";   // 早退路径同样清输入，防文案滞留
     refAudit(text); return;
   }
   // 文献检索前缀（任意会话可用）：「找文献 关键词」→ PubMed + OpenAlex 双源检索
   if (text.startsWith("找文献") && text.replace(/^找文献[\s:：]*/, "").trim().length >= 2 && !imgs.length && !docs.length){
+    input.value=""; input.style.height="auto";
     litSearch(text.replace(/^找文献[\s:：]*/, "").trim()); return;
   }
   if (!text && !imgs.length && !docs.length && !pendingData.length) return;
@@ -2930,7 +2959,7 @@ async function generate(noThink, noRetry, forceThink){
   if (usingDeep() && [...messages].reverse().find(m => m.role === "user")?.imgs?.length)
     return toast("☁️ DeepSeek API 不支持图片：本轮对话含图片，请切回本地 Qwen 再重新生成");
   busy = true;
-  $("#send").style.display="none"; $("#stopbtn").style.display="inline-block";
+  $("#send").style.display="none"; $("#stopbtn").style.display="inline-flex";
   const bb = addMsgEl("assistant");
   bb.innerHTML = `<details class="think-block" hidden><summary>思考过程</summary><div class="tcontent"></div></details>
                   <div class="outline" hidden></div>
@@ -3116,7 +3145,7 @@ async function generate(noThink, noRetry, forceThink){
   if (notePending){ const np = notePending; notePending = null; if (messages.includes(am)) saveExtractNote(np, am); }
   busy = false; ctrl = null;
   clearTimeout(prefillTimer);
-  $("#send").style.display="inline-block"; $("#stopbtn").style.display="none";
+  $("#send").style.display="inline-flex"; $("#stopbtn").style.display="none";
   persist();
   // 自动压缩须在 busy=false 后触发；有排队消息时下一轮再压
   // 云端模式 ctxTotal 恒为 null，按 DeepSeek 128K 窗口取保守值
@@ -3245,13 +3274,22 @@ input.addEventListener("input", ()=>{ input.style.height="auto"; input.style.hei
 let composeEndAt = 0;
 input.addEventListener("compositionend", () => composeEndAt = Date.now());
 input.addEventListener("keydown", e=>{
+  const slashOpen = $("#slashmenu").classList.contains("open");
+  if (slashOpen && (e.key==="ArrowDown" || e.key==="ArrowUp")){
+    e.preventDefault();
+    const opts = [...$("#slashmenu").querySelectorAll(".sopt")];
+    slashIdx = (slashIdx + (e.key==="ArrowDown" ? 1 : opts.length - 1)) % opts.length;
+    opts.forEach((el, i) => el.classList.toggle("on", i === slashIdx));
+    opts[slashIdx]?.scrollIntoView({block:"nearest"});
+    return;
+  }
   if (e.key==="Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229
       && Date.now() - composeEndAt > 100){
     e.preventDefault();
-    // 菜单开着时 Enter 选中首项而非发送斜杠原文
-    if ($("#slashmenu").classList.contains("open")){
-      const first = $("#slashmenu .sopt");
-      if (first) return first.click();
+    // 菜单开着时 Enter 选中当前项（默认首项）而非发送斜杠原文
+    if (slashOpen){
+      const cur = $("#slashmenu .sopt.on") || $("#slashmenu .sopt");
+      if (cur) return cur.click();
     }
     send();
   }
@@ -3267,7 +3305,8 @@ const SLASH_CMDS = [
   {cmd: "引文校验", desc: "新开会话，粘贴参考文献列表逐条核验", href: "chat.html?refs=1"},
   {cmd: "数据体检", desc: "对当前项目文件夹里的数据表跑一致性检验", audit: true},
 ];
-function hideSlash(){ $("#slashmenu").classList.remove("open"); }
+let slashIdx = 0;   // 菜单键盘导航选中项
+function hideSlash(){ $("#slashmenu").classList.remove("open"); slashIdx = 0; }
 function showSlash(){
   const q = input.value.slice(1).trim().toLowerCase();
   const cmds = SLASH_CMDS.filter(c => !q || c.cmd.toLowerCase().includes(q) || c.desc.includes(q));
@@ -3296,10 +3335,12 @@ function showSlash(){
     };
     el.appendChild(d);
   }
+  slashIdx = 0;
+  el.querySelector(".sopt")?.classList.add("on");   // 默认高亮首项，Enter 直接执行
   el.classList.add("open");
 }
 input.addEventListener("input", () => {
-  if (input.value.startsWith("/")) showSlash(); else hideSlash();
+  if (input.value.startsWith("/") && !(REFSMODE && !refsDone)) showSlash(); else hideSlash();
 });
 document.addEventListener("click", e => { if (!$("#inputbox").contains(e.target)) hideSlash(); });
 
