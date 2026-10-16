@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f8f9fb">
+<title>浙大AI创新应用大赛申报书 · local-llm-station</title>
+<style>
+  :root {
+    --bg: #f8f9fb; --panel: #fff; --border: #e2e6ee;
+    --text: #1f2733; --dim: #5b6675; --accent: #1a5eb8;
+    --accent-bg: #eef4fc; --ok: #1a7f4b;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.85 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 0; -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 780px; margin: 0 auto; background: var(--panel);
+    padding: 44px 40px 60px; min-height: 100vh; }
+  h1 { font-size: 22px; line-height: 1.5; margin: 8px 0 4px; }
+  h1 + h2 { font-size: 15px; color: var(--dim); font-weight: 500; border: none; padding: 0; margin: 0 0 20px; background: none; }
+  h2 {
+    font-size: 17px; margin: 34px 0 12px; padding: 8px 14px;
+    background: var(--accent-bg); border-left: 4px solid var(--accent);
+    border-radius: 4px;
+  }
+  h3 { font-size: 15px; margin: 22px 0 8px; color: var(--accent); }
+  p { margin: 10px 0; text-align: justify; }
+  ul { padding-left: 22px; margin: 8px 0; }
+  li { margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th { background: var(--accent-bg); color: var(--text); }
+  th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; line-height: 1.6; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  code { background: #f0f2f6; padding: 1px 6px; border-radius: 4px; font-size: 13px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 26px 0; }
+  .foot { color: var(--dim); font-size: 13px; }
+  strong { color: #14202e; }
+  em { color: var(--dim); font-style: normal; background: #fff7e0; padding: 0 3px; border-radius: 3px; }
+
+  @media (max-width: 640px) {
+    .page { padding: 24px 16px 40px; }
+    body { font-size: 14.5px; }
+    h1 { font-size: 19px; }
+    th, td { padding: 6px 8px; }
+  }
+  @media print {
+    body { background: #fff; }
+    .page { max-width: none; padding: 0; }
+    h2 { break-after: avoid; }
+    table, ul { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+<h1>浙江大学教职工AI创新应用大赛 申报书</h1>
+<h2>科研创新方向 · local-llm-station（本地大模型科研文献工作台）</h2>
+<hr>
+<h2>一、项目概述</h2>
+<p>local-llm-station 是一款部署于科研人员本机的 AI 文献工作台，围绕"读文献 → 讲清楚文献 → 讨论文献 → 写论文 → 修稿件"的完整科研链路，将大模型能力与本地知识工程深度融合。系统以 Apple Silicon 本地部署的 Qwen3.8-27B 多模态大模型为推理引擎，配合自研的 Swift 宿主服务（LocalLLMServer）与零依赖纯前端界面，实现<strong>文献数据全程不出本机</strong>的隐私架构；同时提供 DeepSeek 云端双轨模式，兼顾算力受限场景。</p>
+<p>项目由临床医生独立开发，面向综合性大学多学科科研场景，内置"学科皮肤"机制——医学口开箱即用，其他学科通过 4 步网页向导即可完成整体换肤，无需修改任何代码。</p>
+<hr>
+<h2>二、应用场景</h2>
+<p>对应大赛科研创新方向的四个场景：</p>
+<h3>2.1 科研选题凝练与文献综述</h3>
+<ul>
+<li><strong>四段结构化解读</strong>：上传 PDF 自动提取全文（剔除参考文献节省 20–40% 预填充窗口），按背景/方法/结果/讨论四段生成解读，追问走 prompt 缓存秒回</li>
+<li><strong>多源文献检索</strong>：一条命令驱动 DeepSeek 生成检索式 → PubMed / OpenAlex / Europe PMC / ClinicalTrials.gov 四源并行 → 自动去重 → 逐条相关性判定（✅/🟡/❌ 附理由），检索结果直接进入对话可追问</li>
+<li><strong>深度证据提取</strong>：RCT/Meta 与论著两套提取框架，内置防编造约束，提取结果自动存入项目笔记</li>
+</ul>
+<h3>2.2 科研数据智能分析与挖掘</h3>
+<ul>
+<li><strong>GRIM 数据体检</strong>（本项目最具辨识度的创新）：对论文数据表执行确定性统计一致性检验——均值粒度检验（GRIM）、百分比闭合、例数可加性，可检出"统计上不可能"的数据组合；疑点再交由模型给出判读（舍入表象/转录错误/统计不可能）</li>
+<li><strong>数据对话</strong>：CSV 一键附入对话，列类型/缺失值/min-max-均值概览自动注入上下文，模型基于真实数据而非想象作答</li>
+<li><strong>图表深读</strong>：PDF 内嵌图表以位图方式交给多模态模型，结合 Vision OCR 回填的图内文字（轴标签/流程图框内文字）做深度解读，扫描版 PDF 自动整页 OCR 兜底</li>
+</ul>
+<h3>2.3 论文写作与图表生成</h3>
+<ul>
+<li><strong>写作台</strong>：分章节写作、[@键] 引文自动编号、版本快照、AI 建议一键插入、跨章节改稿</li>
+<li><strong>图表产出</strong>：一图总结海报 PNG（零模型本地截图）；五段批判性框架汇报 PPT（pptxgenjs 原生文本框渲染，可编辑，含逐页讲稿）</li>
+<li><strong>成稿导出</strong>：HTML / Word（pandoc + citeproc，内置 AMA / Vancouver / APA / GB/T 7714 四种引文样式）</li>
+</ul>
+<h3>2.4 学科交叉与成果传播</h3>
+<ul>
+<li><strong>学科皮肤</strong>：AI 身份、提取模板、审稿视角、专属检索源随学科整体切换；4 步向导生成新学科皮肤，全程不碰文件</li>
+<li><strong>修稿闭环</strong>：投稿标记 → 审稿意见逐条结构化（状态追踪）→ Response 草稿 → 落地体检防"信里说改了稿里没改" → 导出 point-by-point 回复信 + 高亮修改稿 Word</li>
+</ul>
+<hr>
+<h2>三、解决的问题</h2>
+<h3>3.1 科研文献阅读"三低一高"困境</h3>
+<p>科研人员阅读文献普遍存在效率低（一篇论文平均耗时 2–4 小时）、转化低（读完即忘，缺乏结构化沉淀）、共享低（组会汇报制作耗时）、隐私风险高（文献含未发表数据，上传第三方云服务存在泄露隐患）。本项目以本地大模型+结构化工作流，将"读-懂-讲-写"压缩进单一工具，文献数据全程不离开本机。</p>
+<h3>3.2 AI 幻觉在科研场景的信任危机</h3>
+<p>通用大模型直接用于科研存在编造引文、误读数据的风险，这是 AI 科研工具落地的最大障碍。本项目的解法是<strong>用确定性计算约束概率模型</strong>：引文经 Crossref/OpenAlex/PubMed 在线逐条验证后才可插入；数据结论先经 GRIM 等确定性检验，模型只对"已确认的异常"做解释；医学专项评测中明确标注"用药安全项需人工核对、临床决策禁用"的能力边界。<strong>不掩盖 AI 的短板，而是用工程手段把短板圈起来</strong>——这是本项目区别于"提示词套壳"产品的核心。</p>
+<h3>3.3 综合性大学的学科适配难题</h3>
+<p>多数 AI 科研工具为单一学科定制，其他学科"用不了也不好改"。学科皮肤机制将提示词工程降维为 4 步表单：任意学科教师可自助生成本学科的 AI 身份、审稿视角与检索源配置，使同一套系统能够覆盖全校文理工医。</p>
+<hr>
+<h2>四、技术创新点</h2>
+<h3>4.1 确定性检验与概率模型的双引擎架构</h3>
+<p>业内 AI 科研工具普遍采用"大模型直接读数据给结论"的模式，幻觉风险不可控。本项目首创将统计学界的 GRIM 检验（Granularity-Related Impossibility Measure）产品化：先以确定性算法检验数据内部一致性（如 N=23 的组不可能出现均值 3.37），模型仅对确认异常进行归因解释。<strong>概率模型负责"解释"，确定性计算负责"把关"</strong>——该架构可推广至一切对可靠性敏感的 AI 应用场景。</p>
+<h3>4.2 隐私优先的双轨算力架构</h3>
+<p>"数据留在本地，算力可以出走"：PDF 提取、图表位图、OCR、会话存档全部由本机宿主服务完成（浏览器零文件权限）；隐私敏感的日常解读走本地 27B 多模态模型完全离线；仅重生成任务（如 PPT）经用户明确确认后走云端。切换权完全在用户，系统不静默上云。该架构通过了"文件操作全在宿主进程、浏览器零权限"的安全设计评审。</p>
+<h3>4.3 单文件零依赖前端 + 协议化宿主服务</h3>
+<p>四页前端均为单 HTML 文件（零构建、零 npm 依赖、任意浏览器可用），样式层全面令牌化（语义色板/动效参数/阴影三档统一管理，WCAG AA 对比度全达标）；前后端以纯 HTTP 契约解耦（PORTING.md + mock_server.py 提供完整协议与联调空壳），宿主服务可在任意语言/平台最小成本复刻（最小可用集仅三个端点）。</p>
+<h3>4.4 模型能力边界的量化实测</h3>
+<p>针对默认模型建立四套人工评分卷（56 题，逐题对照踩分点），覆盖通用知识（86%）、医学专项（91%）、中英互译（回译零漂移）、数据分析编程（100% 实际运行验证）；并完成 Ollama-MLX 与 llama.cpp 双后端同题对照。<strong>把"AI 能力"从宣传话术变成可复现的评测数据</strong>，为科研场景的信任使用提供量化依据。</p>
+<hr>
+<h2>五、预期成效</h2>
+<h3>5.1 科研效能提升（近期，半年内）</h3>
+<ul>
+<li>文献研读环节：四段解读+追问缓存将单篇精读的"首次理解"时间从小时级压缩到分钟级；组会汇报材料（海报/PPT）从数小时压缩到分钟级</li>
+<li>论文写作环节：[@键] 引文+自动参考文献将引文管理时间减少约 70%；审稿回复信结构化生成将修稿组织时间减半</li>
+<li>数据核查环节：GRIM 体检为课题组提供论文数据一致性的快速自检工具，在投稿前发现转录错误，降低返修风险</li>
+</ul>
+<h3>5.2 校内推广路径（中期，一年内）</h3>
+<ul>
+<li>依托学科皮肤向导，从医学院 pilot 起步，逐步开放文/理/工/农/医各学科皮肤共建</li>
+<li>与研究生方法论课程结合，作为"AI 辅助文献研读"的教学演示环境</li>
+<li>目标形成 3–5 个非医学科可用的皮肤模板，验证"一套系统覆盖综合大学"的可行性</li>
+</ul>
+<h3>5.3 数据安全示范价值（长期）</h3>
+<p>为高校科研数据的"本地化 AI 应用"提供可复制的架构样本：证明在消费级硬件上，隐私优先的科研 AI 工作流是可行的。相关架构经验（确定性+概率双引擎、双轨算力）可迁移至校内其他涉及敏感数据的 AI 应用场景。</p>
+<h3>5.4 局限与反思</h3>
+<ul>
+<li>本地推理依赖 Apple Silicon（24GB 内存级），Windows/Linux 用户当前以云端模式与纯前端+开源推理后端（Ollama/llama.cpp）承接，PDF 自动提取链路的跨平台移植已开放协议（PORTING.md）待社区共建</li>
+<li>大模型解读存在出错可能，系统通过引文在线验证、GRIM 确定性检验与能力边界标注三重手段控制风险，但<strong>不承诺替代研究者的专业判断</strong>——本项目的定位始终是"放大研究者的阅读与表达能力"，而非替代</li>
+<li>用户规模与效能数据（试用人数、平均耗时对比）尚在收集中，将在后续版本报告中补充实证</li>
+</ul>
+<hr>
+<p class="foot">申报人：施主（dalianblue） · 2026年10月</p>
+<p class="foot">项目开源地址：github.com/dalianblue/local-llm-station</p>
+</div>
+</body>
+</html>
