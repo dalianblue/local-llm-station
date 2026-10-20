@@ -50,6 +50,21 @@ DISCIPLINES.medicine = {
     {id: "clin", icon: "🩺", name: "临床审稿人", desc: "临床意义 · 外推性 · 患者安全",
      prompt: "临床审稿人：聚焦临床意义与价值、结果外推性（人群与场景）、患者安全性与不良反应、与现行临床实践的衔接", tag: "临床"},
   ],
+  // 审稿输出规范(1020吸收Supervisor-Skills pre-submission-reviewer方法论):
+  // 三级严重度+阻断语义+用词强度校验+检索边界诚实声明
+  reviewOutputSpec:
+    "\n\n【输出规范】每条发现必须标注严重度：CRITICAL（方法学缺陷影响结论成立，不改不能发表）/" +
+    "MAJOR（削弱结论可信度，需补充说明或分析）/MINOR（表述与格式问题）。" +
+    "CRITICAL级发现单独汇总在报告末尾「阻断项清单」中。" +
+    "\n【用词强度校验】审查作者的因果措辞是否超出证据强度：『证明/解决了』通常只被『改善了/关联』支撑；" +
+    "声称『首次/最先』必须有检索佐证，否则降级为『据我们所知』并标注。" +
+    "\n【检索边界】若本次无法检索文献数据库核实引文与新颖性，在报告开头明确声明「本次为离线审稿，" +
+    "新颖性与引文完整性两项未核实」，不得假装已核实。",
+  // 把输出规范拼到每个审稿人prompt后的辅助函数(供editor调用处使用)
+  reviewerPrompt(id) {
+    const r = (this.reviewers || []).find(x => x.id === id);
+    return r ? (r.prompt + this.reviewOutputSpec) : null;
+  },
   // 各处 UI 示例文案
   hints: {
     reviewTopic: "建议具体到干预+人群+结局",                      // editor 综述向导话题提示
