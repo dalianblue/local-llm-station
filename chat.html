@@ -766,9 +766,17 @@ try {
 try { ledger = JSON.parse(localStorage.getItem("qwen_ledger") || "null"); } catch {}
 
 const MEM_CAP = 200;   // 上限+裁剪：超限删最低分最旧非置顶条
+// 服务端行归一化（type/src 兜底——旧版服务端无此二列时防 undefined）
+function normMemRow(r){
+  return r && typeof r === "object" ? {
+    id: r.id ?? -Date.now(), text: String(r.text || ""), ts: r.ts || Date.now(),
+    score: r.score ?? 3, pinned: r.pinned ? 1 : 0, type: r.type || "pref", src: r.src || ""
+  } : null;
+}
 // ---- 1016记忆升级：时间衰减 + 检索式相关性 ----
 // 半衰期按类别：pref偏好90天 / proj项目30天 / event事件14天（pinned豁免）
 const MEM_HALF_LIFE = {pref: 90, proj: 30, event: 14};
+const MEM_REL_HIT = 0.15;   // 相关性达此阈值 = 缘熟：豁免衰减 + 回写 ts（现行熏种子）
 function memEffScore(m, now){
   if (m.pinned) return m.score * 10;            // 置顶=常青+检索加权
   const age = (now - (m.ts || now)) / 86400e3;
@@ -797,7 +805,7 @@ async function loadMem(){
   if (!archOK) return;
   try {
     const items = await (await fetch(ARCH + "/mem/items")).json();
-    if (Array.isArray(items)) memory = items;
+    if (Array.isArray(items)) memory = items.map(normMemRow).filter(Boolean);
     ledger = await (await fetch(ARCH + "/mem/ledger")).json();
     mirrorMem(); renderMemory(); scheduleLedger();
   } catch {}
@@ -837,7 +845,7 @@ async function memMutate(action, extra = {}){
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({action, ...extra})
     }).then(r => r.ok ? r.json() : null)
-      .then(rows => { if (Array.isArray(rows)){ memory = rows; mirrorMem(); renderMemory(); } })
+      .then(rows => { if (Array.isArray(rows)){ memory = rows.map(normMemRow).filter(Boolean); mirrorMem(); renderMemory(); } })
       .catch(() => {});
   return true;
 }
@@ -1576,7 +1584,7 @@ async function cleanupMem(){
           method: "POST", headers: {"Content-Type": "application/json"},
           body: JSON.stringify({action: "delmany", ids: drop})
         }).then(r => r.ok ? r.json() : null)
-          .then(rows => { if (Array.isArray(rows)){ memory = rows; mirrorMem(); renderMemory(); } })
+          .then(rows => { if (Array.isArray(rows)){ memory = rows.map(normMemRow).filter(Boolean); mirrorMem(); renderMemory(); } })
           .catch(() => {});
       toast("记忆清账：删除 " + drop.length + " 条临时性记忆");
     }
@@ -2783,12 +2791,28 @@ function buildHistory(){
   const sys = [];
   sys.push(BOUNDARY_RULES);   // 自动注入，无开关：修改走 BOUNDARY_RULES 常量
   // 账本注入：画像摘要 + 置顶原文 + 相关8（1016：检索式——2-gram重合×衰减有效分，替代纯热度top8）
+  // 1023 闭环：相关性达 MEM_REL_HIT = 缘熟——豁免衰减（种子不失）+ 注入后回写 ts（现行熏种子）
   const pins = memory.filter(m => m.pinned);
   const curQ = [...messages].reverse().find(m => m.role === "user" && m.text)?.text || "";
   const now = Date.now();
-  const top8 = [...memory].filter(m => !m.pinned)
-    .map(m => ({m, eff: memEffScore(m, now) * (1 + 2 * memRelScore(curQ, m.text))}))
-    .sort((a, b) => b.eff - a.eff).slice(0, 8).map(x => x.m);
+  let top8 = [...memory].filter(m => !m.pinned)
+    .map(m => {
+      const rel = memRelScore(curQ, m.text);
+      const base = rel >= MEM_REL_HIT ? (m.score || 3) : memEffScore(m, now);
+      return {m, rel, eff: base * (1 + 2 * rel)};
+    })
+    .sort((a, b) => b.eff - a.eff).slice(0, 8);
+  const hitIds = top8.filter(x => x.rel >= MEM_REL_HIT).map(x => x.m.id);
+  top8 = top8.map(x => x.m);
+  if (hitIds.length){
+    memory.forEach(m => { if (hitIds.includes(m.id)) m.ts = now; });
+    mirrorMem();
+    if (archOK)
+      fetch(ARCH + "/mem/items", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({action: "touch", ids: hitIds})
+      }).catch(() => {});   // 不回读 rows：避免服务端无 type/src 字段覆盖本地
+  }
   const memParts = [];
   if (ledger?.summary) memParts.push("画像：" + ledger.summary);
   if (pins.length) memParts.push("置顶：\n" + pins.map(m => "- " + m.text).join("\n"));

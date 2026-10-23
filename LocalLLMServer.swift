@@ -489,7 +489,7 @@ final class ArchiveServer {
             if obj["error"] != nil { status = "400 Bad Request" }
             body = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
         case ("GET", "/mem/items"):
-            if let rows = memQuery("SELECT id, text, score, pinned, ts FROM mem ORDER BY pinned DESC, score DESC, ts DESC") {
+            if let rows = memQuery("SELECT id, text, score, pinned, ts, type, src FROM mem ORDER BY pinned DESC, score DESC, ts DESC") {
                 body = (try? JSONSerialization.data(withJSONObject: rows)) ?? Data("[]".utf8)
             } else { status = "503 Service Unavailable"; body = Data("{\"error\":\"db\"}".utf8) }
         case ("POST", "/mem/items"):
@@ -520,7 +520,10 @@ extension ArchiveServer {
             let path = dir.appendingPathComponent("memory.db").path
             guard sqlite3_open_v2(path, &memDB, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else { memDB = nil; return }
             sqlite3_exec(memDB, "PRAGMA journal_mode=WAL;", nil, nil, nil)
-            sqlite3_exec(memDB, "CREATE TABLE IF NOT EXISTS mem(id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL UNIQUE, score INTEGER DEFAULT 3, pinned INTEGER DEFAULT 0, ts INTEGER NOT NULL DEFAULT 0);", nil, nil, nil)
+            sqlite3_exec(memDB, "CREATE TABLE IF NOT EXISTS mem(id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL UNIQUE, score INTEGER DEFAULT 3, pinned INTEGER DEFAULT 0, ts INTEGER NOT NULL DEFAULT 0, type TEXT DEFAULT 'pref', src TEXT DEFAULT '');", nil, nil, nil)
+            // 旧库补列（列已存在时报错忽略）
+            _ = exec("ALTER TABLE mem ADD COLUMN type TEXT DEFAULT 'pref'")
+            _ = exec("ALTER TABLE mem ADD COLUMN src TEXT DEFAULT ''")
             sqlite3_exec(memDB, "CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);", nil, nil, nil)
             migrateMemoryJSON()
         }
@@ -565,11 +568,16 @@ extension ArchiveServer {
             var rows: [[String: Any]] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
                 guard let c1 = sqlite3_column_text(stmt, 1) else { continue }
-                rows.append(["id": Int(sqlite3_column_int64(stmt, 0)),
+                var row: [String: Any] = ["id": Int(sqlite3_column_int64(stmt, 0)),
                              "text": String(cString: c1),
                              "score": Int(sqlite3_column_int64(stmt, 2)),
                              "pinned": Int(sqlite3_column_int64(stmt, 3)),
-                             "ts": Int(sqlite3_column_int64(stmt, 4))])
+                             "ts": Int(sqlite3_column_int64(stmt, 4))]
+                if sqlite3_column_count(stmt) > 6 {   // type/src 列（旧库迁移前缺列不炸）
+                    row["type"] = sqlite3_column_text(stmt, 5).map { String(cString: $0) } ?? "pref"
+                    row["src"] = sqlite3_column_text(stmt, 6).map { String(cString: $0) } ?? ""
+                }
+                rows.append(row)
             }
             sqlite3_finalize(stmt)
             return rows
@@ -585,8 +593,10 @@ extension ArchiveServer {
                 let text = (obj["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { return false }
                 let score = min(max(obj["score"] as? Int ?? 3, 1), 5)
-                return exec("INSERT OR IGNORE INTO mem(text, score, pinned, ts) VALUES(?1, ?2, 0, ?3)",
-                            [.str(text), .int(score), .int(Int(Date().timeIntervalSince1970 * 1000))])
+                let type = ["pref", "proj", "event"].contains(obj["type"] as? String ?? "") ? (obj["type"] as! String) : "pref"
+                let src = String((obj["src"] as? String ?? "").prefix(30))
+                return exec("INSERT OR IGNORE INTO mem(text, score, pinned, ts, type, src) VALUES(?1, ?2, 0, ?3, ?4, ?5)",
+                            [.str(text), .int(score), .int(Int(Date().timeIntervalSince1970 * 1000)), .str(type), .str(src)])
             case "del":
                 return exec("DELETE FROM mem WHERE id = ?1 AND pinned = 0", [.int(obj["id"] as? Int ?? -1)])
             case "delmany":
@@ -594,6 +604,12 @@ extension ArchiveServer {
                 guard let ids = (obj["ids"] as? [Any])?.compactMap({ $0 as? Int }), !ids.isEmpty, ids.count <= 500 else { return false }
                 let marks = ids.map { _ in "?" }.joined(separator: ",")
                 return exec("DELETE FROM mem WHERE pinned = 0 AND id IN (\(marks))", ids.map { .int($0) })
+            case "touch":
+                // 现行熏种子：被检索命中注入的记忆刷新 ts（衰减重计）
+                guard let ids = (obj["ids"] as? [Any])?.compactMap({ $0 as? Int }), !ids.isEmpty, ids.count <= 500 else { return false }
+                let marks = ids.map { _ in "?" }.joined(separator: ",")
+                return exec("UPDATE mem SET ts = ?1 WHERE id IN (\(marks)) AND pinned = 0",
+                            [.int(Int(Date().timeIntervalSince1970 * 1000))] + ids.map { .int($0) })
             case "pin":
                 let on = (obj["on"] as? Bool ?? false) ? 1 : 0
                 return exec("UPDATE mem SET pinned = ?1 WHERE id = ?2", [.int(on), .int(obj["id"] as? Int ?? -1)])
@@ -603,7 +619,7 @@ extension ArchiveServer {
             }
         }
         guard ok else { return nil }
-        return memQuery("SELECT id, text, score, pinned, ts FROM mem ORDER BY pinned DESC, score DESC, ts DESC")
+        return memQuery("SELECT id, text, score, pinned, ts, type, src FROM mem ORDER BY pinned DESC, score DESC, ts DESC")
     }
 
     func memKVGet(_ k: String) -> Data? {
