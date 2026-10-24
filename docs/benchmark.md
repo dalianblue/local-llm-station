@@ -34,3 +34,53 @@
 - 完整对照报告：[benchmark/ollama_vs_llamacpp_report.html](../benchmark/ollama_vs_llamacpp_report.html)
 
 这正是"文本走 Ollama、图表深读等连续多模态追问场景可切回 llama.cpp"双轨设计的依据。
+
+### 三引擎对照：Splash vs oMLX（2026-10-23，M5 Max 128GB）
+
+[Splash](https://github.com/incoai/splash)（Inco AI 开源、围绕模型定制的推理引擎）上线当天用**同一份 Qwen3.8-27B-nvfp4 权重**（oMLX 现役模型）在 M5 Max（40-core GPU / 128GB）上做了 A/B 对照：
+
+| 指标 | Splash 1.4.0 | oMLX | 倍数 |
+|------|--------------|------|------|
+| 短提问解码（含思考链） | **42.5 tok/s** | 37.4 tok/s | 1.14× |
+| 冷 prefill · 8K | **1075 tok/s** | 825 tok/s | 1.30× |
+| 冷 prefill · 16K | **1048 tok/s** | 791 tok/s | 1.32× |
+| 冷 prefill · 32K | **962 tok/s** | 773 tok/s | 1.24× |
+| 缓存命中 TTFT（8K 重放） | **77 ms** | 764 ms | **9.9×** |
+| 上下文窗口 | 256K（KV 容量 197 万 token） | 262K | — |
+| Vision（图表深读） | ✓ base64 data: URL | ✓ | — |
+
+- **解码提速来源**：DFlash2 投机解码是解码路径本体（非可选）。在 nvfp4 权重上草稿接受率仅 21.7%（6922 投机 / 1500 接受），解码收益 2.4×（理论无投机 ~17-22 tok/s → 42.5）。接受率的关键变量是语言域而非量化格式，详见下节 GGUF 包实测
+- **prefill 领先 1.3×**：自动 Neural Engine FFN split（share 0.24，启动时 22.7s 标定）+ 专为模型定制的 GDN prefill kernel
+- **缓存命中快 10×**：对"追问秒回"体验提升最大——oMLX 命中也要 764ms，Splash 77ms
+- **内存规划**：`--max-memory 80G` 下 KV 容量 197 万 token（65.9GB），256K 满窗可 7 路并发全驻内存
+- **接入零成本**：OpenAI Chat Completions 兼容，:8082 与 oMLX :8000 并存，前端按服务地址自动识别后端方言
+
+#### Splash 官方 GGUF 包（UD-Q4_K_M）实测：144 传闻的最终裁决
+
+同机换官方 `unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M`（16.46GB，DFlash2 草稿照此权重训练）：
+
+| 工作负载 | 解码 tok/s | 草稿接受率 |
+|---|---|---|
+| **英文编码题**（LCS 函数/SQL CTE） | **82-113** | **34.1%** |
+| 中文医学问答（含思考链） | 40-50 | 17-19% |
+| 中文医学·关思考（reasoning_effort none） | 43-50 | — |
+| 4 路并发（中文） | 38-42/车道 | — |
+| 冷 prefill 8K/16K/32K | 1078/1034/944 tok/s | — |
+
+**裁决：144 tok/s 量级是真的，但强依赖工作负载与语言域。** DFlash2 草稿照英文/编码语料训练——英文代码类任务接受率 34%，速度直接翻倍到 82-113 tok/s（144 在干净环境可达）；**中文医学文本接受率掉到 17-19%，速度 40-50 tok/s**，与 nvfp4 权重（21.7%/42.5 tok/s）无实质差距。GGUF 包对中文场景没有优势，本站中文文献工作流继续用 oMLX 或 Splash+nvfp4 均可。
+
+另注：量化档位 UD-Q4_K_M（16.46GB）vs nvfp4（15.7GB）在 Splash 上解码、prefill、并发三项全部持平——选型按需，速度不构成决策变量。
+
+#### oMLX 侧 DFlash 对照（2026-10-23）
+
+oMLX 0.6.4 同样内置 DFlash（`dflash_enabled` + 同一 incoai 草稿），同 nvfp4 权重：
+
+| 配置 | 解码 tok/s | 说明 |
+|---|---|---|
+| 默认（无投机） | 37.4 | 基线 |
+| + DFlash，草稿 BF16（默认） | **34.3 ↓** | 接受率 48% 但草稿相位 2844ms 吃掉全部收益 |
+| + DFlash，**草稿 4-bit 量化** | **40.7 ↑** | 草稿相位 512ms（5.5×快），接受率不掉 |
+
+结论：oMLX 上 DFlash 的正确打开方式是 `dflash_draft_quant_enabled: true`（4-bit 草稿，+9% 免费）；默认 BF16 草稿是负优化。prefill 不受投机解码影响（两配置 37.7s@32K 一致）。Splash 同草稿同权重仍最快（42.5）——定制内核把草稿也编译了进去。
+
+
