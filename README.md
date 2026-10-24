@@ -170,7 +170,9 @@ LocalLLMServer-oMLX.app（宿主进程）
    └── 读写 ~/local-llm-station/chat_history/*.json
 ```
 
-推理后端三轨：**oMLX（MLX + MTP）** 为 Apple Silicon 推荐（`Qwen3.8-27B-nvfp4`，Metal 原生、视觉内嵌、解码 ~14 tok/s、前缀缓存），**Ollama**（长思考任务更稳）与 **llama.cpp**（跑任意 GGUF）路线保留——同一份 `LocalLLMServer.swift` 源码经编译开关产出两个 app，前端按服务地址自动识别后端方言，切换只改设置。文件操作全部由本地宿主进程执行，浏览器零文件权限——这是本项目的核心设计：借鉴 deepseek-harness 的"本地宿主 + 浏览器纯 UI"分层，浏览器只是壳。完整存档 API 见 [docs/features.md](docs/features.md#存档-api8081带-cors仅供本机)。
+推理后端三轨：**oMLX（MLX + MTP）** 为 Apple Silicon 推荐（`Qwen3.8-27B-nvfp4`，Metal 原生、视觉内嵌、解码 ~14 tok/s、前缀缓存），**Ollama**（长思考任务更稳）与 **llama.cpp**（跑任意 GGUF）路线保留——同一份 `LocalLLMServer.swift` 源码经编译开关产出两个 app，前端按服务地址自动识别后端方言，切换只改设置。文件操作全部由本地宿主进程执行，浏览器零文件权限——这是本项目的核心设计：借鉴 deepseek-harness 的"本地宿主 + 浏览器纯 UI"分层，浏览器只是壳。完整存档 API 见 [docs/features.md](docs/features.md#存档-api8081带-cors-仅供本机)。
+
+> 💡 **oMLX 投机解码取舍（2026-10 实测）**：oMLX 的 `dflash_enabled`（DFlash 投机）与 `vlm_mtp_enabled`（多模态 MTP）**互斥，二选一**。开 DFlash（4-bit 量化草稿）纯文本解码约 +9%，但图像请求走 fallback 引擎、MTP 失效——图表深读/OCR 是本站核心链路，**默认保持 `vlm_mtp_enabled` 不动**；纯文本重度用户可自行切换。另：M3+ 机型可加挂 [Splash 引擎](docs/benchmark.md#三引擎对照splash-vs-omlx2026-10-23m5-max-128gb)作第二后端（英文/编码任务 2-3×，中文文献场景缓存命中 TTFT 77ms vs 764ms），见实测对照。
 
 ## 文件说明与重新编译
 
